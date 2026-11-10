@@ -1,0 +1,380 @@
+[
+  {
+    "id": "iso-E001",
+    "name": "Sortie de secours (à gauche)",
+    "category": "Évacuation",
+    "code": "E001",
+    "license": "Public domain",
+    "author": "MaxxL",
+    "source": "https://commons.wikimedia.org/wiki/File:ISO_7010_E001.svg"
+  },
+  {
+    "id": "iso-E002",
+    "name": "Sortie de secours (à droite)",
+    "category": "Évacuation",
+    "code": "E002",
+    "license": "Public domain",
+    "author": "MaxxL",
+    "source": "https://commons.wikimedia.org/wiki/File:ISO_7010_E002.svg"
+  },
+  {
+    "id": "iso-arrow",
+    "name": "Flèche de direction",
+    "category": "Évacuation",
+    "code": "arrow",
+    "license": "Public domain",
+    "author": "Maxxl2",
+    "source": "https://commons.wikimedia.org/wiki/File:ISO_7010_Safe_condition_arrow_1.svg"
+  },
+  {
+    "id": "iso-arrow-45",
+    "name": "Flèche de direction (45°)",
+    "category": "Évacuation",
+    "code": "arrow-45",
+    "license": "Public domain",
+    "author": "Maxxl2",
+    "source": "https://commons.wikimedia.org/wiki/File:ISO_7010_Safe_condition_arrow_2.svg"
+  },
+  {
+    "id": "iso-E016",
+    "name": "Échelle d’évacuation",
+    "category": "Évacuation",
+    "code": "E016",
+    "license": "Public domain",
+    "author": "MaxxL",
+    "source": "https://commons.wikimedia.org/wiki/File:ISO_7010_E016.svg"
+  },
+  {
+    "id": "iso-E017",
+    "name": "Fenêtre de sauvetage",
+    "category": "Évacuation",
+    "code": "E017",
+    "license": "Public domain",
+    "author": "Maxxl2",
+    "source": "https://commons.wikimedia.org/wiki/File:ISO_7010_E017.svg"
+  },
+  {
+    "id": "iso-E026",
+    "name": "Sortie de secours PMR (à gauche)",
+    "category": "Évacuation",
+    "code": "E026",
+    "license": "CC0",
+    "author": "Clemenspool",
+    "source": "https://commons.wikimedia.org/wiki/File:ISO_7010_E026.svg"
+  },
+  {
+    "id": "iso-E030",
+    "name": "Sortie de secours PMR (à droite)",
+    "category": "Évacuation",
+    "code": "E030",
+    "license": "CC0",
+    "author": "Clemenspool",
+    "source": "https://commons.wikimedia.org/wiki/File:ISO_7010_E030.svg"
+  },
+  {
+    "id": "iso-E024",
+    "name": "Espace d’attente sécurisé",
+    "category": "Évacuation",
+    "code": "E024",
+    "license": "CC0",
+    "author": "Clemenspool",
+    "source": "https://commons.wikimedia.org/wiki/File:ISO_7010_E024.svg"
+  },
+  {
+    "id": "iso-E007",
+    "name": "Point de rassemblement",
+    "category": "Évacuation",
+    "code": "E007",
+    "license": "Public domain",
+    "author": "MaxxL",
+    "source": "https://commons.wikimedia.org/wiki/File:ISO_7010_E007.svg"
+  },
+  {
+    "id": "iso-E021",
+    "name": "Abri de protection",
+    "category": "Évacuation",
+    "code": "E021",
+    "license": "CC0",
+    "author": "Clemenspool",
+    "source": "https://commons.wikimedia.org/wiki/File:ISO_7010_E021.svg"
+  },
+  {
+    "id": "iso-E022",
+    "name": "Porte : pousser à gauche",
+    "category": "Évacuation",
+    "code": "E022",
+    "license": "CC0",
+    "author": "Clemenspool",
+    "source": "https://commons.wikimedia.org/wiki/File:ISO_7010_E022.svg"
+  },
+  {
+    "id": "iso-E023",
+    "name": "Porte : pousser à droite",
+    "category": "Évacuation",
+    "code": "E023",
+    "license": "CC0",
+    "author": "Clemenspool",
+    "source": "https://commons.wikimedia.org/wiki/File:ISO_7010_E023.svg"
+  },
+  {
+    "id": "iso-E018",
+    "name": "Ouverture par rotation à gauche",
+    "category": "Évacuation",
+    "code": "E018",
+    "license": "CC0",
+    "author": "Bloody666",
+    "source": "https://commons.wikimedia.org/wiki/File:ISO_7010_E018.svg"
+  },
+  {
+    "id": "iso-E019",
+    "name": "Ouverture par rotation à droite",
+    "category": "Évacuation",
+    "code": "E019",
+    "license": "CC0",
+    "author": "Bloody666",
+    "source": "https://commons.wikimedia.org/wiki/File:ISO_7010_E019.svg"
+  },
+  {
+    "id": "iso-E008",
+    "name": "Briser pour accéder",
+    "category": "Évacuation",
+    "code": "E008",
+    "license": "CC0",
+    "author": "Bloody666",
+    "source": "https://commons.wikimedia.org/wiki/File:ISO_7010_E008.svg"
+  },
+  {
+    "id": "iso-E025",
+    "name": "Marteau brise-vitre",
+    "category": "Évacuation",
+    "code": "E025",
+    "license": "CC0",
+    "author": "Clemenspool",
+    "source": "https://commons.wikimedia.org/wiki/File:ISO_7010_E025.svg"
+  },
+  {
+    "id": "iso-F001",
+    "name": "Extincteur",
+    "category": "Lutte contre l’incendie",
+    "code": "F001",
+    "license": "Public domain",
+    "author": "MaxxL",
+    "source": "https://commons.wikimedia.org/wiki/File:ISO_7010_F001.svg"
+  },
+  {
+    "id": "iso-F009",
+    "name": "Extincteur sur roues",
+    "category": "Lutte contre l’incendie",
+    "code": "F009",
+    "license": "CC0",
+    "author": "Clemenspool",
+    "source": "https://commons.wikimedia.org/wiki/File:ISO_7010_F009.svg"
+  },
+  {
+    "id": "iso-F002",
+    "name": "Robinet d’incendie armé (RIA)",
+    "category": "Lutte contre l’incendie",
+    "code": "F002",
+    "license": "Public domain",
+    "author": "MaxxL",
+    "source": "https://commons.wikimedia.org/wiki/File:ISO_7010_F002.svg"
+  },
+  {
+    "id": "iso-F005",
+    "name": "Déclencheur manuel d’alarme",
+    "category": "Lutte contre l’incendie",
+    "code": "F005",
+    "license": "Public domain",
+    "author": "MaxxL",
+    "source": "https://commons.wikimedia.org/wiki/File:ISO_7010_F005.svg"
+  },
+  {
+    "id": "iso-F006",
+    "name": "Téléphone d’urgence incendie",
+    "category": "Lutte contre l’incendie",
+    "code": "F006",
+    "license": "Public domain",
+    "author": "MaxxL",
+    "source": "https://commons.wikimedia.org/wiki/File:ISO_7010_F006.svg"
+  },
+  {
+    "id": "iso-F004",
+    "name": "Matériel de lutte contre l’incendie",
+    "category": "Lutte contre l’incendie",
+    "code": "F004",
+    "license": "Public domain",
+    "author": "MaxxL",
+    "source": "https://commons.wikimedia.org/wiki/File:ISO_7010_F004.svg"
+  },
+  {
+    "id": "iso-F003",
+    "name": "Échelle d’incendie",
+    "category": "Lutte contre l’incendie",
+    "code": "F003",
+    "license": "Public domain",
+    "author": "MaxxL",
+    "source": "https://commons.wikimedia.org/wiki/File:ISO_7010_F003.svg"
+  },
+  {
+    "id": "iso-F007",
+    "name": "Porte coupe-feu",
+    "category": "Lutte contre l’incendie",
+    "code": "F007",
+    "license": "CC0",
+    "author": "SicherheitsPerson",
+    "source": "https://commons.wikimedia.org/wiki/File:ISO_7010_F007.svg"
+  },
+  {
+    "id": "iso-F008",
+    "name": "Batterie fixe d’extinction",
+    "category": "Lutte contre l’incendie",
+    "code": "F008",
+    "license": "CC0",
+    "author": "Clemenspool",
+    "source": "https://commons.wikimedia.org/wiki/File:ISO_7010_F008.svg"
+  },
+  {
+    "id": "iso-F012",
+    "name": "Installation fixe d’extinction",
+    "category": "Lutte contre l’incendie",
+    "code": "F012",
+    "license": "CC0",
+    "author": "Clemenspool",
+    "source": "https://commons.wikimedia.org/wiki/File:ISO_7010_F012.svg"
+  },
+  {
+    "id": "iso-E003",
+    "name": "Premiers secours",
+    "category": "Premiers secours",
+    "code": "E003",
+    "license": "Public domain",
+    "author": "This vector image was created with Inkscape by MaxxL, and then manually edited by AnonMoos. The SVG code is valid. This icon was created with a text editor.Previous version had been created with Inkscape (1019 bytes) i now 19.53% of previous size Please do not replace the simplified code of this file with a version created with Inkscape or any other graphical vector graphics editor",
+    "source": "https://commons.wikimedia.org/wiki/File:ISO_7010_E003_-_First_aid_sign.svg"
+  },
+  {
+    "id": "iso-E010",
+    "name": "Défibrillateur (DEA)",
+    "category": "Premiers secours",
+    "code": "E010",
+    "license": "CC0",
+    "author": "M!dgard",
+    "source": "https://commons.wikimedia.org/wiki/File:ISO_7010_E010.svg"
+  },
+  {
+    "id": "iso-E004",
+    "name": "Téléphone d’urgence",
+    "category": "Premiers secours",
+    "code": "E004",
+    "license": "Public domain",
+    "author": "MaxxL",
+    "source": "https://commons.wikimedia.org/wiki/File:ISO_7010_E004.svg"
+  },
+  {
+    "id": "iso-E009",
+    "name": "Médecin",
+    "category": "Premiers secours",
+    "code": "E009",
+    "license": "Public domain",
+    "author": "MaxxL",
+    "source": "https://commons.wikimedia.org/wiki/File:ISO_7010_E009.svg"
+  },
+  {
+    "id": "iso-E011",
+    "name": "Lave-œil",
+    "category": "Premiers secours",
+    "code": "E011",
+    "license": "Public domain",
+    "author": "MaxxL",
+    "source": "https://commons.wikimedia.org/wiki/File:ISO_7010_E011.svg"
+  },
+  {
+    "id": "iso-E012",
+    "name": "Douche de sécurité",
+    "category": "Premiers secours",
+    "code": "E012",
+    "license": "Public domain",
+    "author": "Unknown authorUnknown author Vectorization: MaxxL",
+    "source": "https://commons.wikimedia.org/wiki/File:ISO_7010_E012.svg"
+  },
+  {
+    "id": "iso-E013",
+    "name": "Civière",
+    "category": "Premiers secours",
+    "code": "E013",
+    "license": "Public domain",
+    "author": "MaxxL",
+    "source": "https://commons.wikimedia.org/wiki/File:ISO_7010_E013.svg"
+  },
+  {
+    "id": "iso-E020",
+    "name": "Bouton d’arrêt d’urgence",
+    "category": "Premiers secours",
+    "code": "E020",
+    "license": "CC0",
+    "author": "Clemenspool",
+    "source": "https://commons.wikimedia.org/wiki/File:ISO_7010_E020.svg"
+  },
+  {
+    "id": "iso-P020",
+    "name": "Ascenseur interdit en cas d’incendie",
+    "category": "Interdictions et dangers",
+    "code": "P020",
+    "license": "Public domain",
+    "author": "ISO",
+    "source": "https://commons.wikimedia.org/wiki/File:ISO_7010_P020.svg"
+  },
+  {
+    "id": "iso-P002",
+    "name": "Interdiction de fumer",
+    "category": "Interdictions et dangers",
+    "code": "P002",
+    "license": "Public domain",
+    "author": "ISO",
+    "source": "https://commons.wikimedia.org/wiki/File:ISO_7010_P002.svg"
+  },
+  {
+    "id": "iso-P003",
+    "name": "Flamme nue interdite",
+    "category": "Interdictions et dangers",
+    "code": "P003",
+    "license": "Public domain",
+    "author": "ISO",
+    "source": "https://commons.wikimedia.org/wiki/File:ISO_7010_P003.svg"
+  },
+  {
+    "id": "iso-P004",
+    "name": "Passage interdit aux piétons",
+    "category": "Interdictions et dangers",
+    "code": "P004",
+    "license": "Public domain",
+    "author": "ISO",
+    "source": "https://commons.wikimedia.org/wiki/File:ISO_7010_P004.svg"
+  },
+  {
+    "id": "iso-W012",
+    "name": "Danger électrique",
+    "category": "Interdictions et dangers",
+    "code": "W012",
+    "license": "Public domain",
+    "author": "MaxxL",
+    "source": "https://commons.wikimedia.org/wiki/File:ISO_7010_W012.svg"
+  },
+  {
+    "id": "iso-W021",
+    "name": "Matières inflammables",
+    "category": "Interdictions et dangers",
+    "code": "W021",
+    "license": "Public domain",
+    "author": "MaxxL",
+    "source": "https://commons.wikimedia.org/wiki/File:ISO_7010_W021.svg"
+  },
+  {
+    "id": "iso-W001",
+    "name": "Danger général",
+    "category": "Interdictions et dangers",
+    "code": "W001",
+    "license": "Public domain",
+    "author": "Maxxl2",
+    "source": "https://commons.wikimedia.org/wiki/File:ISO_7010_W001.svg"
+  }
+]
