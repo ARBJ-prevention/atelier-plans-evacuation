@@ -1,5 +1,11 @@
 # Journal des versions
 
+## 2.0.13 — novembre 2026
+- **Avancer / Reculer d'un cran** (ruban Accueil › Organiser, panneau Actions, Ctrl+Page préc. / Ctrl+Page suiv.) : la forme passe juste devant ou derrière l'élément qu'elle chevauche, y compris sous les murs du calque Bâtiment, pour placer un fond de couleur derrière le plan.
+- **Limiter au bâtiment** (panneau Actions d'une forme ou d'une zone) : une forme dessinée plus grande que le plan est découpée au nu extérieur des façades, les portes, fenêtres et petites ouvertures étant refermées ; elle passe en fond du calque Bâtiment.
+- Les murs s'accrochent au nu des gros murs (façade, murs importés épais), avec des repères affichés pendant le tracé.
+- Une porte ou une fenêtre déposée sur un mur passe au-dessus des murs au lieu de rester cachée dessous ; les ouvertures s'accrochent aux murs même sans le magnétisme de la grille (Alt pour une pose libre).
+
 ## 2.0.12 — novembre 2026
 - **Plan redessiné plus propre** à l'import d'un DXF ou d'un DWG : murs continus au droit des portes et fenêtres, poteaux et petits morceaux supprimés, façade plus épaisse que les murs intérieurs et les cloisons, angles et raccords en T rejoints, portes et fenêtres calées dans leur mur, portes coupe-feu reconnues (« E.i. 30' » → EI 30), fenêtres parasites écartées.
 - **Tout l'intérieur du bâtiment reçoit une zone** : les pièces vont jusqu'aux murs, les couloirs et dégagements sans nom sont remplis, les petits locaux fermés (WC, casiers, gaines) rejoignent la pièce voisine, et les espaces fermés seulement par une menuiserie (sas, portail, rampe) ne restent plus vides.
