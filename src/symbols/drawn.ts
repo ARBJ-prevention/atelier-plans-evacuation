@@ -71,7 +71,7 @@ const exitLuminaire = `
 
 export const DRAWN_SYMBOLS: SymbolDef[] = [
   // ── Évacuation ─────────────────────────────────────────────────────────────
-  own('baes', 'Bloc d’éclairage de sécurité (BAES)', CAT.evac, exitLuminaire),
+  own('baes', 'Bloc d’éclairage de sécurité / de secours (BAES)', CAT.evac, exitLuminaire),
   own('baes-ambiance', 'Éclairage d’ambiance (anti-panique)', CAT.evac, `
     <rect x="6" y="28" width="88" height="44" rx="6" fill="${W}" stroke="${GREEN}" stroke-width="6"/>
     <circle cx="50" cy="50" r="10" fill="${GREEN}"/>
