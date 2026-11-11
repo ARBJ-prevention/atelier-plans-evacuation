@@ -47,6 +47,8 @@ const P: Record<string, string> = {
   distV: 'M4 4 H20 M4 20 H20 M8 9 H16 V15 H8 Z',
   front: 'M8 8 H20 V20 H8 Z M4 4 H14 V8 M4 4 V14 H8',
   back: 'M4 4 H16 V16 H4 Z M20 8 V20 H8 V16',
+  forward: 'M9 9 H20 V20 H9 Z M4 4 H14 V9 M4 4 V14 H9 M14.5 17 V12 M12.5 14 L14.5 12 L16.5 14',
+  backward: 'M4 4 H15 V15 H4 Z M20 9 V20 H9 V15 M9.5 7 V12 M7.5 10 L9.5 12 L11.5 10',
   help: 'M12 3 A9 9 0 1 0 12.01 3 M9.5 9.5 A2.5 2.5 0 1 1 12 12 V14 M12 17 V17.5',
   image: 'M3 5 H21 V19 H3 Z M7 9 A1.5 1.5 0 1 0 7.01 9 M3 17 L9 12 L13 15 L16 12 L21 16',
   warning: 'M12 3 L22 20 H2 Z M12 9 V14 M12 17 V17.5',

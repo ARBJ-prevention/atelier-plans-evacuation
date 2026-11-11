@@ -139,7 +139,7 @@ function lineIntersection(p: P, u: P, q: P, v: P): P | null {
 }
 
 /** Simplification de Douglas-Peucker (polygone fermé). */
-function simplify(pts: P[], tol: number): P[] {
+export function simplify(pts: P[], tol: number): P[] {
   if (pts.length < 4) return pts;
   const ring = [...pts, pts[0]];
   const rdp = (a: number, b: number, out: P[]) => {
@@ -161,7 +161,7 @@ function simplify(pts: P[], tol: number): P[] {
   return out;
 }
 
-function polygonAreaAbs(p: P[]): number {
+export function polygonAreaAbs(p: P[]): number {
   let a = 0;
   for (let i = 0; i < p.length; i++) { const q = p[(i + 1) % p.length]; a += p[i][0] * q[1] - q[0] * p[i][1]; }
   return Math.abs(a / 2);
@@ -1253,7 +1253,7 @@ function closeRegion(region: Uint8Array, cells: number[], W: number, H: number, 
 }
 
 /** Contour extérieur d'une région de cellules (coins de grille), plus grande boucle. */
-function traceRegion(region: Uint8Array, W: number, H: number): P[] {
+export function traceRegion(region: Uint8Array, W: number, H: number): P[] {
   const next = new Map<number, number[]>();
   const key = (x: number, y: number) => y * (W + 1) + x;
   const edge = (ax: number, ay: number, bx: number, by: number) => {

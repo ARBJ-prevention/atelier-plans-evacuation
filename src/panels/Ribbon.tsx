@@ -113,6 +113,8 @@ export function Ribbon({ onPrintPreview, onQuickExport }: { onPrintPreview(): vo
               <Small icon="group" label="Dégrouper" onClick={() => S().ungroupSelection()} disabled={!sel} />
               <Small icon="front" label="Premier plan" onClick={() => S().reorderSelection('front')} disabled={!sel} />
               <Small icon="back" label="Arrière-plan" onClick={() => S().reorderSelection('back')} disabled={!sel} />
+              <Small icon="forward" label="Avancer" title="Avancer d’un cran (Ctrl+Page préc.)" onClick={() => S().reorderSelection('forward')} disabled={!sel} />
+              <Small icon="backward" label="Reculer" title="Reculer d’un cran, y compris sous les éléments des autres calques (Ctrl+Page suiv.)" onClick={() => S().reorderSelection('backward')} disabled={!sel} />
               <Small icon="rotate" label="Pivoter 90°" onClick={() => S().rotateSelection(90)} disabled={!sel} />
               <Small icon="flipH" label="Retourner ↔" onClick={() => S().flipSelection('h')} disabled={!sel} />
               <Small icon="flipV" label="Retourner ↕" onClick={() => S().flipSelection('v')} disabled={!sel} />

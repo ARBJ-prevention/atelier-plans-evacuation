@@ -1,6 +1,7 @@
 import { produce, type Draft } from 'immer';
 import { create } from 'zustand';
-import { newProject, uid } from '../model/defaults';
+import { LAYER_ORDER, makeElement, newProject, uid } from '../model/defaults';
+import { clipToBuilding, outlineOf } from '../services/footprint';
 import {
   DEFAULT_SYMBOL_WALL_GAP, elementBounds, isVisibleInVariant, rectCenter, rotateElementAround, snapSymbolToWalls, translateElement, unionRects,
 } from '../model/geometry';
@@ -125,7 +126,9 @@ export interface EditorState {
   ungroupSelection(): void;
   alignSelection(kind: 'left' | 'hcenter' | 'right' | 'top' | 'vcenter' | 'bottom' | 'hdist' | 'vdist'): void;
   rotateSelection(deg: number): void;
-  reorderSelection(where: 'front' | 'back'): void;
+  reorderSelection(where: 'front' | 'back' | 'forward' | 'backward'): void;
+  /** Découpe les formes / zones sélectionnées selon l'emprise du bâtiment (intérieur des façades). */
+  clipSelectionToBuilding(): void;
   nudgeSelection(dx: number, dy: number): void;
   flipSelection(axis: 'h' | 'v'): void;
   toggleLockSelection(): void;
@@ -411,11 +414,93 @@ export const useStore = create<EditorState>((set, get) => ({
 
   reorderSelection(where) {
     const ids = new Set(get().selection);
+    if (!ids.size) return;
+    if (where === 'front' || where === 'back') {
+      get().mutateFloor((fd) => {
+        const sel = fd.elements.filter((e) => ids.has(e.id));
+        const rest = fd.elements.filter((e) => !ids.has(e.id));
+        fd.elements = where === 'front' ? [...rest, ...sel] : [...sel, ...rest];
+      });
+      return;
+    }
+    // Avancer / Reculer d'un cran : l'ordre d'affichage réel est « calque puis
+    // position dans le tableau ». On fait passer la sélection juste derrière
+    // (ou devant) le prochain élément visible qui la chevauche, quitte à changer
+    // de calque (ex. une annotation qui passe sous les murs du Bâtiment).
+    const f = currentFloor(get());
+    if (!f) return;
+    const variant = currentVariantId(get());
+    const lockedLayers = new Set(f.layers.filter((l) => l.locked || !l.visible).map((l) => l.id));
+    const rank = (l: string) => { const i = LAYER_ORDER.indexOf(l as any); return i < 0 ? LAYER_ORDER.length : i; };
+    const order = f.elements.map((e, i) => ({ e, i })).sort((a, b) => rank(a.e.layer) - rank(b.e.layer) || a.i - b.i).map((x) => x.e);
+    const sel = order.filter((e) => ids.has(e.id));
+    if (!sel.length) return;
+    const box = unionRects(sel.map((e) => elementBounds(e)))!;
+    const overlaps = (e: Element) => {
+      const r = elementBounds(e);
+      return r.x <= box.x + box.w && box.x <= r.x + r.w && r.y <= box.y + box.h && box.y <= r.y + r.h;
+    };
+    const candidate = (e: Element) => !ids.has(e.id) && isVisibleInVariant(e, variant) && !lockedLayers.has(e.layer);
+    const back = where === 'backward';
+    const positions = sel.map((e) => order.indexOf(e));
+    const start = back ? Math.min(...positions) : Math.max(...positions);
+    let target: Element | undefined;
+    let fallback: Element | undefined;
+    for (let k = start + (back ? -1 : 1); k >= 0 && k < order.length; k += back ? -1 : 1) {
+      const e = order[k];
+      if (!candidate(e)) continue;
+      fallback ??= e;
+      if (overlaps(e)) { target = e; break; }
+    }
+    target ??= fallback;
+    if (!target) return;
+    const tid = target.id;
+    const tLayer = target.layer;
     get().mutateFloor((fd) => {
-      const sel = fd.elements.filter((e) => ids.has(e.id));
+      const moved = fd.elements.filter((e) => ids.has(e.id)).map((e) => (e.layer === tLayer ? e : { ...e, layer: tLayer }));
       const rest = fd.elements.filter((e) => !ids.has(e.id));
-      fd.elements = where === 'front' ? [...rest, ...sel] : [...sel, ...rest];
+      const ti = rest.findIndex((e) => e.id === tid);
+      if (ti < 0) return;
+      rest.splice(back ? ti : ti + 1, 0, ...(moved as any));
+      fd.elements = rest;
     });
+  },
+
+  clipSelectionToBuilding() {
+    const f = currentFloor(get());
+    if (!f) return;
+    const variant = currentVariantId(get());
+    const ids = new Set(get().selection);
+    const results = new Map<string, Element>();
+    for (const e of f.elements) {
+      if (!ids.has(e.id) || e.locked) continue;
+      const outline = outlineOf(e);
+      if (!outline) continue;
+      const pts = clipToBuilding(f, variant, outline, e.id);
+      if (!pts) continue;
+      const src = e as any;
+      const base = {
+        kind: 'zone' as const, points: pts, layer: 'building' as const,
+        fill: src.fill, fillOpacity: src.fillOpacity, pattern: src.pattern, patternColor: src.patternColor,
+        stroke: src.stroke, strokeWidth: src.strokeWidth, dash: src.dash,
+        opacity: src.opacity, shadow: src.shadow, variantId: src.variantId, excludedVariantIds: src.excludedVariantIds, groupId: src.groupId,
+      };
+      const next = e.type === 'area'
+        ? { ...e, ...base, kind: (e as any).kind, id: e.id }
+        : { ...makeElement('area', { ...base, label: src.text ?? '', labelSize: src.textSize ?? 16, labelColor: src.textColor ?? '#3b4754' }), id: e.id };
+      results.set(e.id, next as Element);
+    }
+    if (!results.size) {
+      get().toast('Aucune forme à découper : sélectionnez un rectangle, une ellipse ou une zone qui chevauche des murs.', 'info');
+      return;
+    }
+    get().mutateFloor((fd) => {
+      const moved = fd.elements.filter((e) => results.has(e.id)).map((e) => results.get(e.id)! as any);
+      const rest = fd.elements.filter((e) => !results.has(e.id));
+      // fond du bâtiment : derrière les murs et les pièces
+      fd.elements = [...moved, ...rest];
+    });
+    get().toast(results.size > 1 ? `${results.size} formes limitées au bâtiment.` : 'Forme limitée à l’intérieur du bâtiment.', 'success');
   },
 
   flipSelection(axis) {

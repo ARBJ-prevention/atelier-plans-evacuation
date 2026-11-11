@@ -167,14 +167,27 @@ function MultiProps({ els }: { els: Element[] }) {
 
 function CommonActions() {
   const S = useStore.getState;
+  const canClip = useStore((s) => {
+    const f = currentFloor(s);
+    if (!f) return false;
+    return f.elements.some((e) => s.selection.includes(e.id) && (e.type === 'area' || (e.type === 'shape' && e.shape !== 'line' && e.shape !== 'arrow')));
+  });
   return (
     <div className="actions-grid">
+      {canClip && (
+        <button className="btn small" style={{ gridColumn: '1 / -1' }} onClick={() => S().clipSelectionToBuilding()}
+          title="Ne garde que la partie de la forme située à l’intérieur des façades (les ouvertures sont refermées)">
+          <Icon name="building" size={15} /> Limiter au bâtiment
+        </button>
+      )}
       <button className="btn small" onClick={() => S().rotateSelection(-90)} title="Pivoter de 90° à gauche"><Icon name="rotate" size={15} /> −90°</button>
       <button className="btn small" onClick={() => S().rotateSelection(90)} title="Pivoter de 90° à droite"><Icon name="rotate" size={15} /> +90°</button>
       <button className="btn small" onClick={() => S().flipSelection('h')}><Icon name="flipH" size={15} /> Miroir ↔</button>
       <button className="btn small" onClick={() => S().flipSelection('v')}><Icon name="flipV" size={15} /> Miroir ↕</button>
       <button className="btn small" onClick={() => S().reorderSelection('front')}><Icon name="front" size={15} /> Devant</button>
       <button className="btn small" onClick={() => S().reorderSelection('back')}><Icon name="back" size={15} /> Derrière</button>
+      <button className="btn small" onClick={() => S().reorderSelection('forward')} title="Avancer d’un cran"><Icon name="forward" size={15} /> Avancer</button>
+      <button className="btn small" onClick={() => S().reorderSelection('backward')} title="Reculer d’un cran (passe sous les autres calques)"><Icon name="backward" size={15} /> Reculer</button>
       <button className="btn small" onClick={() => S().duplicateSelection()}><Icon name="copy" size={15} /> Dupliquer</button>
       <button className="btn small danger" onClick={() => S().deleteSelection()}><Icon name="trash" size={15} /> Supprimer</button>
     </div>

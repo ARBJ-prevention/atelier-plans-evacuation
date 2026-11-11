@@ -190,7 +190,8 @@ export function App() {
       }
       if ((e.key === 'PageUp' || e.key === 'PageDown') && s.selection.length) {
         e.preventDefault();
-        s.reorderSelection(e.key === 'PageUp' ? 'front' : 'back');
+        const up = e.key === 'PageUp';
+        s.reorderSelection(e.ctrlKey || e.metaKey ? (up ? 'forward' : 'backward') : (up ? 'front' : 'back'));
         return;
       }
       if (e.key.startsWith('Arrow') && s.selection.length) {
