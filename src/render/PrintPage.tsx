@@ -4,7 +4,7 @@ import { floorContentBounds, isVisibleInVariant, usedSymbolIds } from '../model/
 import type { AreaElement, Building, CustomSymbol, Floor, PageSetup, RouteElement, SymbolElement, ValidationStatus, WallElement } from '../model/types';
 import { FONT, symbolName, SymbolGraphic } from './ElementView';
 import { FloorDrawing } from './FloorDrawing';
-import { computeLayout, frameOn, frameStroke, horizonNight, mixHex, niceScaleBarMeters, themeColor, wrapText, type PageLayout } from './layout';
+import { computeLayout, frameOn, frameStroke, horizonNight, INSTRUCTION_FONT, instructionLines, instructionsHeight, mixHex, niceScaleBarMeters, themeColor, wrapText, type PageLayout } from './layout';
 
 export const STATUS_LABEL: Record<ValidationStatus, string> = {
   draft: 'Brouillon',
@@ -14,20 +14,26 @@ export const STATUS_LABEL: Record<ValidationStatus, string> = {
 const STATUS_COLOR: Record<ValidationStatus, string> = { draft: '#6b7a89', to_validate: '#c27400', validated: '#00843d' };
 const FIRE = '#d52b1e';
 const SAFE = '#00843d';   // vert sécurité (évacuation)
+const FIRE_INK = '#a1261e';
+const SAFE_INK = '#00663a';
+
+function safetyTint(color: string, T: PageLayout['theme']) {
+  const tint = T.gradients || T.cardStyle === 'header' ? 0.89 : 0.94;
+  return mixHex(color, '#ffffff', tint);
+}
 
 /** Dégradés du thème Horizon : identifiants propres à la page (plusieurs pages dans un même PDF). */
-type GradKind = 'fire' | 'evac' | 'accent' | 'ink';
+type GradKind = 'fire' | 'evac' | 'accent';
 interface Grads { uid: string; n: number }
 function gradStops(kind: GradKind, accent: string): [string, string, string] {
   if (kind === 'fire') return ['#7f1610', FIRE, '#ee5b3f'];
   if (kind === 'evac') return ['#063f22', SAFE, '#34ad6c'];
-  if (kind === 'ink') return ['#0c1622', '#25364a', '#4a5d73'];
   return [mixHex(accent, '#0c1622', 0.5), accent, mixHex(accent, '#ffffff', 0.25)];
 }
 function GradDefs({ g, accent }: { g: Grads; accent: string }) {
   return (
     <>
-      {(['fire', 'evac', 'accent', 'ink'] as GradKind[]).map((kind) => {
+      {(['fire', 'evac', 'accent'] as const).map((kind) => {
         const [a, b, c] = gradStops(kind, accent);
         return (
           <linearGradient key={kind} id={`${g.uid}-g-${kind}`} x1="0" y1="0" x2="1" y2="0.6">
@@ -111,7 +117,7 @@ export function PrintPage({ building, floor, variantId, customSymbols, page = fl
       <rect x={L.drawing.x} y={L.drawing.y} width={L.drawing.w} height={L.drawing.h} rx={T.planRadius} fill={page.planBackground || '#ffffff'} />
       <g clipPath={`url(#${clipId})`}>
         <g transform={`translate(${L.tx} ${L.ty}) scale(${L.k})`}>
-          <FloorDrawing floor={floor} variantId={variantId} customSymbols={customSymbols} />
+          <FloorDrawing floor={floor} variantId={variantId} customSymbols={customSymbols} idPrefix={`print-${uniqueKey}-`} />
         </g>
         {page.showWatermark && status !== 'validated' && (
           <text x={L.drawing.x + L.drawing.w / 2} y={L.drawing.y + L.drawing.h / 2} textAnchor="middle"
@@ -128,7 +134,7 @@ export function PrintPage({ building, floor, variantId, customSymbols, page = fl
       {page.showScaleBar && floor.unitsPerMeter > 0 && <ScaleBar L={L} floor={floor} page={page} />}
       {page.showNorth && <North L={L} angle={page.northAngle} ink={T.ink} />}
 
-      {L.side && <Side L={L} page={page} floor={floor} variantId={variantId} customSymbols={customSymbols} accent={accent} numbersInHeader={numbersInHeader} grads={grads} />}
+      {L.side && <Side L={L} page={page} floor={floor} variantId={variantId} customSymbols={customSymbols} accent={accent} grads={grads} />}
       {L.footer && <Footer L={L} page={page} floor={floor} building={building} accent={accent} />}
       {L.footer && frameOn(page, 'footer') && T.footer !== 'capsule' && T.footer !== 'table' && (
         // Cartouche sans cadre dans le thème, encadré à la demande
@@ -344,16 +350,18 @@ function North({ L, angle, ink }: { L: PageLayout; angle: number; ink: string })
   );
 }
 
-function Card({ x, y, w, h, T, title, accent, index, framed, grads, children }: {
+function Card({ x, y, w, h, T, title, accent, index, framed, grads, safety, children }: {
   x: number; y: number; w: number; h: number; T: PageLayout['theme']; title: string; accent: string; index?: number;
-  framed: boolean; grads: Grads | null; children?: React.ReactNode;
+  framed: boolean; grads: Grads | null; safety?: boolean; children?: React.ReactNode;
 }) {
   const style = T.cardStyle ?? 'bar';
   const stroke = frameStroke(T, accent, 'legend');
   const border = framed ? stroke.color : '';
   const sw = stroke.w;
   const label = T.titleUpper ? title.toUpperCase() : title;
-  const frame = <rect x={x} y={y} width={w} height={h} rx={T.cardRadius} fill={themeColor(T.cardBg, accent) || '#ffffff'} stroke={border || 'none'} strokeWidth={sw} />;
+  const highlight = safety ? SAFE_INK : accent;
+  const background = safety ? safetyTint(SAFE, T) : themeColor(T.cardBg, accent) || '#ffffff';
+  const frame = <rect x={x} y={y} width={w} height={h} rx={T.cardRadius} fill={background} stroke={border || 'none'} strokeWidth={sw} />;
   if (style === 'pill') {
     // Horizon : carte teintée, titre dans une pastille d'accent
     const tw = Math.min(w - 6, label.length * 1.85 + 7.5);
@@ -361,8 +369,8 @@ function Card({ x, y, w, h, T, title, accent, index, framed, grads, children }: 
       <g>
         {frame}
         {grads
-          ? <GradShape g={grads} kind="accent" x={x + 3} y={y + 2.5} w={tw} h={5.4} rx={2.7} />
-          : <rect x={x + 3} y={y + 2.5} width={tw} height={5.4} rx={2.7} fill={accent} />}
+          ? <GradShape g={grads} kind={safety ? 'evac' : 'accent'} x={x + 3} y={y + 2.5} w={tw} h={5.4} rx={2.7} />
+          : <rect x={x + 3} y={y + 2.5} width={tw} height={5.4} rx={2.7} fill={highlight} />}
         <circle cx={x + 5.9} cy={y + 5.2} r={0.75} fill="#fff" />
         <text x={x + 7.6} y={y + 6.25} fontFamily={tf('Bahnschrift')} fontSize={3.1} fontWeight={600} fill="#fff" letterSpacing={0.15}>{fit(label, tw - 6.5, 3.1)}</text>
         {children}
@@ -376,7 +384,7 @@ function Card({ x, y, w, h, T, title, accent, index, framed, grads, children }: 
       <g>
         {frame}
         <rect x={x} y={y} width={w} height={0.9} fill={T.ink} />
-        <text x={x} y={y + 6.6} fontFamily={tf('Bahnschrift')} fontSize={3.6} fontWeight={700} fill={accent}>{num}</text>
+        <text x={x} y={y + 6.6} fontFamily={tf('Bahnschrift')} fontSize={3.6} fontWeight={700} fill={highlight}>{num}</text>
         <text x={x + 7.4} y={y + 6.6} fontFamily={tf('Bahnschrift')} fontSize={3} fontWeight={700} fill={T.ink} letterSpacing={0.55}>{fit(label.toUpperCase(), w - 8, 3.3)}</text>
         {children}
       </g>
@@ -384,7 +392,7 @@ function Card({ x, y, w, h, T, title, accent, index, framed, grads, children }: 
   }
   if (style === 'header') {
     // Bandeau de titre plein en haut du cadre
-    const head = themeColor(T.cardHead, accent) || accent;
+    const head = safety && T.cardHead !== 'accent' ? mixHex(SAFE, '#ffffff', 0.80) : themeColor(T.cardHead, highlight) || highlight;
     const r = T.cardRadius;
     return (
       <g>
@@ -403,7 +411,7 @@ function Card({ x, y, w, h, T, title, accent, index, framed, grads, children }: 
     return (
       <g>
         {frame}
-        <rect x={x + 3} y={y - 2.3} width={tw} height={5.2} rx={1} fill={border || accent} />
+        <rect x={x + 3} y={y - 2.3} width={tw} height={5.2} rx={1} fill={safety ? highlight : border || accent} />
         <text x={x + 6} y={y + 1.35} fontFamily={tf('Bahnschrift')} fontSize={3.2} fontWeight={700} fill="#fff" letterSpacing={0.3}>{fit(label, tw - 5, 3.2)}</text>
         {children}
       </g>
@@ -415,8 +423,8 @@ function Card({ x, y, w, h, T, title, accent, index, framed, grads, children }: 
     <g>
       {frame}
       {epure
-        ? <line x1={x + inset} y1={y + 7.6} x2={x + w - inset} y2={y + 7.6} stroke="#d4dae0" strokeWidth={0.25} />
-        : <rect x={x + 3} y={y + 3} width={1.1} height={4.2} rx={0.5} fill={accent} />}
+        ? <line x1={x + inset} y1={y + 7.6} x2={x + w - inset} y2={y + 7.6} stroke={safety ? SAFE_INK : '#d4dae0'} strokeWidth={0.25} />
+        : <rect x={x + 3} y={y + 3} width={1.1} height={4.2} rx={0.5} fill={highlight} />}
       <text x={x + (epure ? inset : 5.6)} y={y + 6.3} fontFamily={tf('Bahnschrift')} fontSize={3.7} fontWeight={600} fill={T.ink} letterSpacing={0.2}>
         {label}
       </text>
@@ -425,18 +433,17 @@ function Card({ x, y, w, h, T, title, accent, index, framed, grads, children }: 
   );
 }
 
-function Side({ L, page, floor, variantId, customSymbols, accent, numbersInHeader, grads }: {
-  L: PageLayout; page: PageSetup; floor: Floor; variantId: string; customSymbols: CustomSymbol[]; accent: string; numbersInHeader: boolean; grads: Grads | null;
-}) {
+function sideLayout(L: PageLayout, page: PageSetup, floor: Floor, variantId: string) {
   const S = L.side!;
   const T = L.theme;
   const G = T.gap;
   const vertical = S.h > S.w;
   const tb = floor.titleBlock;
   const ids = usedSymbolIds(floor, variantId);
-  const routes = floor.elements.filter((e): e is RouteElement => e.type === 'route' && (!e.variantId || e.variantId === variantId));
+  const layers = new Set(floor.layers.filter((l) => l.visible).map((l) => l.id));
+  const routes = floor.elements.filter((e): e is RouteElement => e.type === 'route' && layers.has(e.layer) && isVisibleInVariant(e, variantId));
   const kinds = Array.from(new Set(routes.map((r) => r.kind)));
-  const showNums = page.showEmergencyNumbers && !numbersInHeader && !!tb.emergencyNumbers;
+  const showNums = page.showEmergencyNumbers && !L.numbersInHeader && !!tb.emergencyNumbers;
 
   // Répartition des cartes
   const cards: { key: string; weight: number }[] = [];
@@ -447,8 +454,6 @@ function Side({ L, page, floor, variantId, customSymbols, accent, numbersInHeade
   const extras: string[] = [];
   if (page.showAerial) extras.push('aerial');
   if (page.showSketch) extras.push('sketch');
-  const nodes: React.ReactNode[] = [];
-  let cardNo = 0;                       // numéro de rubrique (thème Éditorial)
   const items = ids.length + kinds.length;
   // Une colonne si la légende tient (libellés complets) ; sinon deux colonnes, libellés sur deux lignes.
   let rowH = 6.6;
@@ -459,20 +464,27 @@ function Side({ L, page, floor, variantId, customSymbols, accent, numbersInHeade
     // Cadres de hauteur fixe (vue aérienne, croquis) en bas de colonne, au-dessus des numéros d'urgence.
     // Vue aérienne et croquis côte à côte (une seule rangée) pour laisser la place à la légende et aux consignes.
     const ew = extras.length === 2 ? (S.w - G) / 2 : S.w;
-    const extraH = extras.length ? Math.min(ew * (extras.length === 2 ? 0.95 : 0.62), (S.h - numsH) * (cards.length ? 0.26 : 0.45)) : 0;
+    const baseExtraH = extras.length ? Math.min(ew * (extras.length === 2 ? 0.95 : 0.62), (S.h - numsH) * (cards.length ? 0.26 : 0.45)) : 0;
+    const mainH = S.h - numsH - (showNums ? G : 0) - (extras.length ? G : 0);
+    const instrNeed = cards.some((card) => card.key === 'instr') ? instructionsHeight(tb.instructions, S.w) + 0.05 : 0;
+    const legendBudget = mainH - (cards.length === 2 ? G : 0) - instrNeed;
+    if (page.showLegend && 11 + items * rowH > Math.min(mainH * (cards.length === 2 ? 0.6 : 1), legendBudget - baseExtraH)) {
+      legendCols = 2;
+      rowH = legendBudget - Math.min(baseExtraH, 18) >= 11 + Math.ceil(items / 2) * 7.6 + 0.1 ? 7.6 : 6.6;
+    }
+    const legendNeed = page.showLegend ? 11 + Math.ceil(items / legendCols) * rowH + 0.1 : 0;
+    const extraH = instrNeed
+      ? Math.min(baseExtraH, Math.max(18, legendBudget - legendNeed))
+      : baseExtraH;
     const ey = S.y + S.h - numsH - (showNums ? G : 0) - extraH;
     extras.forEach((k, i) => { rects[k] = { x: S.x + i * (ew + G), y: ey, w: ew, h: extraH }; });
-    const avail = S.h - numsH - (showNums ? G : 0) - (extras.length ? extraH + G : 0);
-    const maxLegend = avail * (cards.length === 2 ? 0.6 : 1);
-    if (11 + items * rowH > maxLegend) { legendCols = 2; rowH = 7.6; }
-    const legendNeed = 11 + Math.ceil(items / legendCols) * rowH + 1;
+    const avail = mainH - extraH;
     if (cards.length === 2) {
-      const lh = Math.min(legendNeed, maxLegend);
+      const lh = Math.min(legendNeed, Math.max(avail * 0.36, avail - G - instrNeed));
       Object.assign(rects, { legend: { x: S.x, y: S.y, w: S.w, h: lh }, instr: { x: S.x, y: S.y + lh + G, w: S.w, h: avail - lh - G } });
     } else if (cards[0]) rects[cards[0].key] = { x: S.x, y: S.y, w: S.w, h: avail };
     if (showNums) rects.nums = { x: S.x, y: S.y + S.h - numsH, w: S.w, h: numsH };
   } else {
-    const n = cards.length + (showNums ? 1 : 0);
     const numsW = showNums ? Math.min(60, S.w * 0.22) : 0;
     // Vue aérienne et croquis empilés dans une seule colonne.
     const extraW = extras.length ? Math.min(S.h * (extras.length === 2 ? 0.75 : 1.4), S.w * (cards.length ? 0.2 : 0.45)) : 0;
@@ -487,8 +499,64 @@ function Side({ L, page, floor, variantId, customSymbols, accent, numbersInHeade
       x += w + G;
     });
     if (showNums) rects.nums = { x: S.x + S.w - numsW, y: S.y, w: numsW, h: S.h };
-    void n;
   }
+  return { rects, ids, routes, kinds, items, vertical, rowH, legendCols };
+}
+
+function instructionLayout(text: string, rect: { y: number; w: number; h: number }) {
+  const entries: (ReturnType<typeof instructionLines>[number] & { y: number })[] = [];
+  let y = rect.y + 12;
+  for (const line of instructionLines(text, rect.w)) {
+    if (line.text) {
+      if (y > rect.y + rect.h - 2.5) return { entries, clipped: true };
+      entries.push({ ...line, y });
+    }
+    y += line.advance;
+  }
+  return { entries, clipped: false };
+}
+
+export type PrintIssue = 'marker-missing' | 'marker-multiple' | 'plan-clipped' | 'instructions-clipped';
+
+export const PRINT_ISSUE_LABEL: Record<PrintIssue, string> = {
+  'marker-missing': 'Repère « Vous êtes ici » absent de la page',
+  'marker-multiple': 'Plusieurs repères « Vous êtes ici » sur la page',
+  'plan-clipped': 'Plan rogné à l’échelle fixe',
+  'instructions-clipped': 'Consignes tronquées',
+};
+
+export function printIssues(floor: Floor, variantId: string, page = floor.page): PrintIssue[] {
+  const L = computeLayout(floor, variantId, page);
+  const issues: PrintIssue[] = [];
+  const { drawing, world, k, tx, ty } = L;
+  const markers = floor.elements.filter((e): e is SymbolElement => e.type === 'symbol' && e.symbolId === 'you-are-here'
+    && (e.opacity ?? 1) > 0 && isVisibleInVariant(e, variantId) && floor.layers.some((layer) => layer.id === e.layer && layer.visible))
+    .filter((e) => e.x * k + tx >= drawing.x && e.x * k + tx <= drawing.x + drawing.w
+      && e.y * k + ty >= drawing.y && e.y * k + ty <= drawing.y + drawing.h);
+  if (!markers.length) issues.push('marker-missing');
+  if (markers.length > 1) issues.push('marker-multiple');
+  if (page.scaleMode === 'fixed' && floor.unitsPerMeter > 0) {
+    const exceeds = world.x * k + tx < drawing.x - 0.01 || (world.x + world.w) * k + tx > drawing.x + drawing.w + 0.01
+      || world.y * k + ty < drawing.y - 0.01 || (world.y + world.h) * k + ty > drawing.y + drawing.h + 0.01;
+    if (exceeds) issues.push('plan-clipped');
+  }
+  if (L.side && page.showInstructions && floor.titleBlock.instructions.trim()) {
+    const { rects } = sideLayout(L, page, floor, variantId);
+    if (rects.instr && instructionLayout(floor.titleBlock.instructions, rects.instr).clipped) issues.push('instructions-clipped');
+  }
+  return issues;
+}
+
+function Side({ L, page, floor, variantId, customSymbols, accent, grads }: {
+  L: PageLayout; page: PageSetup; floor: Floor; variantId: string; customSymbols: CustomSymbol[]; accent: string; grads: Grads | null;
+}) {
+  const T = L.theme;
+  const tb = floor.titleBlock;
+  const layout = sideLayout(L, page, floor, variantId);
+  const { rects, ids, routes, kinds, items, vertical } = layout;
+  let { rowH, legendCols } = layout;
+  const nodes: React.ReactNode[] = [];
+  let cardNo = 0;
 
   if (rects.legend) {
     const r = rects.legend;
@@ -531,7 +599,7 @@ function Side({ L, page, floor, variantId, customSymbols, accent, numbersInHeade
       </g>,
     ));
     nodes.push(
-      <Card key="legend" {...r} T={T} index={++cardNo} framed={frameOn(page, 'legend')} grads={grads} title="Légende" accent={accent}>
+      <Card key="legend" {...r} T={T} index={++cardNo} framed={frameOn(page, 'legend')} grads={grads} title="Légende" accent={accent} safety>
         {entries.slice(0, perCol * cols).map((node, i) => {
           const c = Math.floor(i / perCol), row = i % perCol;
           return <g key={i} transform={`translate(${r.x + 3 + c * colW} ${r.y + 11.5 + row * rowH + rowH / 2 - 1})`}>{node}</g>;
@@ -545,46 +613,52 @@ function Side({ L, page, floor, variantId, customSymbols, accent, numbersInHeade
 
   if (rects.instr) {
     const r = rects.instr;
-    const fs = 2.75;
-    const lh = fs * 1.38;
-    const lines = wrapText(tb.instructions, r.w - 12, fs);
-    let y = r.y + 12;
+    const fs = INSTRUCTION_FONT;
+    const { entries, clipped } = instructionLayout(tb.instructions, r);
+    const sections: { top: number; headingBottom: number; bottom: number; color: string }[] = [];
     const out: React.ReactNode[] = [];
-    let i = 0;
-    for (const ln of lines) {
-      if (y > r.y + r.h - 2.5) { out.push(<text key="more" x={r.x + r.w - 2} y={r.y + r.h - 1.4} textAnchor="end" fontFamily={FONT} fontSize={2.1} fill={FIRE}>(texte tronqué)</text>); break; }
-      const heading = ln.length > 3 && ln === ln.toUpperCase() && /[A-ZÀ-Ý]/.test(ln);
+    let section: (typeof sections)[number] | undefined;
+    for (const [i, { text: ln, y, heading, startsSection }] of entries.entries()) {
       const num = ln.match(/^(\d+)[.)]\s+(.*)$/);
-      if (!ln.trim()) { y += lh * 0.5; continue; }
+      if (startsSection) {
+        const color = /INCENDIE|\bFEU\b/.test(heading) ? FIRE_INK : /ÉVACU|EVACU/.test(heading) ? SAFE_INK : T.ink;
+        section = { top: y - 3.15, headingBottom: y + 1.35, bottom: y + 1.6, color };
+        sections.push(section);
+      }
       if (heading) {
-        const fire = /INCENDIE|FEU/.test(ln), evac = /ÉVACU|EVACU/.test(ln);
-        const c = fire ? FIRE : evac ? accent : T.ink;
-        const hw = Math.min(r.w - 6, ln.length * fs * 0.62 + 5), hh = fs * 1.55, hr = T.cardRadius ? fs * 0.75 : 0;
+        if (section) section.headingBottom = y + 1.35;
         out.push(
-          <g key={i++}>
-            {grads
-              // Horizon : rouge incendie et vert évacuation en dégradé, avec reflets ronds
-              ? <GradShape g={grads} kind={fire ? 'fire' : evac ? 'evac' : 'ink'} x={r.x + 3} y={y - fs * 0.95} w={hw} h={hh} rx={hr} />
-              : <rect x={r.x + 3} y={y - fs * 0.95} width={hw} height={hh} rx={hr} fill={c} />}
-            <text x={r.x + 5.3} y={y + fs * 0.12} fontFamily={tf('Bahnschrift')} fontSize={fs * 0.92} fontWeight={600} fill="#fff" letterSpacing={0.25}>{ln}</text>
-          </g>,
+          <text key={i} x={r.x + 5.3} y={y} fontFamily={tf(T.titleFont)} fontSize={fs} fontWeight={700} fill="#fff" letterSpacing={0.12}>{ln}</text>,
         );
-        y += lh * 1.5;
       } else if (num) {
         out.push(
-          <g key={i++}>
-            <circle cx={r.x + 5} cy={y - fs * 0.33} r={fs * 0.62} fill="none" stroke={T.muted} strokeWidth={0.22} />
-            <text x={r.x + 5} y={y - fs * 0.06} textAnchor="middle" fontFamily={FONT} fontSize={fs * 0.72} fontWeight={700} fill={T.ink}>{num[1]}</text>
+          <g key={i}>
+            <circle cx={r.x + 5} cy={y - fs * 0.33} r={fs * 0.62} fill="#ffffff" stroke={section?.color ?? T.muted} strokeWidth={0.22} />
+            <text x={r.x + 5} y={y - fs * 0.06} textAnchor="middle" fontFamily={FONT} fontSize={fs * 0.72} fontWeight={700} fill={section?.color ?? T.ink}>{num[1]}</text>
             <text x={r.x + 7.6} y={y} fontFamily={FONT} fontSize={fs} fill={T.ink}>{num[2]}</text>
           </g>,
         );
-        y += lh;
       } else {
-        out.push(<text key={i++} x={r.x + 7.6} y={y} fontFamily={FONT} fontSize={fs} fill={T.ink}>{ln}</text>);
-        y += lh;
+        out.push(<text key={i} x={r.x + 7.6} y={y} fontFamily={FONT} fontSize={fs} fill={T.ink}>{ln}</text>);
       }
+      if (section) section.bottom = y + 1.6;
     }
-    nodes.push(<Card key="instr" {...r} T={T} index={++cardNo} framed={frameOn(page, 'instructions')} grads={grads} title="Consignes" accent={accent}>{out}</Card>);
+    if (clipped) out.push(<text key="more" x={r.x + r.w - 2} y={r.y + r.h - 1.4} textAnchor="end" fontFamily={FONT} fontSize={2.1} fill={FIRE}>(texte tronqué)</text>);
+    nodes.push(
+      <Card key="instr" {...r} T={T} index={++cardNo} framed={frameOn(page, 'instructions')} grads={grads} title="Consignes" accent={accent}>
+        {sections.map(({ top, headingBottom, bottom, color }) => {
+          const left = r.x + 1.8, right = r.x + r.w - 1.8;
+          const radius = Math.min(2, T.cardRadius);
+          return (
+            <g key={top}>
+              <rect x={left} y={top} width={right - left} height={bottom - top} rx={radius} fill={mixHex(color, '#fff', 0.79)} />
+              <path d={`M ${left} ${headingBottom} V ${top + radius} Q ${left} ${top} ${left + radius} ${top} H ${right - radius} Q ${right} ${top} ${right} ${top + radius} V ${headingBottom} Z`} fill={color} />
+            </g>
+          );
+        })}
+        {out}
+      </Card>,
+    );
   }
 
   if (rects.aerial) {

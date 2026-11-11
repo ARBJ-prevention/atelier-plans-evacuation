@@ -94,6 +94,8 @@ function createWindow() {
     },
   });
   if (!isSelfTest) win.maximize();
+  // Le titre de la fenêtre est piloté par app:set-title, indépendamment du titre du PDF.
+  win.on('page-title-updated', (e) => e.preventDefault());
   win.loadURL('app://bundle/index.html');
 
   // Aucune navigation externe ni ouverture de fenêtre depuis le contenu.
@@ -154,23 +156,85 @@ function createWindow() {
 }
 
 // ——— Rendu HTML -> PDF / impression ———
+function createRenderWindow() {
+  return new BrowserWindow({ show: false, webPreferences: { sandbox: true, javascript: false } });
+}
+
 async function withHtmlWindow(html, fn) {
   const dir = path.join(os.tmpdir(), 'atelier-evac');
-  fs.mkdirSync(dir, { recursive: true });
+  await fs.promises.mkdir(dir, { recursive: true });
   const file = path.join(dir, `rendu-${Date.now()}-${Math.random().toString(36).slice(2)}.html`);
-  fs.writeFileSync(file, html, 'utf8');
-  const w = new BrowserWindow({ show: false, webPreferences: { sandbox: true, javascript: false } });
+  const w = createRenderWindow();
   try {
+    await fs.promises.writeFile(file, html, 'utf8');
     await w.loadFile(file);
-    await new Promise((r) => setTimeout(r, 300));
     return await fn(w);
   } finally {
-    w.destroy();
+    if (!w.isDestroyed()) w.destroy();
     fs.rm(file, { force: true }, () => {});
   }
 }
 
-ipcMain.handle('render:pdf', async (_e, { html, paper, landscape, suggestedName, path: target }) => {
+let pdfQueue = Promise.resolve();
+
+// Exécuté dans un monde isolé du renderer déjà chargé par l'éditeur.
+async function mountPdfDocument(html) {
+  const source = new DOMParser().parseFromString(html, 'text/html');
+  const pages = document.createElement('div');
+  pages.id = 'evac-pdf-export';
+  pages.append(...source.body.children);
+
+  const style = document.createElement('style');
+  style.textContent = `
+    @media screen { #evac-pdf-export { display: none; } }
+    @media print {
+      html, body { height: auto; overflow: visible; }
+      body > :not(#evac-pdf-export) { display: none; }
+      #evac-pdf-export { font: medium serif; color: #000; -webkit-font-smoothing: auto; }
+      ${source.head.querySelector('style').textContent}
+    }`;
+  pages.prepend(style);
+  document.body.append(pages);
+
+  // Les fonds et logos intégrés doivent être décodés avant le passage en mode impression.
+  const urls = new Set(Array.from(pages.querySelectorAll('image'), (image) => image.getAttribute('href')));
+  await Promise.allSettled(Array.from(urls, (url) => {
+    const image = new Image();
+    image.src = url;
+    return image.decode();
+  }));
+  const previousTitle = document.title;
+  document.title = source.title;
+  return previousTitle;
+}
+
+function renderPdf(contents, html, paper, landscape) {
+  const task = pdfQueue.then(async () => {
+    const execute = (code) => contents.executeJavaScriptInIsolatedWorld(1001, [{ code }]);
+    let previousTitle;
+    try {
+      previousTitle = await execute(`(${mountPdfDocument})(${JSON.stringify(html)})`);
+      return await contents.printToPDF({
+        pageSize: paper,
+        landscape,
+        printBackground: true,
+        preferCSSPageSize: true,
+        margins: { top: 0, bottom: 0, left: 0, right: 0 },
+      });
+    } finally {
+      if (!contents.isDestroyed()) {
+        await execute(`
+          document.getElementById('evac-pdf-export')?.remove();
+          ${previousTitle === undefined ? '' : `document.title = ${JSON.stringify(previousTitle)};`}
+        `);
+      }
+    }
+  });
+  pdfQueue = task.then(() => {}, () => {});
+  return task;
+}
+
+ipcMain.handle('render:pdf', async (e, { html, paper, landscape, suggestedName, path: target }) => {
   let file = target;
   if (!file) {
     const r = await dialog.showSaveDialog(win, {
@@ -181,15 +245,20 @@ ipcMain.handle('render:pdf', async (_e, { html, paper, landscape, suggestedName,
     if (r.canceled || !r.filePath) return null;
     file = r.filePath;
   }
-  const data = await withHtmlWindow(html, (w) => w.webContents.printToPDF({
-    pageSize: paper,
-    landscape,
-    printBackground: true,
-    preferCSSPageSize: true,
-    margins: { top: 0, bottom: 0, left: 0, right: 0 },
-  }));
+  const data = await renderPdf(e.sender, html, paper, landscape);
   atomicWrite(file, data);
   return file;
+});
+
+ipcMain.handle('export:folder', async (_e, name) => {
+  const r = await dialog.showOpenDialog(win, { title: 'Choisir où créer le dossier des PDF', properties: ['openDirectory', 'createDirectory'] });
+  if (r.canceled || !r.filePaths[0]) return null;
+  const safeName = String(name).replace(/[<>:"/\\|?*\x00-\x1f]/g, '-').trim().replace(/[. ]+$/, '').slice(0, 90) || 'Plans d’évacuation';
+  for (let n = 1; ; n++) {
+    const target = path.join(r.filePaths[0], n === 1 ? safeName : `${safeName} (${n})`);
+    try { fs.mkdirSync(target); return target; }
+    catch (e) { if (e.code !== 'EEXIST') throw e; }
+  }
 });
 
 /** État du service Windows « Spouleur d'impression » : 'running' | 'stopped' | 'unknown'. */

@@ -2,7 +2,7 @@ import { getCountry } from './countries';
 import type {
   Building, Element, Floor, Layer, LayerId, PageSetup, Project, Shadow, TitleBlock, Variant,
 } from './types';
-import { FORMAT_ID, FORMAT_VERSION } from './types';
+import { BASE_FORMAT_VERSION, FORMAT_ID } from './types';
 
 export function uid(prefix = ''): string {
   const r = (globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2) + Date.now().toString(36))
@@ -114,7 +114,7 @@ export function newProject(name = 'Nouveau projet', country = 'BE'): Project {
   const now = new Date().toISOString();
   return {
     format: FORMAT_ID,
-    formatVersion: FORMAT_VERSION,
+    formatVersion: BASE_FORMAT_VERSION,
     id: uid('prj'),
     name,
     country,

@@ -8,11 +8,11 @@ import { ElementView } from './ElementView';
  * l'éditeur (interactive = true : ajoute les attributs de sélection) et par
  * les exports PDF / PNG / impression.
  */
-export function FloorDrawing({ floor, variantId, customSymbols, interactive = false }: {
-  floor: Floor; variantId: string; customSymbols: CustomSymbol[]; interactive?: boolean;
+export function FloorDrawing({ floor, variantId, customSymbols, interactive = false, idPrefix = '' }: {
+  floor: Floor; variantId: string; customSymbols: CustomSymbol[]; interactive?: boolean; idPrefix?: string;
 }) {
   const layer = (id: string) => floor.layers.find((l) => l.id === id)!;
-  const ctx = { floor, variantId, customSymbols };
+  const ctx = { floor, variantId, customSymbols, interactive, idPrefix };
   const bg = floor.background;
   const bgLayer = layer('background');
   return (

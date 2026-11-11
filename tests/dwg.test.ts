@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterAll, describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it, vi } from 'vitest';
 import { buildSampleDxf } from '../src/app/sampleDxf';
 import { decodeDxfBytes, flattenDxf, parseDxf } from '../src/services/dxf';
 
@@ -33,7 +33,9 @@ describe('conversion DWG (ODA File Converter)', () => {
       mkdirSync(join(root, 'ODA', v), { recursive: true });
       writeFileSync(join(root, 'ODA', v, 'ODAFileConverter.exe'), '');
     }
-    const found = dwg.findOdaConverter([root]);
+    let found: string | null;
+    for (const key of ['ProgramFiles', 'ProgramFiles(x86)', 'ProgramW6432', 'LOCALAPPDATA']) vi.stubEnv(key, undefined);
+    try { found = dwg.findOdaConverter([root]); } finally { vi.unstubAllEnvs(); }
     expect(found).toContain('25.4.0');
     expect(dwg.isOdaConverter(found!)).toBe(true);
     expect(dwg.isOdaConverter(join(root, 'ODA', 'Autre', 'ODAFileConverter.exe'))).toBe(true);

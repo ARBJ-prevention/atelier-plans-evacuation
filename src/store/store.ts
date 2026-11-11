@@ -2,7 +2,7 @@ import { produce, type Draft } from 'immer';
 import { create } from 'zustand';
 import { newProject, uid } from '../model/defaults';
 import {
-  elementBounds, rectCenter, rotateElementAround, translateElement, unionRects,
+  DEFAULT_SYMBOL_WALL_GAP, elementBounds, isVisibleInVariant, rectCenter, rotateElementAround, snapSymbolToWalls, translateElement, unionRects,
 } from '../model/geometry';
 import type { Building, Element, Floor, Project } from '../model/types';
 
@@ -10,7 +10,22 @@ export type Tool =
   | 'select' | 'pan' | 'wall' | 'room' | 'zone' | 'door' | 'stairs' | 'route'
   | 'text' | 'symbol' | 'calibrate' | 'legend' | 'window' | 'shape';
 
-export interface GridSettings { show: boolean; snap: boolean; size: number; style: 'lines' | 'dots'; intensity: number; majorEvery: number }
+export interface GridSettings {
+  show: boolean; snap: boolean; size: number; style: 'lines' | 'dots'; intensity: number; majorEvery: number;
+  symbolSnapEnabled: boolean; symbolWallGap: number;
+}
+
+export const MAX_SYMBOL_WALL_GAP = 50;
+const DEFAULT_GRID: GridSettings = {
+  show: true, snap: true, size: 10, style: 'lines', intensity: 0.75, majorEvery: 5,
+  symbolSnapEnabled: true, symbolWallGap: DEFAULT_SYMBOL_WALL_GAP,
+};
+
+function normalizeSymbolWallGap(value: unknown): number {
+  return typeof value === 'number' && Number.isFinite(value)
+    ? Math.max(1, Math.min(MAX_SYMBOL_WALL_GAP, Math.round(value)))
+    : DEFAULT_SYMBOL_WALL_GAP;
+}
 
 /** Préréglages des outils (choisis dans le ruban). */
 export interface ToolPresets {
@@ -29,16 +44,25 @@ export interface ToolPresets {
 
 const VIEW_KEY = 'evac.view.v2';
 function loadViewPrefs(): { grid: GridSettings; guides: boolean; rulers: boolean } {
-  const def = { grid: { show: true, snap: true, size: 10, style: 'lines' as const, intensity: 0.75, majorEvery: 5 }, guides: true, rulers: true };
+  const def = { grid: DEFAULT_GRID, guides: true, rulers: true };
   try {
     const raw = JSON.parse(localStorage.getItem(VIEW_KEY) || 'null');
-    return raw ? { ...def, ...raw, grid: { ...def.grid, ...raw.grid } } : def;
+    if (!raw) return def;
+    const { symbolSnapRange, ...grid } = raw.grid ?? {};
+    return {
+      ...def, ...raw,
+      grid: {
+        ...def.grid, ...grid,
+        symbolSnapEnabled: (grid.symbolSnapEnabled ?? def.grid.symbolSnapEnabled) && symbolSnapRange !== 0,
+        symbolWallGap: normalizeSymbolWallGap(grid.symbolWallGap),
+      },
+    };
   } catch { return def; }
 }
-export function saveViewPrefs(p: { grid: GridSettings; guides: boolean; rulers: boolean }) {
-  try { localStorage.setItem(VIEW_KEY, JSON.stringify(p)); } catch { /* stockage indisponible */ }
+export function saveViewPrefs({ grid, guides, rulers }: { grid: GridSettings; guides: boolean; rulers: boolean }) {
+  try { localStorage.setItem(VIEW_KEY, JSON.stringify({ grid, guides, rulers })); } catch { /* stockage indisponible */ }
 }
-const prefs = typeof localStorage !== 'undefined' ? loadViewPrefs() : { grid: { show: true, snap: true, size: 10, style: 'lines' as const, intensity: 0.75, majorEvery: 5 }, guides: true, rulers: true };
+const prefs = loadViewPrefs();
 
 export interface View { x: number; y: number; zoom: number }
 
@@ -72,7 +96,7 @@ export interface EditorState {
   loadProject(p: Project, path: string | null): void;
   closeProject(): void;
   mutate(fn: (d: Draft<Project>) => void, opts?: { history?: boolean; coalesce?: string }): void;
-  mutateFloor(fn: (f: Draft<Floor>, p: Draft<Project>) => void, opts?: { history?: boolean; keepValidation?: boolean; coalesce?: string }): void;
+  mutateFloor(fn: (f: Draft<Floor>, p: Draft<Project>) => void, opts?: { history?: boolean; keepValidation?: boolean; coalesce?: string; validationReason?: string }): void;
   beginLive(): void;
   undo(): void;
   redo(): void;
@@ -178,12 +202,13 @@ export const useStore = create<EditorState>((set, get) => ({
             f.titleBlock.status = 'to_validate';
             f.titleBlock.validatedAt = '';
             f.titleBlock.validatedBy = '';
+            f.titleBlock.validationReason = opts.validationReason;
             reset = true;
           }
         }
       }
     }, opts);
-    if (reset) get().toast('Plan modifié après validation : statut repassé à « À valider ».', 'warning');
+    if (reset) get().toast(`${opts.validationReason ?? 'Plan modifié après validation'} — statut repassé à « À valider ».`, 'warning');
   },
 
   /** À appeler au début d'un glisser : enregistre UN état dans l'historique. */
@@ -230,11 +255,12 @@ export const useStore = create<EditorState>((set, get) => ({
   select(ids, additive = false) {
     const f = currentFloor(get());
     if (!f) return;
+    const variant = currentVariantId(get());
     const expanded = new Set<string>();
     for (const id of ids) {
       const el = f.elements.find((e) => e.id === id);
-      if (!el) continue;
-      if (el.groupId) f.elements.filter((e) => e.groupId === el.groupId).forEach((e) => expanded.add(e.id));
+      if (!el || !isVisibleInVariant(el, variant)) continue;
+      if (el.groupId) f.elements.filter((e) => e.groupId === el.groupId && isVisibleInVariant(e, variant)).forEach((e) => expanded.add(e.id));
       else expanded.add(id);
     }
     if (additive) {
@@ -247,7 +273,12 @@ export const useStore = create<EditorState>((set, get) => ({
 
   setView(v) { set({ view: { ...get().view, ...v } }); },
   requestFit() { set({ fitRequest: get().fitRequest + 1 }); },
-  setGrid(g) { set({ grid: { ...get().grid, ...g } }); saveViewPrefs(get()); },
+  setGrid(g) {
+    const grid = { ...get().grid, ...g };
+    grid.symbolWallGap = normalizeSymbolWallGap(grid.symbolWallGap);
+    set({ grid });
+    saveViewPrefs(get());
+  },
   toggleGuides() { set({ guides: !get().guides }); saveViewPrefs(get()); },
   toggleRulers() { set({ rulers: !get().rulers }); saveViewPrefs(get()); },
   setPreset(p) { set({ presets: { ...get().presets, ...p } }); },
@@ -285,18 +316,26 @@ export const useStore = create<EditorState>((set, get) => ({
   cutSelection() { get().copySelection(); get().deleteSelection(); },
 
   paste() {
-    const { clipboard } = get();
+    const state = get();
+    const { clipboard } = state;
     if (!clipboard.length) return;
+    const variantId = currentVariantId(state);
     const groupMap = new Map<string, string>();
     const offset = 20;
     const els = clipboard.map((e) => {
       const n = translateElement({ ...e, id: uid('el'), locked: false }, offset, offset) as Element;
       if (n.groupId) { if (!groupMap.has(n.groupId)) groupMap.set(n.groupId, uid('grp')); n.groupId = groupMap.get(n.groupId); }
-      if (n.variantId) n.variantId = currentVariantId(get());
+      if (n.variantId) n.variantId = variantId;
+      delete n.excludedVariantIds;
       return n;
     });
     set({ clipboard: els.map((e) => ({ ...e })) }); // collages successifs décalés
-    get().addElements(els);
+    const floor = currentFloor(state);
+    const [first] = els;
+    const placed = state.grid.symbolSnapEnabled && floor && els.length === 1 && first.type === 'symbol'
+      ? [snapSymbolToWalls(floor, variantId, first, { gap: state.grid.symbolWallGap })]
+      : els;
+    state.addElements(placed);
   },
 
   duplicateSelection() { get().copySelection(); get().paste(); },

@@ -1,4 +1,6 @@
 import { newBuilding, newFloor, newVariant, uid } from '../model/defaults';
+import { createDisplayLocation } from '../app/actions';
+import { isVisibleInVariant } from '../model/geometry';
 import { cloneFloorWithNewIds } from '../model/serialize';
 import { STATUS_LABEL } from '../render/PrintPage';
 import { currentVariantId, useStore } from '../store/store';
@@ -67,17 +69,22 @@ export function ProjectPanel() {
 
   // Versions (emplacements « Vous êtes ici »)
   const floor = project.buildings.flatMap((b) => b.floors).find((f) => f.id === floorId);
-  const addVariant = async (duplicate: boolean) => {
+  const duplicateVariant = async () => {
     if (!floor) return;
-    const n = await promptDialog(duplicate ? 'Dupliquer la version' : 'Nouvelle version du plan', 'Nom de la version (ex. « Accueil », « Couloir B »)', `Version ${floor.variants.length + 1}`,
+    const n = await promptDialog('Dupliquer la version', 'Nom de la version (ex. « Accueil », « Couloir B »)', `Version ${floor.variants.length + 1}`,
       'Chaque version partage les éléments communs de l’étage et possède ses propres éléments (notamment l’emplacement « Vous êtes ici »).');
     if (!n) return;
     const v = newVariant(n);
     s().mutateFloor((f) => {
       f.variants.push(v);
-      if (duplicate) {
-        const own = f.elements.filter((e) => e.variantId === variantId);
-        f.elements.push(...own.map((e) => ({ ...JSON.parse(JSON.stringify(e)), id: uid('el'), variantId: v.id })));
+      const own = floor.elements.filter((e) => e.variantId === variantId);
+      const groups = new Map<string, string>();
+      for (const element of own) {
+        if (element.groupId && !groups.has(element.groupId)) groups.set(element.groupId, uid('grp'));
+        f.elements.push({ ...structuredClone(element), id: uid('el'), groupId: element.groupId ? groups.get(element.groupId) : undefined, variantId: v.id });
+      }
+      for (const element of f.elements) {
+        if (!element.variantId && !isVisibleInVariant(element, variantId)) element.excludedVariantIds!.push(v.id);
       }
     });
     s().setVariant(v.id);
@@ -92,7 +99,13 @@ export function ProjectPanel() {
     if (!floor || floor.variants.length <= 1) return;
     const v = floor.variants.find((x) => x.id === variantId)!;
     if (!(await confirmDialog('Supprimer la version', `Supprimer la version « ${v.name} » et ses éléments propres ?`, 'Supprimer', true))) return;
-    s().mutateFloor((f) => { f.variants = f.variants.filter((x) => x.id !== v.id); f.elements = f.elements.filter((e) => e.variantId !== v.id); });
+    s().mutateFloor((f) => {
+      f.variants = f.variants.filter((x) => x.id !== v.id);
+      f.elements = f.elements.filter((e) => e.variantId !== v.id);
+      for (const e of f.elements) {
+        if (e.excludedVariantIds?.includes(v.id)) e.excludedVariantIds = e.excludedVariantIds.filter((id) => id !== v.id);
+      }
+    });
     s().setVariant(useStore.getState().project!.buildings.flatMap((b) => b.floors).find((f) => f.id === floorId)!.variants[0].id);
   };
 
@@ -145,9 +158,9 @@ export function ProjectPanel() {
               </button>
             ))}
           </div>
+          <button className="btn small full" onClick={() => createDisplayLocation()}><Icon name="plus" size={14} /> Créer un emplacement</button>
           <div className="row gap">
-            <button className="btn small" onClick={() => addVariant(false)}><Icon name="plus" size={14} /> Nouvelle</button>
-            <button className="btn small" onClick={() => addVariant(true)}><Icon name="copy" size={14} /> Dupliquer</button>
+            <button className="btn small" onClick={duplicateVariant}><Icon name="copy" size={14} /> Dupliquer</button>
             <button className="btn small" onClick={renameVariant} title="Renommer"><Icon name="edit" size={14} /></button>
             <button className="btn small" onClick={deleteVariant} disabled={floor.variants.length <= 1} title="Supprimer"><Icon name="trash" size={14} /></button>
           </div>

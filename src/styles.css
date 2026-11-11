@@ -10,8 +10,11 @@
   --panel: #ffffff;
   --panel-2: #f6f8fa;
   --panel-3: #eef2f6;
+  --ribbon-surface: #e5ebf2;
   --line: #e2e7ed;
   --line-2: #cfd7e0;
+  --line-menu: #aab8c8;
+  --line-workspace: #718196;
   --text: #16212e;
   --text-2: #3d4b5a;
   --muted: #6b7a89;
@@ -258,8 +261,10 @@ label.check { display: flex; align-items: center; gap: 8px; padding: 3px 0; curs
 .overlay .sel-line { stroke: var(--sel); stroke-width: 1.2; vector-effect: non-scaling-stroke; pointer-events: none; }
 .overlay .handle { fill: #fff; stroke: var(--sel); stroke-width: 1.5; vector-effect: non-scaling-stroke; cursor: pointer; }
 .overlay .handle:hover { fill: var(--sel); }
-.overlay .handle-side, .overlay .handle-box { fill: var(--sel); stroke: #fff; stroke-width: 1.2; vector-effect: non-scaling-stroke; cursor: ew-resize; }
-.overlay .handle-side:hover, .overlay .handle-box:hover { fill: #fff; stroke: var(--sel); }
+.overlay .resize-handle rect { fill: #fff; stroke: var(--sel); stroke-width: 1.25; }
+.overlay .resize-handle path { fill: none; stroke: var(--sel); stroke-width: 1.3; stroke-linecap: round; stroke-linejoin: round; pointer-events: none; }
+.overlay .resize-handle:hover rect { fill: var(--sel); }
+.overlay .resize-handle:hover path { stroke: #fff; }
 .overlay .handle-mid { fill: var(--sel); fill-opacity: .35; stroke: var(--sel); stroke-width: 1; vector-effect: non-scaling-stroke; cursor: copy; }
 .overlay .handle-rot { fill: #fff; stroke: var(--accent); stroke-width: 2; vector-effect: non-scaling-stroke; cursor: grab; }
 .overlay .marquee { fill: rgba(31, 111, 209, .08); stroke: var(--sel); stroke-width: 1; stroke-dasharray: 4 3; vector-effect: non-scaling-stroke; }
@@ -464,18 +469,20 @@ kbd { background: var(--panel-2); border: 1px solid var(--line-2); border-bottom
 @keyframes section-in { from { opacity: 0; transform: translateY(-3px); } to { opacity: 1; transform: none; } }
 
 /* Panneaux latéraux : séparation nette avec la zone de dessin */
-.left { border-right: 1px solid var(--line-2); box-shadow: 2px 0 6px rgba(15, 27, 42, .07); position: relative; z-index: 2; }
-.props { border-left: 1px solid var(--line-2); box-shadow: -2px 0 6px rgba(15, 27, 42, .07); position: relative; z-index: 2; }
+.left, .props { background: var(--panel-2); position: relative; z-index: 2; }
+.left { border-right: 2px solid var(--line-workspace); box-shadow: 2px 0 6px rgba(15, 27, 42, .12); }
+.props { border-left: 2px solid var(--line-workspace); box-shadow: -2px 0 6px rgba(15, 27, 42, .12); }
 .left > .panel-body, .props > .panel-body { animation: section-in .18s ease-out; }
+.floorbar { border-bottom-color: var(--line-menu); }
 
 /* Ruban : onglet actif marqué d'une barre verte, contenu sur fond teinté */
 .rb-tabs button { position: relative; }
-.rb-tabs button.on { background: var(--panel-2); color: var(--accent-2); font-weight: 700; box-shadow: inset 0 3px 0 var(--accent); }
-.rb-tabs button.on::after { content: ''; position: absolute; left: 0; right: 0; bottom: -1px; height: 2px; background: var(--panel-2); }
-.ribbon { border-bottom: 1px solid var(--line-2); box-shadow: 0 2px 6px rgba(15, 27, 42, .08); }
-.rb-panel { background: var(--panel-2); animation: section-in .18s ease-out; }
-.rb-group { border-right: 1px solid var(--line-2); }
-.rb-title { color: var(--text-2); font-weight: 600; border-top: 1px solid var(--line); margin-top: 2px; }
+.rb-tabs button.on { background: var(--ribbon-surface); color: var(--accent-2); font-weight: 700; box-shadow: inset 0 3px 0 var(--accent); }
+.rb-tabs button.on::after { content: ''; position: absolute; left: 0; right: 0; bottom: -1px; height: 2px; background: var(--ribbon-surface); }
+.ribbon { border-bottom: 2px solid var(--line-workspace); box-shadow: 0 2px 6px rgba(15, 27, 42, .12); }
+.rb-panel { background: var(--ribbon-surface); animation: section-in .18s ease-out; }
+.rb-group { border-right-color: var(--line-menu); }
+.rb-title { color: var(--text-2); font-weight: 600; border-top: 1px solid var(--line-2); margin-top: 2px; }
 
 /* Onglets du panneau gauche : onglet actif en « carte » blanche reliée au contenu */
 .tabs { background: var(--panel-3); border-bottom: 1px solid var(--line-2); padding: 6px 6px 0; gap: 4px; }
@@ -485,15 +492,47 @@ kbd { background: var(--panel-2); border: 1px solid var(--line-2); border-bottom
 .tabs button.on::after { content: ''; position: absolute; left: 0; right: 0; bottom: -1px; height: 2px; background: var(--panel); }
 
 /* Onglets du panneau Propriétés */
-.ptabs { border: 1px solid var(--line); }
+.ptabs { border: 1px solid var(--line-2); }
 .ptabs button:hover:not(.on) { color: var(--text); background: rgba(255, 255, 255, .5); }
 .ptabs button.on { color: var(--accent-2); box-shadow: var(--shadow-1), inset 0 -2px 0 var(--accent); }
 
 /* Sections repliables : en-tête mieux détaché */
 .psec-head { border-left: 3px solid transparent; padding-left: 6px; }
-.psec-head:hover { background: var(--panel-2); border-left-color: var(--line-2); }
+.psec { border-bottom-color: var(--line-2); }
+.psec-head:hover { background: var(--panel-3); border-left-color: var(--line-menu); }
 .psec-head[aria-expanded="true"] { border-left-color: var(--accent); }
 
 @media (prefers-reduced-motion: reduce) {
   .rb-panel, .left > .panel-body, .props > .panel-body { animation: none; }
 }
+
+.canvas-route-scope {
+  position: absolute; top: 38px; right: 16px;
+  padding: 6px 10px; border: 1px solid var(--line); border-radius: 7px; background: var(--panel); font-size: 12px;
+}
+.canvas-route-scope { display: flex; align-items: center; gap: 6px; }
+.scope-link { display: block; padding: 3px 0; border: 0; background: transparent; color: var(--accent); font: inherit; font-size: 12px; text-align: left; cursor: pointer; }
+.scope-link:hover { text-decoration: underline; }
+.quick-export-label { display: block; max-width: 170px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.floorbar select { max-width: 180px; }
+
+.lib-tile { position: relative; min-width: 0; }
+.lib-tile .lib-item { width: 100%; height: 100%; }
+.lib-star { position: absolute; z-index: 1; top: 2px; right: 2px; width: 23px; height: 23px; border: 0; border-radius: 4px; background: transparent; color: var(--muted); font-size: 17px; cursor: pointer; }
+.lib-star:hover, .lib-star.on { color: #865400; background: #fff6dd; }
+.lib-tile .lib-del { top: 24px; z-index: 1; }
+
+.print-review { padding: 9px 11px; margin: 10px 0; border: 1px solid var(--line); border-radius: 8px; background: #f8fafc; }
+.print-review h3, .print-review p { margin: 0; }
+.print-review p, .print-review-list { margin-top: 5px; }
+.print-review-ok { color: #186040; }
+.print-review-list { display: grid; gap: 5px; list-style: none; padding: 0; margin-bottom: 0; max-height: 156px; overflow: auto; }
+.print-review-list strong { display: block; font-size: 12px; }
+.print-issue { padding: 3px 0; display: block; border: 0; background: transparent; color: #865400; cursor: pointer; font: inherit; font-size: 12px; text-align: left; }
+.print-issue:hover { text-decoration: underline; }
+.export-pages { margin: 12px 0; padding: 8px; min-width: 0; border: 1px solid var(--line); border-radius: 8px; }
+.export-pages legend { font-weight: 600; }
+.export-page { display: flex; align-items: center; gap: 6px; margin-top: 5px; padding: 0 6px; border-radius: 6px; }
+.export-page.active { background: #e5f3ec; }
+.export-page-name { flex: 1; display: grid; gap: 2px; text-align: left; padding: 5px 3px; border: 0; background: transparent; color: inherit; cursor: pointer; }
+.export-page-name small { color: var(--muted); }

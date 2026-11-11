@@ -3,10 +3,10 @@ import { makeElement } from '../model/defaults';
 import { getCountry } from '../model/countries';
 import {
   boxOf, constrain45, distance, distToSegment, elementBounds, floorContentBounds, isVisibleInVariant,
-  polylineLength, rectContains, rectFromPoints, rectsIntersect, rotatePoint, snapToGrid, translateElement,
-  unionRects, type Rect,
+  openingWallFit, polylineLength, rectContains, rectFromPoints, rectsIntersect, RESIZE_DIRECTIONS, resizeBoxElement, rotatePoint, snapSymbolToWalls, snapToGrid, translateElement,
+  unionRects, windowGlassWallFit, windowResizeWallFit, type Rect,
 } from '../model/geometry';
-import type { Element, Floor, Pt } from '../model/types';
+import type { DoorElement, Element, Floor, Pt, SymbolElement, WindowElement } from '../model/types';
 import { ElementView, legendCount, polygonCentroid } from '../render/ElementView';
 import { FloorDrawing } from '../render/FloorDrawing';
 import { getBuiltinSymbol } from '../symbols/library';
@@ -17,9 +17,8 @@ type Drag =
   | { kind: 'move'; start: Pt; orig: Element[]; startBounds: Rect; began: boolean; candX: number[]; candY: number[] }
   | { kind: 'marquee'; start: Pt; additive: boolean }
   | { kind: 'vertex'; id: string; index: number; began: boolean }
-  | { kind: 'resize'; id: string; orig: Element; startDist: number }
-  | { kind: 'side'; id: string; orig: Element; side: number }
-  | { kind: 'pscale'; id: string; orig: Element; box: Rect; handle: number }
+  | { kind: 'resize'; orig: Element; start: Pt; direction: Pt; wallDepth?: number; began: boolean }
+  | { kind: 'pscale'; id: string; orig: Element; box: Rect; direction: Pt; start: Pt; began: boolean }
   | { kind: 'rotate'; id: string; center: Pt }
   | { kind: 'bgmove'; start: Pt; ox: number; oy: number; began: boolean }
   | { kind: 'rect'; start: Pt };
@@ -30,6 +29,17 @@ const ZONE_STYLE = (points: Pt[]) => ({
   strokeWidth: 2.5, dash: 'dashed', label: 'Zone', labelColor: '#d52b1e', labelBold: true,
 });
 const RULER = 22;
+
+function resizeHandle(key: string, [x, y]: Pt, [sx, sy]: Pt, zoom: number, rotation = 0) {
+  const angle = Math.atan2(sy, sx) * 180 / Math.PI + rotation;
+  const cursor = ['ew-resize', 'nwse-resize', 'ns-resize', 'nesw-resize'][((Math.round(angle / 45) % 4) + 4) % 4];
+  return (
+    <g key={key} data-handle={key} className="resize-handle" style={{ cursor }} transform={`translate(${x} ${y}) scale(${1 / zoom})`}>
+      <rect x={-8} y={-8} width={16} height={16} rx={3} />
+      <path d="M-5 0H5 M-2 -3L-5 0l3 3 M2 -3L5 0 2 3" transform={`rotate(${angle})`} />
+    </g>
+  );
+}
 
 /** Champ texte éditable directement sur le plan (double-clic / F2 / Entrée), selon le type d'élément. */
 type InlineField = { key: 'label' | 'text' | 'title'; multiline: boolean; size: number };
@@ -60,6 +70,8 @@ export function Canvas({ onCalibrate }: CanvasProps) {
   const variantId = useStore((s) => currentVariantId(s));
   const selection = useStore((s) => s.selection);
   const tool = useStore((s) => s.tool);
+  const pendingSymbol = useStore((s) => s.pendingSymbol);
+  const [localRoute, setLocalRoute] = useState('');
   const view = useStore((s) => s.view);
   const grid = useStore((s) => s.grid);
   const guidesOn = useStore((s) => s.guides);
@@ -75,6 +87,8 @@ export function Canvas({ onCalibrate }: CanvasProps) {
   const [marquee, setMarquee] = useState<Rect | null>(null);
   const [rectDraft, setRectDraft] = useState<Rect | null>(null);
   const [guideLines, setGuideLines] = useState<{ x?: number; y?: number }>({});
+  const [windowResizeGuides, setWindowResizeGuides] = useState<[Pt, Pt][]>([]);
+  const [glassGuide, setGlassGuide] = useState<[Pt, Pt] | undefined>();
   const [calib, setCalib] = useState<Pt[]>([]);
   const [editing, setEditing] = useState<Editing | null>(null);
   /** Élément sous le dernier appui (pour le double-clic natif, la capture du pointeur redirigeant sa cible vers le SVG). */
@@ -187,13 +201,18 @@ export function Canvas({ onCalibrate }: CanvasProps) {
     let el: Element;
     const pr = s.presets;
     if (t === 'wall') el = makeElement('wall', { points: clean, thickness: pr.wallThickness });
-    else if (t === 'route') el = makeElement('route', pr.routeKind === 'secondaire'
-      ? { points: clean, kind: 'secondaire', dash: 'dashed', width: 6 }
-      : { points: clean, outline: '#ffffff', arrowStyle: 'stealth' }, routeColor);
+    else if (t === 'route') {
+      const active = currentVariantId(s);
+      const variantId = localRoute === active ? active : undefined;
+      el = makeElement('route', pr.routeKind === 'secondaire'
+        ? { points: clean, variantId, kind: 'secondaire', dash: 'dashed', width: 6 }
+        : { points: clean, variantId, outline: '#ffffff', arrowStyle: 'stealth' }, routeColor);
+      setLocalRoute('');
+    }
     else if (t === 'room') el = makeElement('area', { points: clean, kind: 'room', label: 'Local' });
     else el = makeElement('area', ZONE_STYLE(clean));
     placeOne(el);
-  }, [placeOne]);
+  }, [placeOne, localRoute]);
 
   // ——— Clavier propre au dessin ———
   useEffect(() => {
@@ -223,6 +242,16 @@ export function Canvas({ onCalibrate }: CanvasProps) {
   if (!floor) return null;
   const elById = (id: string) => floor.elements.find((e) => e.id === id);
   const lc = legendCount(floor, variantId);
+  const selectionBox = (el: Element) =>
+    boxOf(el, lc, el.type === 'door' ? openingWallFit(floor, variantId, el)?.depth : undefined);
+  const snapOpening = (opening: DoorElement | WindowElement, altKey: boolean) => {
+    const s = useStore.getState();
+    if (altKey || !(s.grid.snap || (opening.type === 'window' && s.guides))) return undefined;
+    const fit = openingWallFit(floor, variantId, opening, 10 / s.view.zoom);
+    if (!fit) return undefined;
+    const { depth, ...pose } = fit;
+    return opening.type === 'window' ? { ...opening, ...pose, depth } : { ...opening, ...pose };
+  };
 
   // ——— Pointeur ———
   const onPointerDown = (e: React.PointerEvent) => {
@@ -264,18 +293,13 @@ export function Canvas({ onCalibrate }: CanvasProps) {
             s.mutateFloor((f) => { const d = f.elements.find((x) => x.id === el.id) as any; d.points.splice(i, 0, sp); });
             drag.current = { kind: 'vertex', id: el.id, index: i, began: true };
           } else if (kind === 'r') {
-            const b = boxOf(el, lc)!;
-            s.beginLive();
-            drag.current = { kind: 'resize', id: el.id, orig: el, startDist: Math.max(1, distance(p, [b.cx, b.cy])) };
-          } else if (kind === 's') {
-            s.beginLive();
-            drag.current = { kind: 'side', id: el.id, orig: el, side: Number(arg) };
+            const wallDepth = el.type === 'door' ? openingWallFit(floor, variantId, el)?.depth : undefined;
+            drag.current = { kind: 'resize', orig: el, start: p, direction: RESIZE_DIRECTIONS[Number(arg)], wallDepth, began: false };
           } else if (kind === 'pb' && 'points' in el) {
-            s.beginLive();
-            drag.current = { kind: 'pscale', id: el.id, orig: el, box: rectFromPoints(el.points), handle: Number(arg) };
+            drag.current = { kind: 'pscale', id: el.id, orig: el, box: rectFromPoints(el.points), direction: RESIZE_DIRECTIONS[Number(arg)], start: p, began: false };
           } else if (kind === 'rot') {
-            const b = boxOf(el, lc)!;
-            const center: Pt = el.type === 'text' ? [el.x, el.y] : [b.cx, b.cy];
+            const b = selectionBox(el)!;
+            const center: Pt = el.type === 'text' || el.type === 'door' ? [el.x, el.y] : [b.cx, b.cy];
             s.beginLive();
             drag.current = { kind: 'rotate', id: el.id, center };
           }
@@ -329,20 +353,21 @@ export function Canvas({ onCalibrate }: CanvasProps) {
         setDraft([...draft, pt]);
         return;
       }
-      case 'door': {
+      case 'door': case 'window': {
         const dt = s.presets.doorType;
-        placeOne(makeElement('door', { x: sp[0], y: sp[1], doorType: dt, fireRated: !!s.presets.doorFire, width: dt === 'double' || dt === 'opening' ? 160 : dt === 'revolving' ? 140 : 90 }), e.shiftKey);
+        const at = { x: p[0], y: p[1] };
+        const opening = (s.tool === 'window'
+          ? makeElement('window', { ...at, depth: s.presets.wallThickness })
+          : makeElement('door', { ...at, doorType: dt, fireRated: !!s.presets.doorFire, width: dt === 'double' || dt === 'opening' ? 160 : dt === 'revolving' ? 140 : 90 })) as DoorElement | WindowElement;
+        placeOne(snapOpening(opening, e.altKey) ?? { ...opening, x: sp[0], y: sp[1] }, e.shiftKey);
         return;
       }
-      case 'window':
-        placeOne(makeElement('window', { x: sp[0], y: sp[1], depth: s.presets.wallThickness }), e.shiftKey);
-        return;
       case 'shape':
       case 'stairs':
         drag.current = { kind: 'rect', start: sp };
         setRectDraft({ x: sp[0], y: sp[1], w: 0, h: 0 });
         return;
-      case 'symbol': placeSymbol(s.pendingSymbol, sp, e.shiftKey); return;
+      case 'symbol': placeSymbol(s.pendingSymbol, p, e, e.shiftKey); return;
       case 'text': {
         const el = makeElement('text', { x: sp[0], y: sp[1], text: 'Nouveau texte' });
         s.addElements([el]);
@@ -369,17 +394,29 @@ export function Canvas({ onCalibrate }: CanvasProps) {
     }
   };
 
-  /** Pose un pictogramme ; sauf Maj enfoncée, on revient ensuite à l'outil Sélection avec le pictogramme sélectionné. */
-  const placeSymbol = (symbolId: string, at: Pt, keepTool = false) => {
+  /** Pose un élément de la bibliothèque et le sélectionne, sauf si Maj est enfoncée. */
+  const placeSymbol = (symbolId: string, at: Pt, e: { altKey: boolean }, keepTool = false) => {
     const s = useStore.getState();
     if (!symbolId) { s.toast('Choisissez d’abord un pictogramme dans la bibliothèque.', 'info'); return; }
+    if (symbolId === 'door-double-fire') {
+      const opening = makeElement('door', {
+        x: at[0], y: at[1], doorType: 'double', fireRated: true, width: 160,
+      }) as DoorElement;
+      const [x, y] = snap(at, e);
+      placeOne(snapOpening(opening, e.altKey) ?? { ...opening, x, y }, keepTool);
+      return;
+    }
     const def = getBuiltinSymbol(symbolId);
     const isYah = symbolId === 'you-are-here';
-    const el = makeElement('symbol', {
-      x: at[0], y: at[1], symbolId, label: def?.defaultLabel ?? '',
+    const [x, y] = snap(at, e);
+    const symbol = makeElement('symbol', {
+      x, y, symbolId, label: def?.defaultLabel ?? '',
       size: isYah ? 56 : 48,
       ...(isYah ? { variantId: currentVariantId(s) } : {}),
-    });
+    }) as SymbolElement;
+    const el = s.grid.symbolSnapEnabled && !e.altKey
+      ? snapSymbolToWalls(floor, variantId, symbol, { at, gap: s.grid.symbolWallGap })
+      : symbol;
     if (keepTool) s.addElements([el], false);
     else { s.setTool('select'); s.addElements([el]); }
     if (isYah && floor.variants.length > 1) {
@@ -405,6 +442,19 @@ export function Canvas({ onCalibrate }: CanvasProps) {
           d.began = true;
           s.beginLive();
         }
+        const only = d.orig.length === 1 ? d.orig[0] : undefined;
+        const symbolTarget: Pt | undefined = only?.type === 'symbol' ? [only.x + dx, only.y + dy] : undefined;
+        const fitted = only?.type === 'door' || only?.type === 'window'
+          ? snapOpening(translateElement(only, dx, dy), e.altKey)
+          : undefined;
+        if (fitted) {
+          setGuideLines({});
+          s.mutateFloor((f) => {
+            const index = f.elements.findIndex((el) => el.id === fitted.id);
+            if (index !== -1) f.elements[index] = fitted;
+          }, { history: false, keepValidation: true });
+          return;
+        }
         if (s.grid.snap && !e.altKey) {
           const a = snapToGrid([d.startBounds.x + dx, d.startBounds.y + dy], s.grid.size);
           dx = a[0] - d.startBounds.x; dy = a[1] - d.startBounds.y;
@@ -421,6 +471,12 @@ export function Canvas({ onCalibrate }: CanvasProps) {
           best = tol; adj = 0;
           for (const m of my) for (const c of d.candY) if (Math.abs(c - m) < best) { best = Math.abs(c - m); adj = c - m; g.y = c; }
           if (g.y !== undefined) dy += adj;
+        }
+        if (only?.type === 'symbol' && s.grid.symbolSnapEnabled && !e.altKey) {
+          const moved = translateElement(only, dx, dy);
+          const fitted = snapSymbolToWalls(floor, variantId, moved, { at: symbolTarget, gap: s.grid.symbolWallGap });
+          if (fitted.x !== moved.x) { dx += fitted.x - moved.x; delete g.x; }
+          if (fitted.y !== moved.y) { dy += fitted.y - moved.y; delete g.y; }
         }
         setGuideLines(g);
         const moved = new Map(d.orig.map((o) => [o.id, translateElement(o, dx, dy)]));
@@ -441,66 +497,54 @@ export function Canvas({ onCalibrate }: CanvasProps) {
         s.mutateFloor((f) => { const x = f.elements.find((q) => q.id === d.id) as any; if (x) x.points[d.index] = pt; }, { history: false, keepValidation: true });
         return;
       }
-      case 'resize': {
-        const o = d.orig as any;
-        const b = boxOf(d.orig, lc)!;
-        const local = rotatePoint(p, [b.cx, b.cy], -(o.rotation || 0));
-        const lx = Math.abs(local[0] - b.cx), ly = Math.abs(local[1] - b.cy);
-        const ratio = distance(p, [b.cx, b.cy]) / d.startDist;
-        let patch: Record<string, number> = {};
-        switch (d.orig.type) {
-          case 'symbol': patch = { size: Math.max(8, Math.round(2 * Math.max(lx / (o.stretchX ?? 1), ly / (o.stretchY ?? 1)))) }; break;
-          case 'stairs': patch = { w: Math.max(20, Math.round(2 * lx)), h: Math.max(20, Math.round(2 * ly)) }; break;
-          case 'door': patch = { width: Math.max(30, Math.round(2 * lx)) }; break;
-          case 'window': patch = { width: Math.max(30, Math.round(2 * lx)) }; break;
-          case 'shape': patch = e.shiftKey && o.shape !== 'line'
-            ? (() => { const k = Math.max(lx / (o.w / 2), ly / (o.h / 2)); return { w: Math.max(6, o.w * k), h: Math.max(6, o.h * k) }; })()
-            : { w: Math.max(6, 2 * lx), h: o.shape === 'line' ? o.h : Math.max(6, 2 * ly) }; break;
-          case 'image': {
-            if (e.shiftKey) patch = { w: Math.max(10, 2 * lx), h: Math.max(10, 2 * ly) };
-            else { const k = Math.max(lx / (o.w / 2), ly / (o.h / 2)); patch = { w: Math.max(10, o.w * k), h: Math.max(10, o.h * k) }; }
-            break;
-          }
-          case 'text': case 'legend': patch = { fontSize: Math.max(4, Math.round(o.fontSize * ratio * 10) / 10) }; break;
-        }
-        s.mutateFloor((f) => { const x = f.elements.find((q) => q.id === d.id); if (x) Object.assign(x, patch); }, { history: false, keepValidation: true });
-        return;
-      }
-      case 'side': {
-        // Étirement par un côté : une seule dimension change (symétrique autour du centre).
-        const o = d.orig as any;
-        const b = boxOf(d.orig, lc)!;
-        const local = rotatePoint(sp, [b.cx, b.cy], -(o.rotation || 0));
-        const horiz = d.side === 1 || d.side === 3;
-        const half = Math.abs(horiz ? local[0] - b.cx : local[1] - b.cy);
-        let patch: Record<string, number> = {};
-        switch (d.orig.type) {
-          case 'symbol': {
-            const v = Math.max(0.15, Math.min(12, Math.round((2 * half / o.size) * 100) / 100));
-            patch = horiz ? { stretchX: v } : { stretchY: v };
-            break;
-          }
-          case 'shape': case 'image': case 'stairs': {
-            const v = Math.max(d.orig.type === 'stairs' ? 20 : 6, Math.round(2 * half));
-            patch = horiz ? { w: v } : { h: v };
-            break;
-          }
-        }
-        s.mutateFloor((f) => { const x = f.elements.find((q) => q.id === d.id); if (x) Object.assign(x, patch); }, { history: false, keepValidation: true });
-        return;
-      }
+      case 'resize':
       case 'pscale': {
-        // Étirement d'un tracé (flèche, itinéraire, mur, pièce) par son cadre : le côté opposé reste fixe.
+        const delta: Pt = [p[0] - d.start[0], p[1] - d.start[1]];
+        if (!d.began) {
+          if (distance(p, d.start) * s.view.zoom < 2) return;
+          d.began = true;
+          s.beginLive();
+        }
+        if (d.kind === 'resize') {
+          const resized = resizeBoxElement(d.orig, d.direction, delta, e.shiftKey, lc, d.wallDepth);
+          const [sx, sy] = d.direction;
+          const canAlign = (s.grid.snap || s.guides) && !e.altKey && !(sx && sy && e.shiftKey);
+          const tolerance = 8 / s.view.zoom;
+          const fit = resized.type === 'window' && canAlign
+            ? windowResizeWallFit(floor, variantId, resized, sy, tolerance)
+            : undefined;
+          const aligned = fit?.window ?? resized;
+          const glass = aligned.type === 'window' && canAlign && sx
+            ? windowGlassWallFit(floor, variantId, aligned, sx, tolerance)
+            : undefined;
+          if (resized.type === 'window') {
+            setWindowResizeGuides(fit?.guides ?? []);
+            setGlassGuide(glass?.guide);
+          }
+          s.mutateFloor((f) => {
+            const index = f.elements.findIndex((el) => el.id === resized.id);
+            if (index !== -1) f.elements[index] = glass?.window ?? aligned;
+          }, { history: false, keepValidation: true });
+          return;
+        }
+        if (!('points' in d.orig)) return;
         const r = d.box;
-        const hi = d.handle;
-        const xs = hi === 0 || hi === 3 || hi === 7 ? -1 : hi === 1 || hi === 2 || hi === 5 ? 1 : 0;
-        const ys = hi === 0 || hi === 1 || hi === 4 ? -1 : hi === 2 || hi === 3 || hi === 6 ? 1 : 0;
+        const [xs, ys] = d.direction;
         const ax = xs < 0 ? r.x + r.w : r.x, ay = ys < 0 ? r.y + r.h : r.y;
-        let kx = xs && r.w > 0.5 ? Math.max(0.05, (xs > 0 ? sp[0] - ax : ax - sp[0]) / r.w) : 1;
-        let ky = ys && r.h > 0.5 ? Math.max(0.05, (ys > 0 ? sp[1] - ay : ay - sp[1]) / r.h) : 1;
-        if (e.shiftKey && xs && ys) { const k = Math.max(kx, ky); kx = k; ky = k; }
-        const pts = ((d.orig as any).points as Pt[]).map((q) => [ax + (q[0] - ax) * kx, ay + (q[1] - ay) * ky] as Pt);
-        s.mutateFloor((f) => { const x = f.elements.find((q) => q.id === d.id) as any; if (x) x.points = pts; }, { history: false, keepValidation: true });
+        const startEdge: Pt = [xs < 0 ? r.x : r.x + r.w, ys < 0 ? r.y : r.y + r.h];
+        const snappedDelta = snap(delta, e);
+        const edge: Pt = [startEdge[0] + snappedDelta[0], startEdge[1] + snappedDelta[1]];
+        let kx = xs && r.w > 0.5 ? Math.max(0.05, xs * (edge[0] - ax) / r.w) : 1;
+        let ky = ys && r.h > 0.5 ? Math.max(0.05, ys * (edge[1] - ay) / r.h) : 1;
+        if (e.shiftKey && xs && ys) {
+          const scale = (kx * r.w ** 2 + ky * r.h ** 2) / (r.w ** 2 + r.h ** 2);
+          kx = scale; ky = scale;
+        }
+        const pts = d.orig.points.map(([x, y]): Pt => [ax + (x - ax) * kx, ay + (y - ay) * ky]);
+        s.mutateFloor((f) => {
+          const el = f.elements.find((item) => item.id === d.id);
+          if (el && 'points' in el) el.points = pts;
+        }, { history: false, keepValidation: true });
         return;
       }
       case 'rotate': {
@@ -527,6 +571,8 @@ export function Canvas({ onCalibrate }: CanvasProps) {
     const d = drag.current;
     drag.current = null;
     setGuideLines({});
+    setWindowResizeGuides([]);
+    setGlassGuide(undefined);
     if (!d) return;
     if (d.kind === 'marquee') {
       const p = toWorld(e.clientX, e.clientY);
@@ -561,7 +607,7 @@ export function Canvas({ onCalibrate }: CanvasProps) {
     const id = e.dataTransfer.getData('application/x-evac-symbol');
     if (!id) return;
     e.preventDefault();
-    placeSymbol(id, snap(toWorld(e.clientX, e.clientY), e));
+    placeSymbol(id, toWorld(e.clientX, e.clientY), e);
   };
 
   // ——— Rendus auxiliaires ———
@@ -593,41 +639,32 @@ export function Canvas({ onCalibrate }: CanvasProps) {
       ));
       // Cadre d'étirement : 4 coins + 4 côtés (le côté opposé reste fixe).
       const r = rectFromPoints(el.points);
-      const pad = 10 / z;
-      const x0 = r.x - pad, y0 = r.y - pad, x1 = r.x + r.w + pad, y1 = r.y + r.h + pad;
-      const mxp = (x0 + x1) / 2, myp = (y0 + y1) / 2;
+      const padX = Math.max(10 / z, (40 / z - r.w) / 2);
+      const padY = Math.max(10 / z, (40 / z - r.h) / 2);
+      const x0 = r.x - padX, y0 = r.y - padY, x1 = r.x + r.w + padX, y1 = r.y + r.h + padY;
       handles.push(<rect key="pbox" className="sel-box" x={x0} y={y0} width={x1 - x0} height={y1 - y0} />);
-      const bh: [number, number, number, string][] = [
-        [0, x0, y0, 'nwse-resize'], [1, x1, y0, 'nesw-resize'], [2, x1, y1, 'nwse-resize'], [3, x0, y1, 'nesw-resize'],
-        [4, mxp, y0, 'ns-resize'], [5, x1, myp, 'ew-resize'], [6, mxp, y1, 'ns-resize'], [7, x0, myp, 'ew-resize'],
-      ];
-      bh.forEach(([i, hx, hy, cur]) => {
-        if ((i === 5 || i === 7) && r.w < 0.5) return;
-        if ((i === 4 || i === 6) && r.h < 0.5) return;
-        if (i < 4 && (r.w < 0.5 || r.h < 0.5)) return;
-        handles.push(<rect key={`pb${i}`} data-handle={`pb:${i}`} className="handle-box" style={{ cursor: cur }}
-          x={hx - hs * 0.4} y={hy - hs * 0.4} width={hs * 0.8} height={hs * 0.8} />);
+      RESIZE_DIRECTIONS.forEach(([sx, sy], i) => {
+        if ((sx && r.w < 0.5) || (sy && r.h < 0.5)) return;
+        const at: Pt = [(x0 + x1) / 2 + sx * (x1 - x0) / 2, (y0 + y1) / 2 + sy * (y1 - y0) / 2];
+        handles.push(resizeHandle(`pb:${i}`, at, [sx, sy], z));
       });
     } else {
-      const b = boxOf(el, lc)!;
-      const pivot: Pt = el.type === 'text' ? [el.x, el.y] : [b.cx, b.cy];
-      const rot = (q: Pt) => (el.rotation && el.type !== 'legend' ? rotatePoint(q, pivot, el.rotation) : q);
-      const corners: Pt[] = [[b.cx - b.w / 2, b.cy - b.h / 2], [b.cx + b.w / 2, b.cy - b.h / 2], [b.cx + b.w / 2, b.cy + b.h / 2], [b.cx - b.w / 2, b.cy + b.h / 2]].map((q) => rot(q as Pt));
+      const b = selectionBox(el)!;
+      const pivot: Pt = el.type === 'text' || el.type === 'door' ? [el.x, el.y] : [b.cx, b.cy];
+      const rotation = el.type === 'legend' ? 0 : el.rotation;
+      const rot = (q: Pt) => rotatePoint(q, pivot, rotation);
+      const corners = RESIZE_DIRECTIONS.slice(0, 4).map(([sx, sy]) => rot([b.cx + sx * b.w / 2, b.cy + sy * b.h / 2]));
       handles.push(<polygon key="box" className="sel-box" points={corners.map((c) => c.join(',')).join(' ')} />);
-      corners.forEach((c, i) => handles.push(
-        <rect key={`r${i}`} data-handle={`r:${i}`} className="handle" x={c[0] - hs / 2} y={c[1] - hs / 2} width={hs} height={hs} />,
-      ));
-      // Poignées de côté : étirement horizontal ou vertical seul.
-      if (el.type === 'symbol' || el.type === 'image' || el.type === 'stairs' || el.type === 'shape') {
-        const sides: Pt[] = [[b.cx, b.cy - b.h / 2], [b.cx + b.w / 2, b.cy], [b.cx, b.cy + b.h / 2], [b.cx - b.w / 2, b.cy]].map((q) => rot(q as Pt));
-        sides.forEach((c, i) => {
-          if (el.type === 'shape' && el.shape === 'line' && (i === 0 || i === 2)) return;
-          handles.push(<rect key={`s${i}`} data-handle={`s:${i}`} className="handle-side" x={c[0] - hs * 0.4} y={c[1] - hs * 0.4} width={hs * 0.8} height={hs * 0.8} />);
-        });
-      }
+      const handleW = Math.max(b.w, 40 / z), handleH = Math.max(b.h, 40 / z);
+      const widthOnly = el.type === 'door' || (el.type === 'shape' && el.shape === 'line');
+      RESIZE_DIRECTIONS.forEach(([sx, sy], i) => {
+        if (widthOnly && sy) return;
+        const y = el.type === 'door' ? el.y : b.cy + sy * handleH / 2;
+        handles.push(resizeHandle(`r:${i}`, rot([b.cx + sx * handleW / 2, y]), [sx, sy], z, rotation));
+      });
       if (el.type !== 'legend') {
         const top = rot([b.cx, b.cy - b.h / 2]);
-        const knob = rot([b.cx, b.cy - b.h / 2 - 26 / z]);
+        const knob = rot([b.cx, b.cy - handleH / 2 - 26 / z]);
         handles.push(<line key="rl" className="sel-line" x1={top[0]} y1={top[1]} x2={knob[0]} y2={knob[1]} />);
         handles.push(<circle key="rot" data-handle="rot" className="handle-rot" cx={knob[0]} cy={knob[1]} r={hs * 0.65} />);
       }
@@ -658,7 +695,7 @@ export function Canvas({ onCalibrate }: CanvasProps) {
       : `${Math.round(seg)} u`;
     preview = (
       <g className="preview" pointerEvents="none">
-        {tmp && <g opacity={0.7}><ElementView el={tmp} ctx={{ floor, variantId, customSymbols: project.customSymbols }} /></g>}
+        {tmp && <g opacity={0.7}><ElementView el={tmp} ctx={{ floor, variantId, customSymbols: project.customSymbols, interactive: true }} /></g>}
         <polyline points={pts.map((q) => q.join(',')).join(' ')} className="draft-line" />
         {draft.map((q, i) => <circle key={i} cx={q[0]} cy={q[1]} r={3 / z} className="draft-pt" />)}
         <text x={cursor[0] + 12 / z} y={cursor[1] - 12 / z} fontSize={12 / z} className="measure">{label}</text>
@@ -677,6 +714,16 @@ export function Canvas({ onCalibrate }: CanvasProps) {
 
   // Indication de survol pour l'insertion de point sur un itinéraire
   const hint = (() => {
+    if (tool === 'symbol' && pendingSymbol === 'you-are-here') {
+      const name = floor.variants.find((v) => v.id === variantId)?.name;
+      return `Cliquez sur le plan pour placer « Vous êtes ici » sur l’affiche « ${name} ».`;
+    }
+    if (tool === 'select' && selEls.length === 1 && selEls[0].type === 'window' && (grid.snap || guidesOn)) {
+      if (glassGuide) return 'Bord blanc du vitrage aligné sur le bord du mur.';
+      return windowResizeGuides.length
+        ? 'Fenêtre alignée sur les deux faces du mur.'
+        : 'Approchez le bord de la fenêtre d’une face du mur • Alt pour un réglage libre';
+    }
     if (tool === 'select' && selEls.length === 1 && 'points' in selEls[0] && cursor) {
       const el = selEls[0];
       for (let i = 0; i < el.points.length - 1; i++) {
@@ -697,6 +744,14 @@ export function Canvas({ onCalibrate }: CanvasProps) {
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
+        onPointerCancel={() => {
+          drag.current = null;
+          setGuideLines({});
+          setWindowResizeGuides([]);
+          setGlassGuide(undefined);
+          setMarquee(null);
+          setRectDraft(null);
+        }}
         onPointerLeave={() => setCursor(null)}
         onDoubleClick={() => {
           const id = lastDownId.current;
@@ -739,9 +794,21 @@ export function Canvas({ onCalibrate }: CanvasProps) {
             {marquee && <rect className="marquee" x={marquee.x} y={marquee.y} width={marquee.w} height={marquee.h} />}
             {guidesOn && guideLines.x !== undefined && <line className="guide" x1={guideLines.x} x2={guideLines.x} y1={-1e5} y2={1e5} />}
             {guidesOn && guideLines.y !== undefined && <line className="guide" y1={guideLines.y} y2={guideLines.y} x1={-1e5} x2={1e5} />}
+            {guidesOn && windowResizeGuides.map(([[x1, y1], [x2, y2]], i) => (
+              <line key={i} className="guide" x1={x1} y1={y1} x2={x2} y2={y2} />
+            ))}
+            {guidesOn && glassGuide && (
+              <line className="guide" x1={glassGuide[0][0]} y1={glassGuide[0][1]} x2={glassGuide[1][0]} y2={glassGuide[1][1]} style={{ strokeWidth: 2 }} />
+            )}
           </g>
         </g>
       </svg>
+      {tool === 'route' && floor.variants.length > 1 && (
+        <label className="canvas-route-scope">
+          <input type="checkbox" checked={localRoute === variantId} onChange={(e) => setLocalRoute(e.target.checked ? variantId : '')} />
+          Itinéraire réservé à cette affiche
+        </label>
+      )}
       {editing && (
         <InlineEditor
           key={editing.id}

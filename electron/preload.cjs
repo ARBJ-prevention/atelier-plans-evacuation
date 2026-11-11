@@ -15,6 +15,7 @@ contextBridge.exposeInMainWorld('evac', {
   dwgDownloadPage: () => ipcRenderer.invoke('dwg:download-page'),
   dwgConvert: (args) => ipcRenderer.invoke('dwg:convert', args),
   exportPdf: (args) => ipcRenderer.invoke('render:pdf', args),
+  createExportFolder: (name) => ipcRenderer.invoke('export:folder', name),
   print: (args) => ipcRenderer.invoke('render:print', args),
   autosaveWrite: (args) => ipcRenderer.invoke('autosave:write', args),
   autosaveClear: (id) => ipcRenderer.invoke('autosave:clear', id),

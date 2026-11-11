@@ -1,14 +1,15 @@
 import { useEffect, useMemo, useState } from 'react';
 import * as A from './app/actions';
-import { SAMPLES } from './app/sample';
+import { buildReviewDemo, SAMPLES } from './app/sample';
 import { PrintDialog } from './dialogs/PrintDialog';
 import { Canvas } from './editor/Canvas';
+import { isVisibleInVariant } from './model/geometry';
 import { LayersPanel } from './panels/LayersPanel';
 import { LibraryPanel } from './panels/LibraryPanel';
 import { ProjectPanel } from './panels/ProjectPanel';
 import { PropertiesPanel } from './panels/PropertiesPanel';
 import { Ribbon, TOOL_KEYS } from './panels/Ribbon';
-import { PrintPage, STATUS_LABEL } from './render/PrintPage';
+import { PrintPage, STATUS_LABEL, type PrintIssue } from './render/PrintPage';
 import { api } from './services/api';
 import { currentBuilding, currentFloor, currentVariantId, useStore } from './store/store';
 import { alertDialog, DialogHost } from './ui/dialogs';
@@ -19,7 +20,8 @@ const AUTOSAVE_MS = 30_000;
 export function App() {
   const project = useStore((s) => s.project);
   const [leftTab, setLeftTab] = useState<'project' | 'library' | 'layers'>('library');
-  const [printOpen, setPrintOpen] = useState(false);
+  const [printOpen, setPrintOpen] = useState<'' | 'preview' | 'current' | 'scale'>('');
+  const [focusInstructions, setFocusInstructions] = useState(0);
   const [help, setHelp] = useState<'' | 'guide' | 'shortcuts' | 'about'>('');
   const [version, setVersion] = useState('');
 
@@ -67,6 +69,7 @@ export function App() {
   const runCommand = async (action: string, arg?: string) => {
     const s = useStore.getState();
     const has = !!s.project;
+    if (document.querySelector('.modal-backdrop') && action !== 'save-and-close' && action !== 'discard-and-close') return;
     switch (action) {
       case 'new': return A.newProjectAction();
       case 'open': return A.openProjectAction();
@@ -76,9 +79,8 @@ export function App() {
       case 'duplicate-project': return has && A.duplicateProjectAction();
       case 'import-background': return has && A.importBackgroundAction();
       case 'import-symbol': return has && A.importSymbolAction();
-      case 'print-preview': return has && setPrintOpen(true);
-      case 'export-pdf': return has && A.exportPdfAction();
-      case 'export-png': return has && A.exportPngAction();
+      case 'print-preview': return has && setPrintOpen('preview');
+      case 'export-pdf': case 'export-png': return has && setPrintOpen('current');
       case 'undo': return s.undo();
       case 'redo': return s.redo();
       case 'cut': return s.cutSelection();
@@ -91,7 +93,7 @@ export function App() {
         if (!f) return;
         const vid = currentVariantId(s);
         const locked = new Set(f.layers.filter((l) => l.locked || !l.visible).map((l) => l.id));
-        return s.select(f.elements.filter((e) => !locked.has(e.layer) && (!e.variantId || e.variantId === vid)).map((e) => e.id));
+        return s.select(f.elements.filter((e) => !locked.has(e.layer) && isVisibleInVariant(e, vid)).map((e) => e.id));
       }
       case 'group': return s.groupSelection();
       case 'ungroup': return s.ungroupSelection();
@@ -123,12 +125,43 @@ export function App() {
     }
   };
 
+  const editPrintIssue = (floorId: string, variantId: string, issue: PrintIssue) => {
+    const s = useStore.getState();
+    const building = s.project?.buildings.find((b) => b.floors.some((f) => f.id === floorId));
+    const floor = building?.floors.find((f) => f.id === floorId);
+    if (!building || !floor) return;
+    if (s.floorId !== floorId) s.setFloor(building.id, floorId);
+    s.setVariant(variantId);
+    s.setTool('select');
+    setPrintOpen(issue === 'plan-clipped' ? 'scale' : '');
+    if (issue === 'instructions-clipped') {
+      setFocusInstructions((value) => value + 1);
+    } else if (issue !== 'plan-clipped') {
+      const markers = floor.elements.filter((e) => e.type === 'symbol' && e.symbolId === 'you-are-here' && isVisibleInVariant(e, variantId));
+      if (!markers.length) s.setTool('symbol', 'you-are-here');
+      else {
+        s.select(markers.map((e) => e.id));
+        s.requestFit();
+        if (issue === 'marker-missing') {
+          setLeftTab('layers');
+          s.toast('Vérifiez la visibilité du calque, l’opacité du repère et la zone imprimée.', 'info');
+        }
+      }
+    }
+  };
+  useEffect(() => {
+    if (!focusInstructions) return;
+    const input = document.getElementById('floor-instructions');
+    input?.scrollIntoView({ block: 'nearest' });
+    input?.focus();
+  }, [focusInstructions]);
+
   // ——— Raccourcis clavier ———
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement;
       const typing = t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable);
-      if (document.querySelector('.modal-backdrop') && !e.ctrlKey) return;
+      if (document.querySelector('.modal-backdrop')) return;
       const k = e.key.toLowerCase();
       if (e.ctrlKey) {
         const map: Record<string, string> = {
@@ -177,7 +210,10 @@ export function App() {
   if (!project) {
     return (
       <>
-        <Welcome version={version} onHelp={() => setHelp('guide')} />
+        <Welcome version={version} onHelp={() => setHelp('guide')} onDemo={() => {
+          useStore.getState().loadProject(buildReviewDemo(), null);
+          setPrintOpen('preview');
+        }} />
         {help && <HelpDialog kind={help} onClose={() => setHelp('')} version={version} />}
         <DialogHost />
         <Toasts />
@@ -187,7 +223,7 @@ export function App() {
 
   return (
     <div className="app">
-      <Ribbon onPrintPreview={() => setPrintOpen(true)} />
+      <Ribbon onPrintPreview={() => setPrintOpen('preview')} onQuickExport={() => setPrintOpen('current')} />
       <div className="main">
         <nav className="left">
           <div className="tabs" role="tablist">
@@ -203,10 +239,11 @@ export function App() {
           <FloorBar />
           <Canvas onCalibrate={(d) => A.calibrateAction(d)} />
         </main>
-        <PropertiesPanel />
+        <PropertiesPanel key={focusInstructions} />
       </div>
       <StatusBar />
-      {printOpen && <PrintDialog onClose={() => setPrintOpen(false)} />}
+      {printOpen && <PrintDialog key={`${printOpen}:${project.id}`} currentOnly={printOpen !== 'preview'} focusScale={printOpen === 'scale'}
+        onEdit={editPrintIssue} onClose={() => setPrintOpen('')} />}
       {help && <HelpDialog kind={help} onClose={() => setHelp('')} version={version} />}
       <DialogHost />
       <Toasts />
@@ -224,16 +261,13 @@ function FloorBar() {
       <span className="crumb"><Icon name="building" size={15} /> {building.name}</span>
       <span className="sep">›</span>
       <span className="crumb"><Icon name="floor" size={15} /> {floor.name}</span>
-      {floor.variants.length > 1 && (
-        <>
-          <span className="sep">›</span>
-          <label className="crumb">Version :
-            <select value={variantId} onChange={(e) => useStore.getState().setVariant(e.target.value)}>
-              {floor.variants.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
-            </select>
-          </label>
-        </>
-      )}
+      <span className="sep">›</span>
+      <label className="crumb">Affiche
+        <select value={variantId} onChange={(e) => useStore.getState().setVariant(e.target.value)}>
+          {floor.variants.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
+        </select>
+      </label>
+      <button className="btn small" onClick={() => A.createDisplayLocation()}><Icon name="plus" size={14} /> Emplacement d’affichage</button>
       <span className={`badge status-${floor.titleBlock.status}`}>{STATUS_LABEL[floor.titleBlock.status]}</span>
     </div>
   );
@@ -309,7 +343,7 @@ function SampleCard({ sample }: { sample: (typeof SAMPLES)[number] }) {
   );
 }
 
-function Welcome({ version, onHelp }: { version: string; onHelp(): void }) {
+function Welcome({ version, onHelp, onDemo }: { version: string; onHelp(): void; onDemo(): void }) {
   const [recent, setRecent] = useState<string[]>([]);
   useEffect(() => { api().recentList().then(setRecent); }, []);
   return (
@@ -326,7 +360,7 @@ function Welcome({ version, onHelp }: { version: string; onHelp(): void }) {
         </div>
         <p className="welcome-tag">Des plans d’évacuation nets et professionnels, conçus et imprimés depuis votre poste — sans connexion, sans abonnement.</p>
         <div className="welcome-actions">
-          <button className="w-btn primary" onClick={() => A.newProjectAction()}><Icon name="new" size={20} /><span><b>Nouveau projet</b><small>Bâtiments, étages, versions</small></span></button>
+          <button className="w-btn" onClick={() => A.newProjectAction()}><Icon name="new" size={20} /><span><b>Nouveau projet</b><small>Partir d’un étage vide</small></span></button>
           <button className="w-btn" onClick={() => A.openProjectAction()}><Icon name="open" size={20} /><span><b>Ouvrir un projet</b><small>Fichier .planevac</small></span></button>
         </div>
         {recent.length > 0 && (
@@ -348,6 +382,7 @@ function Welcome({ version, onHelp }: { version: string; onHelp(): void }) {
         <div className="welcome-main-head">
           <h2>Plans d’exemple</h2>
           <p className="muted">Ouvrez un exemple pour découvrir les thèmes de mise en page, puis adaptez-le à votre bâtiment.</p>
+          <button className="btn" onClick={onDemo}><Icon name="route" size={16} /> Essayer les nouveautés</button>
         </div>
         <div className="sample-grid">
           {SAMPLES.map((s) => <SampleCard key={s.id} sample={s} />)}
@@ -371,9 +406,9 @@ function HelpDialog({ kind, onClose, version }: { kind: 'guide' | 'shortcuts' | 
               <li><b>Dessiner</b> depuis le ruban <i>Bâtiment</i> : murs (M), portes (P), fenêtres (F), escaliers (E), pièces (R), zones (Z).</li>
               <li><b>Placer les pictogrammes ISO 7010</b> depuis l’onglet <i>Symboles</i> (recherche par nom ou code, clic puis clic, ou glisser-déposer).</li>
               <li><b>Tracer les itinéraires</b> (I) ou poser une <b>flèche d’évacuation</b> verte (<i>Insérer › Flèches d’évacuation</i> : demi-tour, virages, chicane…).</li>
-              <li><b>Créer des versions</b> (onglet Projet) pour chaque emplacement « Vous êtes ici » d’un même étage.</li>
+              <li><b>Créer un emplacement d’affichage</b> au-dessus du plan, puis placer le repère « Vous êtes ici ». Pour une deuxième affiche, choisissez si les itinéraires doivent être repris ou copiés pour être modifiés indépendamment.</li>
               <li><b>Choisir un thème</b> de mise en page (<i>Mise en page</i>), compléter cartouche, numéros d’urgence et consignes, puis <b>valider</b> explicitement le plan.</li>
-              <li><b>Exporter</b> en PDF / PNG ou imprimer depuis l’aperçu (Ctrl+P).</li>
+              <li><b>Vérifier et exporter</b> depuis l’aperçu (Ctrl+P). Choisissez les versions de l’étage ou les pages à exporter pour tout le bâtiment. Les alertes indiquent les points à vérifier sur chaque affiche.</li>
             </ol>
             <p className="muted small">Le projet est sauvegardé automatiquement toutes les 30 secondes dans un fichier de secours ; après une fermeture inattendue, il vous sera proposé de le restaurer au prochain démarrage. Pensez à enregistrer (Ctrl+S) votre fichier .planevac.</p>
           </>

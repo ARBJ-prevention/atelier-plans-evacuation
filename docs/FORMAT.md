@@ -1,10 +1,11 @@
-# Format de fichier `.planevac` (version 2)
+# Format de fichier `.planevac` (versions 2 et 3)
 
 Un projet est un **fichier texte JSON unique, encodé en UTF-8**. Il contient tous les objets sous forme modifiable ainsi que les images (plan de fond, logos, pictogrammes importés) encodées en *data URL* base64. Il peut être lu par n'importe quel outil JSON. La définition TypeScript de référence est dans [`src/model/types.ts`](../src/model/types.ts).
 
 Enregistrement : écriture dans un fichier temporaire, synchronisation disque, copie de l'ancienne version en `.planevac.bak`, puis renommage atomique et relecture de contrôle.
 
 ## Compatibilité
+- Atelier 2.0.11 ouvre les projets existants. L’enregistrement reste au format 2 tant qu’un élément commun n’est exclu d’aucune affiche. Dès qu’une exception est utilisée, le projet passe au format 3 pour qu’une ancienne version du logiciel ne puisse pas réafficher par erreur l’itinéraire commun en plus de sa copie.
 - Les fichiers de la **version 1** s'ouvrent automatiquement : les champs nouveaux reçoivent leurs valeurs par défaut, `dashed` devient `dash`, `double` (porte) devient `doorType`, et les anciens pictogrammes sont remplacés par leurs équivalents ISO 7010 (`extinguisher` → `iso-F001`, `exit` → `iso-E002`, etc. ; voir `LEGACY_SYMBOLS` dans `src/model/serialize.ts`).
 - Un fichier d'une version plus récente que le logiciel est refusé avec un message explicite.
 - Les champs absents sont complétés à l'ouverture ; les types d'éléments inconnus sont ignorés.
@@ -14,7 +15,7 @@ Enregistrement : écriture dans un fichier temporaire, synchronisation disque, c
 | Champ | Type | Description |
 |---|---|---|
 | `format` | `"atelier-evac"` | Identifiant obligatoire du format. |
-| `formatVersion` | entier | Version du format (`2`). |
+| `formatVersion` | entier | `2` par défaut, `3` en présence d’exceptions par affiche. |
 | `id` | texte | Identifiant unique du projet (sert aussi à la sauvegarde automatique). |
 | `name` | texte | Nom du projet. |
 | `country` | `BE` `FR` `CH` `LU` `INT` | Profil pays (consignes et numéros d'urgence par défaut, rappel des référentiels). |

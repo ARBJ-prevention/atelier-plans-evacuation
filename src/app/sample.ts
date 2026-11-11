@@ -3,6 +3,7 @@
  * en page et les possibilités du logiciel. 50 unités plan = 1 mètre.
  */
 import { makeElement, newProject, newVariant } from '../model/defaults';
+import { cloneFloorWithNewIds } from '../model/serialize';
 import type { Element, Floor, PageTheme, Project, Pt } from '../model/types';
 
 const GREEN = '#00843d';
@@ -335,4 +336,19 @@ export const SAMPLES: SampleInfo[] = [
 /** Compatibilité : projet d'exemple utilisé par l'autotest. */
 export function buildSampleProject(): Project {
   return sampleOffices();
+}
+
+export function buildReviewDemo(): Project {
+  const project = sampleOffices();
+  project.name = 'Démonstration 2.0.11 — Le Quartz';
+  const building = project.buildings[0];
+  const ground = building.floors[0];
+  const upstairs = cloneFloorWithNewIds(ground, 'Premier étage');
+  upstairs.level = 1;
+  upstairs.variants[0].name = 'Palier';
+  upstairs.variants = upstairs.variants.slice(0, 1);
+  upstairs.elements = upstairs.elements.filter((e) => !e.variantId || e.variantId === upstairs.variants[0].id);
+  Object.assign(upstairs.page, { paper: 'A3', orientation: 'portrait' });
+  building.floors.push(upstairs);
+  return project;
 }

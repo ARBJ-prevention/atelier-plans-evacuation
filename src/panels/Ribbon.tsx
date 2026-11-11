@@ -6,7 +6,7 @@ import { ElementView } from '../render/ElementView';
 import type { PageSetup, PageTheme } from '../model/types';
 import { STATUS_LABEL } from '../render/PrintPage';
 import { horizonNight, THEMES, themePatch, themeColor } from '../render/layout';
-import { currentFloor, useStore, type Tool, type ToolPresets } from '../store/store';
+import { currentFloor, currentVariantId, MAX_SYMBOL_WALL_GAP, useStore, type Tool, type ToolPresets } from '../store/store';
 import { Icon } from '../ui/icons';
 
 type Tab = 'home' | 'insert' | 'building' | 'page' | 'view';
@@ -42,7 +42,7 @@ function Group({ title, children, cols }: { title: string; children: React.React
   );
 }
 
-export function Ribbon({ onPrintPreview }: { onPrintPreview(): void }) {
+export function Ribbon({ onPrintPreview, onQuickExport }: { onPrintPreview(): void; onQuickExport(): void }) {
   const [tab, setTab] = useState<Tab>('home');
   const project = useStore((s) => s.project)!;
   const tool = useStore((s) => s.tool);
@@ -51,6 +51,8 @@ export function Ribbon({ onPrintPreview }: { onPrintPreview(): void }) {
   const canRedo = useStore((s) => s.future.length > 0);
   const dirty = useStore((s) => s.dirty);
   const floor = useStore((s) => currentFloor(s));
+  const variantId = useStore((s) => currentVariantId(s));
+  const variantName = floor?.variants.find((v) => v.id === variantId)?.name;
   const sel = useStore((s) => s.selection.length);
   const S = useStore.getState;
   const use = (t: Tool, p?: Partial<ToolPresets>) => { if (p) S().setPreset(p); S().setTool(t); };
@@ -81,7 +83,9 @@ export function Ribbon({ onPrintPreview }: { onPrintPreview(): void }) {
         </div>
         <div className="rb-actions">
           <button className="rb-cta ghost" onClick={onPrintPreview}><Icon name="print" size={16} /> Aperçu</button>
-          <button className="rb-cta" onClick={() => A.exportPdfAction()}><Icon name="pdf" size={16} /> Exporter PDF</button>
+          <button className="rb-cta" onClick={onQuickExport} title={`Vérifier et exporter ${variantName ?? 'l’affiche active'}`}>
+            <Icon name="pdf" size={16} /> <span className="quick-export-label">{variantName ? `PDF · ${variantName}` : 'Exporter PDF'}</span>
+          </button>
         </div>
       </div>
 
@@ -340,8 +344,7 @@ function PageTab({ page, onPreview }: { page: PageSetup; onPreview(): void }) {
       </Group>
       <Group title="Sortie">
         <Big icon="print" label="Aperçu" onClick={onPreview} />
-        <Big icon="pdf" label="PDF" onClick={() => A.exportPdfAction()} />
-        <Big icon="image" label="PNG" onClick={() => A.exportPngAction()} />
+        <Big icon="layout" label="Modèles" onClick={() => A.manageOrganizationTemplates()} title="Enregistrer ou appliquer un modèle d’organisation" />
       </Group>
     </>
   );
@@ -389,6 +392,17 @@ function ViewTab() {
             <input type="range" min={0} max={1} step={0.05} value={grid.intensity} onChange={(e) => S().setGrid({ intensity: Number(e.target.value) })} />
           </label>
         </div>
+      </Group>
+      <Group title="Pictogrammes">
+        <Big icon="magnet" label="Aimantage" title="Aimantage des pictogrammes" active={grid.symbolSnapEnabled}
+          onClick={() => S().setGrid({ symbolSnapEnabled: !grid.symbolSnapEnabled })} />
+        <label className="rb-stack rb-field" title="Espace entre le bord du pictogramme et la face du mur après l’aimantage">
+          <span>Retrait des murs · {grid.symbolWallGap} u</span>
+          <input type="range" min={1} max={MAX_SYMBOL_WALL_GAP} step={1}
+            value={grid.symbolWallGap} aria-label="Retrait des pictogrammes par rapport aux murs"
+            aria-valuetext={`${grid.symbolWallGap} unités du plan`} disabled={!grid.symbolSnapEnabled}
+            onChange={(e) => S().setGrid({ symbolWallGap: Number(e.target.value) })} />
+        </label>
       </Group>
       <Group title="Aides">
         <Big icon="ruler" label="Règles" active={rulers} onClick={() => S().toggleRulers()} />

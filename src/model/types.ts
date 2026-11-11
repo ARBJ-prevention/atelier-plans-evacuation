@@ -44,6 +44,7 @@ export interface BaseElement {
   groupId?: string;
   /** Si défini, l'élément n'apparaît que dans cette version du plan. */
   variantId?: string;
+  excludedVariantIds?: string[];
   /** Opacité globale (0 à 1, défaut 1). */
   opacity?: number;
   shadow?: Shadow;
@@ -292,6 +293,7 @@ export interface TitleBlock {
   status: ValidationStatus;
   validatedBy: string;
   validatedAt: string; // ISO
+  validationReason?: string;
   instructions: string; // consignes (texte multi-lignes)
   emergencyNumbers: string; // ex. « Pompiers 112 · Police 101 »
   logo: string; // data URL ou ''
@@ -375,4 +377,5 @@ export interface Project {
 }
 
 export const FORMAT_ID = 'atelier-evac';
-export const FORMAT_VERSION = 2;
+export const BASE_FORMAT_VERSION = 2;
+export const FORMAT_VERSION = 3;

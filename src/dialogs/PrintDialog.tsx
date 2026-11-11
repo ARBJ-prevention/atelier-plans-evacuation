@@ -1,22 +1,28 @@
-import { useLayoutEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import * as A from '../app/actions';
 import { floorContentBounds } from '../model/geometry';
 import type { PageSetup, PageTheme } from '../model/types';
 import { ThemeThumb } from '../panels/Ribbon';
-import { PrintPage } from '../render/PrintPage';
-import { computeLayout, FRAME_ZONES, frameOn, THEMES, themePatch } from '../render/layout';
+import { printIssues } from '../render/PrintPage';
+import { FRAME_ZONES, frameOn, THEMES, themePatch } from '../render/layout';
 import { currentBuilding, currentFloor, currentVariantId, useStore } from '../store/store';
 import { Icon } from '../ui/icons';
+import { BuildingExport } from './BuildingExport';
+import { PrintPreviewPane, PrintReview, usePrintEscape, type EditPrintIssue } from './PrintReview';
 
-export function PrintDialog({ onClose }: { onClose(): void }) {
+export function PrintDialog({ onClose, onEdit, currentOnly = false, focusScale = false }: {
+  onClose(): void; onEdit: EditPrintIssue; currentOnly?: boolean; focusScale?: boolean;
+}) {
   const project = useStore((s) => s.project)!;
   const floor = useStore((s) => currentFloor(s))!;
   const building = useStore((s) => currentBuilding(s))!;
   const activeVariant = useStore((s) => currentVariantId(s));
   const [previewVariant, setPreviewVariant] = useState(activeVariant);
-  const [scope, setScope] = useState<'current' | 'all'>(floor.variants.length > 1 ? 'all' : 'current');
+  const [scope, setScope] = useState<'current' | 'all'>(!currentOnly && floor.variants.length > 1 ? 'all' : 'current');
   const [dpi, setDpi] = useState(300);
   const [busy, setBusy] = useState('');
+  const [batch, setBatch] = useState(false);
+  const backdrop = usePrintEscape(onClose, !!busy);
   const page = floor.page;
 
   const set = (patch: Partial<PageSetup>) =>
@@ -39,50 +45,27 @@ export function PrintDialog({ onClose }: { onClose(): void }) {
     try { await fn(); } finally { setBusy(''); }
   };
 
-  const L = computeLayout(floor, previewVariant, page);
-
-  // Taille de la page d'aperçu : la plus grande possible dans la zone, en gardant les proportions du papier.
-  const areaRef = useRef<HTMLDivElement>(null);
-  const [area, setArea] = useState({ w: 0, h: 0 });
-  useLayoutEffect(() => {
-    const el = areaRef.current;
-    if (!el) return;
-    const measure = () => setArea({ w: el.clientWidth, h: el.clientHeight });
-    measure();
-    const ro = new ResizeObserver(measure);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
-  const ratio = L.w / L.h;
-  const pw = area.w && area.h ? Math.floor(Math.min(area.w, area.h * ratio)) : 0;
-  const ph = pw ? Math.floor(pw / ratio) : 0;
   const calibrated = floor.unitsPerMeter > 0;
   const ca = page.customArea;
+  const selected = scope === 'all' ? floor.variants : floor.variants.filter((v) => v.id === previewVariant);
+  const destination = selected.length === 1 ? selected[0].name : `${selected.length} versions`;
+  const alerts = selected.map((v) => ({ floorId: floor.id, variantId: v.id, label: v.name, issues: printIssues(floor, v.id) }));
+  if (batch) return <BuildingExport building={building} customSymbols={project.customSymbols} onBack={() => setBatch(false)} onClose={onClose}
+    onEdit={(floorId, variantId, issue) => { setBatch(false); onEdit(floorId, variantId, issue); }} />;
 
   return (
-    <div className="modal-backdrop" onKeyDown={(e) => { if (e.key === 'Escape') onClose(); }}>
+    <div className="modal-backdrop" ref={backdrop}>
       <div className="print-dialog" role="dialog" aria-modal="true" aria-label="Aperçu avant impression">
-        <div className="print-preview">
-          <div className="preview-area" ref={areaRef}>
-            {pw > 0 && (
-              <div className="preview-page" style={{ width: pw, height: ph }}>
-                <PrintPage building={building} floor={floor} variantId={previewVariant} customSymbols={project.customSymbols} uniqueKey="preview" />
-              </div>
-            )}
-          </div>
-          <div className="preview-caption muted small">
-            {page.paper} {page.orientation === 'landscape' ? 'paysage' : 'portrait'} · {L.paperW}×{L.paperH} mm
-            {L.scaleDenominator ? ` · échelle ${page.scaleMode === 'fixed' ? '' : '≈ '}1:${Math.round(L.scaleDenominator)}` : ' · échelle : ajustée à la page'}
-          </div>
-        </div>
+        <PrintPreviewPane building={building} floor={floor} variantId={previewVariant} customSymbols={project.customSymbols} uniqueKey="preview" />
 
         <div className="print-settings">
           <h2>Aperçu et export</h2>
+          <button className="btn small full" autoFocus={!focusScale} disabled={!!busy} onClick={() => setBatch(true)}><Icon name="building" size={15} /> Exporter le bâtiment</button>
 
           {floor.variants.length > 1 && (
             <>
               <h3>Version affichée</h3>
-              <select value={previewVariant} onChange={(e) => setPreviewVariant(e.target.value)}>
+              <select aria-label="Version affichée" value={previewVariant} onChange={(e) => setPreviewVariant(e.target.value)}>
                 {floor.variants.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
               </select>
               <div className="seg full">
@@ -91,6 +74,25 @@ export function PrintDialog({ onClose }: { onClose(): void }) {
               </div>
             </>
           )}
+
+          <PrintReview alerts={alerts} onEdit={(alert, issue) => {
+            if (busy) return;
+            if (issue === 'plan-clipped') {
+              setPreviewVariant(alert.variantId);
+              document.getElementById('print-scale-fit')?.focus();
+            } else onEdit(alert.floorId, alert.variantId, issue);
+          }} />
+          <div className="print-actions">
+            <button className="btn primary" disabled={!!busy} onClick={() => run('print', () => A.printAction(job()))}><Icon name="print" size={16} /> {busy === 'print' ? 'Préparation…' : 'Imprimer…'}</button>
+            <button className="btn primary" disabled={!!busy} onClick={() => run('pdf', () => A.exportPdfAction(job()))}><Icon name="pdf" size={16} /> {busy === 'pdf' ? 'Export…' : `Exporter en PDF · ${destination}`}</button>
+            <div className="row gap">
+              <button className="btn" disabled={!!busy} onClick={() => run('png', () => A.exportPngAction(job(), dpi))}><Icon name="image" size={16} /> {busy === 'png' ? 'Export…' : 'Exporter en PNG'}</button>
+              <select value={dpi} onChange={(e) => setDpi(Number(e.target.value))} aria-label="Résolution PNG">
+                <option value={150}>150 ppp</option><option value={300}>300 ppp</option><option value={600}>600 ppp</option>
+              </select>
+            </div>
+            <button className="btn" disabled={!!busy} onClick={onClose}>Fermer</button>
+          </div>
 
           <h3>Thème</h3>
           <div className="theme-grid">
@@ -111,7 +113,7 @@ export function PrintDialog({ onClose }: { onClose(): void }) {
 
           <h3>Échelle</h3>
           <div className="seg full">
-            <button className={page.scaleMode === 'fit' ? 'on' : ''} onClick={() => set({ scaleMode: 'fit' })}>Ajuster à la page</button>
+            <button id="print-scale-fit" autoFocus={focusScale} className={page.scaleMode === 'fit' ? 'on' : ''} onClick={() => set({ scaleMode: 'fit' })}>Ajuster à la page</button>
             <button className={page.scaleMode === 'fixed' ? 'on' : ''} disabled={!calibrated} onClick={() => set({ scaleMode: 'fixed' })}
               title={calibrated ? '' : 'Étalonnez d’abord l’échelle du plan'}>Échelle fixe</button>
           </div>
@@ -157,17 +159,7 @@ export function PrintDialog({ onClose }: { onClose(): void }) {
             <button className="btn small" onClick={() => set({ frames: undefined })}>Revenir aux cadres du thème</button>
           )}
 
-          <div className="print-actions">
-            <button className="btn primary" disabled={!!busy} onClick={() => run('print', () => A.printAction(job()))}><Icon name="print" size={16} /> {busy === 'print' ? 'Préparation…' : 'Imprimer…'}</button>
-            <button className="btn primary" disabled={!!busy} onClick={() => run('pdf', () => A.exportPdfAction(job()))}><Icon name="pdf" size={16} /> {busy === 'pdf' ? 'Export…' : 'Exporter en PDF'}</button>
-            <div className="row gap">
-              <button className="btn" disabled={!!busy} onClick={() => run('png', () => A.exportPngAction(job(), dpi))}><Icon name="image" size={16} /> {busy === 'png' ? 'Export…' : 'Exporter en PNG'}</button>
-              <select value={dpi} onChange={(e) => setDpi(Number(e.target.value))} aria-label="Résolution PNG">
-                <option value={150}>150 ppp</option><option value={300}>300 ppp</option><option value={600}>600 ppp</option>
-              </select>
-            </div>
-            <button className="btn" onClick={onClose}>Fermer</button>
-          </div>
+
         </div>
       </div>
     </div>

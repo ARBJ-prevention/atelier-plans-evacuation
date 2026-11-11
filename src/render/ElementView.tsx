@@ -1,5 +1,5 @@
 import React from 'react';
-import { boxOf, legendSize, polygonArea, symbolFuseSides, textSize, usedSymbolIds, type FuseSides } from '../model/geometry';
+import { boxOf, doorDimensions, legendSize, openingWallFit, polygonArea, symbolFuseSides, textSize, usedSymbolIds, windowFrameWidth, type FuseSides } from '../model/geometry';
 import type {
   ArrowStyle, CustomSymbol, DashStyle, Element, FillPattern, Floor, Pt, RouteElement, ShapeElement, SymbolElement,
 } from '../model/types';
@@ -9,6 +9,8 @@ export interface RenderCtx {
   floor: Floor;
   variantId: string;
   customSymbols: CustomSymbol[];
+  interactive?: boolean;
+  idPrefix?: string;
 }
 
 export const FONT = "'Segoe UI Variable Text', 'Segoe UI', Arial, Helvetica, sans-serif";
@@ -222,7 +224,7 @@ function SymbolView({ el, ctx }: { el: SymbolElement; ctx: RenderCtx }) {
     <g transform={`translate(${el.x} ${el.y})`}>
       <g transform={`${el.rotation ? `rotate(${el.rotation})` : ''} ${stretch} ${el.flipX || el.flipY ? `scale(${el.flipX ? -1 : 1} ${el.flipY ? -1 : 1})` : ''}`}>
         {el.halo && <rect x={-el.size * 0.62} y={-el.size * 0.62} width={el.size * 1.24} height={el.size * 1.24} rx={el.size * 0.18} fill="#ffffff" stroke="rgba(0,0,0,.12)" strokeWidth={el.size * 0.02} />}
-        <SymbolGraphic symbolId={el.symbolId} size={el.size} custom={ctx.customSymbols} fuse={fuse} clipId={`fuse-${el.id}`} />
+        <SymbolGraphic symbolId={el.symbolId} size={el.size} custom={ctx.customSymbols} fuse={fuse} clipId={`${ctx.idPrefix ?? ''}fuse-${el.id}`} />
       </g>
       {el.label && (
         <text x={lx} y={ly} textAnchor={anchor} fontFamily={FONT} fontWeight={700}
@@ -274,7 +276,7 @@ function Inner({ el, ctx }: { el: Element; ctx: RenderCtx }): React.ReactElement
         );
       }
       if (el.wallStyle === 'hatch') {
-        const pid = `pw-${el.id}`;
+        const pid = `${ctx.idPrefix ?? ''}pw-${el.id}`;
         return (
           <g>
             <defs><PatternDef id={pid} pattern="hatch" color="#ffffff" size={Math.max(4, el.thickness * 0.7)} /></defs>
@@ -290,7 +292,7 @@ function Inner({ el, ctx }: { el: Element; ctx: RenderCtx }): React.ReactElement
       if (el.points.length < 3) return null;
       const [c0, c1] = polygonCentroid(el.points);
       const cx = c0 + (el.labelDx || 0), cy = c1 + (el.labelDy || 0);
-      const pid = `pa-${el.id}`;
+      const pid = `${ctx.idPrefix ?? ''}pa-${el.id}`;
       const upm = ctx.floor.unitsPerMeter;
       const lines = el.label ? el.label.split('\n') : [];
       if (el.showArea && upm > 0) lines.push(`${(polygonArea(el.points) / (upm * upm)).toFixed(1).replace('.', ',')} m²`);
@@ -313,7 +315,8 @@ function Inner({ el, ctx }: { el: Element; ctx: RenderCtx }): React.ReactElement
 
     case 'door': {
       const w = el.width;
-      const sw = Math.max(2, w * 0.035);
+      const { gap: defaultGap, stroke: sw } = doorDimensions(w);
+      const gap = openingWallFit(ctx.floor, ctx.variantId, el)?.depth ?? defaultGap;
       const parts: React.ReactNode[] = [];
       const leaf = (hx: number, dir: 1 | -1, lw: number, k: string) => {
         parts.push(
@@ -338,10 +341,13 @@ function Inner({ el, ctx }: { el: Element; ctx: RenderCtx }): React.ReactElement
         case 'opening': break;
         default: el.swing === 'left' ? leaf(-w / 2, 1, w, 'a') : leaf(w / 2, -1, w, 'a');
       }
-      const gap = Math.max(6, w * 0.16);
       return (
         <g transform={`translate(${el.x} ${el.y}) rotate(${el.rotation}) ${el.flipY ? 'scale(1 -1)' : ''}`}>
           <rect x={-w / 2} y={-gap / 2} width={w} height={gap} fill={ctx.floor.page.planBackground || '#ffffff'} />
+          {ctx.interactive && (
+            <path d={`M ${-w / 2} ${-gap / 2} h ${w} M ${-w / 2} ${gap / 2} h ${w}`}
+              fill="none" stroke="#64748b" strokeOpacity={0.55} strokeWidth={1} vectorEffect="non-scaling-stroke" pointerEvents="none" />
+          )}
           {el.emergency && <rect x={-w / 2} y={gap / 2 - Math.max(2, gap * 0.25)} width={w} height={Math.max(2, gap * 0.25)} fill="#00843d" />}
           {el.fireRated && <rect x={-w / 2} y={-gap / 2} width={w} height={Math.max(2, gap * (el.emergency ? 0.25 : 0.4))} fill={FIRE_RED} />}
           {parts}
@@ -363,12 +369,13 @@ function Inner({ el, ctx }: { el: Element; ctx: RenderCtx }): React.ReactElement
 
     case 'window': {
       const { width: w, depth: d } = el;
+      const frame = windowFrameWidth(w, d);
       const lines = [];
       for (let i = 1; i < el.panes; i++) lines.push(<line key={i} x1={-w / 2 + (w / el.panes) * i} y1={-d / 2} x2={-w / 2 + (w / el.panes) * i} y2={d / 2} stroke={el.color} strokeWidth={Math.max(0.8, d * 0.08)} />);
       return (
         <g transform={`translate(${el.x} ${el.y}) rotate(${el.rotation})`}>
-          <rect x={-w / 2} y={-d / 2} width={w} height={d} fill="#ffffff" stroke={el.color} strokeWidth={Math.max(1, d * 0.12)} />
-          <line x1={-w / 2} y1={0} x2={w / 2} y2={0} stroke={el.color} strokeWidth={Math.max(0.6, d * 0.07)} />
+          <rect x={(frame - w) / 2} y={(frame - d) / 2} width={w - frame} height={d - frame} fill="#ffffff" stroke={el.color} strokeWidth={frame} />
+          <line x1={-w / 2} y1={0} x2={w / 2} y2={0} stroke={el.color} strokeWidth={Math.min(d, Math.max(0.6, d * 0.07))} />
           {lines}
         </g>
       );
@@ -455,7 +462,7 @@ function Inner({ el, ctx }: { el: Element; ctx: RenderCtx }): React.ReactElement
 
     case 'image': {
       if (!el.src) return null;
-      const cid = `ci-${el.id}`;
+      const cid = `${ctx.idPrefix ?? ''}ci-${el.id}`;
       return (
         <g transform={`translate(${el.x} ${el.y}) rotate(${el.rotation}) scale(${el.flipX ? -1 : 1} ${el.flipY ? -1 : 1})`}>
           {el.radius > 0 && <defs><clipPath id={cid}><rect x={-el.w / 2} y={-el.h / 2} width={el.w} height={el.h} rx={el.radius} /></clipPath></defs>}
@@ -466,7 +473,7 @@ function Inner({ el, ctx }: { el: Element; ctx: RenderCtx }): React.ReactElement
     }
 
     case 'shape': {
-      const pid = `ps-${el.id}`;
+      const pid = `${ctx.idPrefix ?? ''}ps-${el.id}`;
       const g = shapePath(el);
       const isLine = el.shape === 'line';
       return (
@@ -522,7 +529,7 @@ export function ElementView({ el, ctx }: { el: Element; ctx: RenderCtx }): React
   const op = el.opacity ?? 1;
   const sh = el.shadow?.enabled ? el.shadow : null;
   if (op >= 1 && !sh) return inner;
-  const fid = `sh-${el.id}`;
+  const fid = `${ctx.idPrefix ?? ''}sh-${el.id}`;
   return (
     <g opacity={op < 1 ? op : undefined} filter={sh ? `url(#${fid})` : undefined}>
       {sh && (

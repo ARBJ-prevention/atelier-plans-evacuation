@@ -1,11 +1,16 @@
 import { defaultLayers, defaultPage, defaultTitleBlock, elementDefaults, newVariant, uid } from './defaults';
 import type { Building, Element, Floor, Project } from './types';
-import { FORMAT_ID, FORMAT_VERSION } from './types';
+import { BASE_FORMAT_VERSION, FORMAT_ID, FORMAT_VERSION } from './types';
 
 export class ProjectFormatError extends Error {}
 
+function requiredFormatVersion(buildings: Building[]): number {
+  return buildings.some((building) => building.floors.some((floor) => floor.elements.some((element) => element.excludedVariantIds?.length)))
+    ? FORMAT_VERSION : BASE_FORMAT_VERSION;
+}
+
 export function serializeProject(p: Project): string {
-  return JSON.stringify({ ...p, format: FORMAT_ID, formatVersion: FORMAT_VERSION }, null, 1);
+  return JSON.stringify({ ...p, format: FORMAT_ID, formatVersion: requiredFormatVersion(p.buildings) }, null, 1);
 }
 
 /**
@@ -50,6 +55,8 @@ function migrateElement(e: any): Element {
   if (e.type === 'door' && typeof e.double === 'boolean' && !e.doorType) out.doorType = e.double ? 'double' : 'single';
   delete out.double;
   if (e.type === 'symbol' && LEGACY_SYMBOLS[e.symbolId]) out.symbolId = LEGACY_SYMBOLS[e.symbolId];
+  if (Array.isArray(e.excludedVariantIds)) out.excludedVariantIds = e.excludedVariantIds.filter((id: unknown) => typeof id === 'string');
+  else delete out.excludedVariantIds;
   return out as Element;
 }
 
@@ -57,7 +64,7 @@ function migrate(raw: any): Project {
   const country = typeof raw.country === 'string' ? raw.country : 'BE';
   const p: Project = {
     format: FORMAT_ID,
-    formatVersion: FORMAT_VERSION,
+    formatVersion: BASE_FORMAT_VERSION,
     id: String(raw.id || uid('prj')),
     name: String(raw.name ?? 'Projet'),
     country,
@@ -86,6 +93,7 @@ function migrate(raw: any): Project {
       }),
     })),
   };
+  p.formatVersion = requiredFormatVersion(p.buildings);
   return p;
 }
 
@@ -109,6 +117,7 @@ export function cloneFloorWithNewIds(f: Floor, newName: string): Floor {
   copy.elements = copy.elements.map((e) => {
     const n = { ...e, id: uid('el') };
     if (n.variantId) n.variantId = varMap.get(n.variantId);
+    if (n.excludedVariantIds) n.excludedVariantIds = n.excludedVariantIds.flatMap((id) => varMap.get(id) ?? []);
     if (n.groupId) { if (!grpMap.has(n.groupId)) grpMap.set(n.groupId, uid('grp')); n.groupId = grpMap.get(n.groupId); }
     return n;
   });

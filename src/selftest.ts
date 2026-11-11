@@ -8,7 +8,7 @@
  */
 import * as pdfjs from 'pdfjs-dist';
 import * as A from './app/actions';
-import { buildSampleProject, SAMPLES } from './app/sample';
+import { buildReviewDemo, buildSampleProject, SAMPLES } from './app/sample';
 import { BUILTIN_SYMBOLS } from './symbols/library';
 import { makeElement, uid } from './model/defaults';
 import { canonicalJson, parseProject, serializeProject } from './model/serialize';
@@ -17,7 +17,7 @@ import { renderPdfPage } from './services/imports';
 import { decodeDxfBytes, flattenDxf, parseDxf, renderDxfSvg, unitMeters } from './services/dxf';
 import { buildSampleDxf } from './app/sampleDxf';
 import { guessLayerRole, recognizedElements, recognizePlan } from './services/recognize';
-import { renderPagePng } from './services/exporter';
+import { buildBatchPrintHtml, renderPagePng } from './services/exporter';
 import { currentFloor, useStore } from './store/store';
 
 interface Check { name: string; ok: boolean; detail: string }
@@ -54,7 +54,9 @@ export async function runSelfTest(outDir: string): Promise<void> {
   let pdfPath = '';
   await check('Export PDF A4 paysage (une page par version)', async () => {
     const job = A.currentExportJob('all')!;
+    const start = performance.now();
     pdfPath = (await A.exportPdfAction(job, out('plan-A4-toutes-versions.pdf')))!;
+    const exportMs = Math.round(performance.now() - start);
     assert(pdfPath, 'aucun fichier produit');
     const bytes = new Uint8Array(await api().readBinary(pdfPath));
     assert(new TextDecoder().decode(bytes.slice(0, 5)) === '%PDF-', 'signature PDF absente');
@@ -74,7 +76,7 @@ export async function runSelfTest(outDir: string): Promise<void> {
     const rasters = ops.fnArray.filter((f: number) => f === pdfjs.OPS.paintImageXObject || f === pdfjs.OPS.paintInlineImageXObject).length;
     assert(rasters === 0, `${rasters} image(s) matricielle(s) trouvée(s) : les pictogrammes ont été rastérisés`);
     await doc.loadingTask.destroy();
-    return `${(bytes.length / 1024).toFixed(0)} Ko, 2 pages A4 (842×595 pt), texte et pictogrammes vectoriels vérifiés`;
+    return `${exportMs} ms, ${(bytes.length / 1024).toFixed(0)} Ko, 2 pages A4 (842×595 pt), texte et pictogrammes vectoriels vérifiés`;
   });
 
   // 2 bis. Bibliothèque ISO 7010 complète et lisible
@@ -382,6 +384,26 @@ export async function runSelfTest(outDir: string): Promise<void> {
     const png = await renderPagePng(job, f.variants[0].id, 150);
     await api().saveBinary({ data: png.data, suggestedName: 'plan-redessine.png', filterName: 'PNG', ext: 'png', path: out('plan-redessine.png') });
     return `${n('area')} pièces nommées, ${n('wall')} murs, ${n('door')} portes, ${n('window')} fenêtres, ${n('stairs')} escalier`;
+  });
+
+  await check('Export du bâtiment avec formats mixtes', async () => {
+    const project = buildReviewDemo();
+    const building = project.buildings[0];
+    const html = buildBatchPrintHtml(building.floors.map((floor) => ({
+      building, floor, page: floor.page, variantIds: [floor.variants[0].id], customSymbols: project.customSymbols,
+    })), project.name);
+    const path = await api().exportPdf({ html, paper: 'A4', landscape: true,
+      suggestedName: 'batiment-formats-mixtes.pdf', path: out('batiment-formats-mixtes.pdf') });
+    assert(path, 'aucun PDF produit');
+    const doc = await pdfjs.getDocument({ data: new Uint8Array(await api().readBinary(path!)) }).promise;
+    try {
+      assert(doc.numPages === 2, `2 pages attendues, ${doc.numPages} obtenues`);
+      const a4 = (await doc.getPage(1)).getViewport({ scale: 1 });
+      const a3 = (await doc.getPage(2)).getViewport({ scale: 1 });
+      assert(Math.abs(a4.width - 842) < 3 && Math.abs(a4.height - 595) < 3, 'La première page doit être en A4 paysage.');
+      assert(Math.abs(a3.width - 842) < 3 && Math.abs(a3.height - 1191) < 3, 'La deuxième page doit être en A3 portrait.');
+      return '2 pages : A4 paysage et A3 portrait.';
+    } finally { await doc.loadingTask.destroy(); }
   });
 
   const report = {

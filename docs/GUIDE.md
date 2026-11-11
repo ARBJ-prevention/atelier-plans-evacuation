@@ -1,5 +1,13 @@
 # Guide d'utilisation — Atelier Plans d'Évacuation
 
+## Essayer les nouveautés de la 2.0.11
+
+1. Sur l’accueil, cliquez sur **Essayer les nouveautés**. Dans l’aperçu, passez d’**Accueil** à **Couloir est** pour voir le repère « Vous êtes ici » changer d’emplacement.
+2. Au-dessus du plan, créez un **Emplacement d’affichage** et choisissez **Créer des copies modifiables pour cette affiche**. Placez le repère, puis sélectionnez un itinéraire. Sa portée s’affiche sous son nom dans **Propriétés**.
+3. Ouvrez **Aperçu → Exporter le bâtiment**. Sélectionnez les affiches des deux étages, prévisualisez-les et choisissez un PDF regroupé ou un fichier par affiche.
+
+Dans **Symboles**, l’étoile ajoute un pictogramme aux favoris. **Mise en page → Modèles** permet d’enregistrer les réglages de l’étage sur ce poste et de les appliquer à d’autres étages. La modification des consignes ou des numéros d’urgence remet un étage validé **À valider**.
+
 ![Accueil](capture-accueil.png)
 
 ![Éditeur](capture-editeur.png)

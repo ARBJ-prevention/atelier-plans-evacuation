@@ -1,10 +1,12 @@
 import { COUNTRIES } from '../model/countries';
-import { makeElement, newProject, uid } from '../model/defaults';
+import { makeElement, newProject, newVariant, uid } from '../model/defaults';
+import { isVisibleInVariant } from '../model/geometry';
+import { applyOrganizationTemplate, organizationTemplates, templateFromFloor, writeOrganizationTemplates } from './organizationTemplates';
 import { cloneProjectWithNewIds, parseProject, ProjectFormatError, serializeProject } from '../model/serialize';
 import type { Draft } from 'immer';
 import type { Background, Element, PageSetup } from '../model/types';
 import { api, bytesToDataUrl, MIME } from '../services/api';
-import { buildPrintHtml, renderPagePng, safeFileName, type ExportJob } from '../services/exporter';
+import { buildBatchPrintHtml, buildPrintHtml, renderPagePng, safeFileName, type ExportJob } from '../services/exporter';
 import { imageFromFile, pdfPageCount, renderPdfPage } from '../services/imports';
 import { decodeDxfBytes, DxfError, flattenDxf, parseDxf } from '../services/dxf';
 import { askDxfImport, type DxfImportChoice } from '../dialogs/DxfImport';
@@ -35,6 +37,7 @@ export async function confirmDiscardChanges(): Promise<boolean> {
 
 export async function newProjectAction(): Promise<void> {
   if (!(await confirmDiscardChanges())) return;
+  const templates = organizationTemplates();
   const r = await ask({
     title: 'Nouveau projet',
     fields: [
@@ -42,15 +45,123 @@ export async function newProjectAction(): Promise<void> {
       { key: 'building', label: 'Premier bâtiment', type: 'text', value: 'Bâtiment principal', required: true },
       { key: 'country', label: 'Pays (modèles et consignes par défaut)', type: 'select', value: 'BE', options: COUNTRIES.map((c) => ({ value: c.code, label: c.name })) },
       { key: 'author', label: 'Auteur (cartouche)', type: 'text', value: '' },
+      ...(templates.length ? [{
+        key: 'template', label: 'Modèle d’organisation', type: 'select' as const, value: '',
+        options: [{ value: '', label: 'Réglages par défaut' }, ...templates.map((t) => ({ value: t.name, label: t.name }))],
+      }] : []),
     ],
     buttons: [{ label: 'Annuler', value: 'cancel' }, { label: 'Créer', value: 'ok', primary: true }],
   });
   if (r.button !== 'ok') return;
   const p = newProject(r.values.name, r.values.country);
   p.buildings[0].name = r.values.building;
-  p.buildings[0].floors.forEach((f) => { f.titleBlock.author = r.values.author; });
+  const template = templates.find((t) => t.name === r.values.template);
+  for (const floor of p.buildings[0].floors) {
+    if (template) applyOrganizationTemplate(floor, template);
+    if (r.values.author.trim()) floor.titleBlock.author = r.values.author.trim();
+  }
   S().loadProject(p, null);
   S().toast('Projet créé. Commencez par importer un plan de fond ou dessiner les murs.', 'success');
+}
+
+export async function createDisplayLocation(): Promise<void> {
+  const s = S();
+  const floor = currentFloor(s);
+  if (!floor || !s.project) return;
+  const sourceId = currentVariantId(s);
+  const reusable = floor.variants.length === 1 && floor.variants[0].name === 'Version 1'
+    && !floor.elements.some((e) => e.variantId === sourceId || (e.type === 'symbol' && e.symbolId === 'you-are-here'));
+  const routes = floor.elements.filter((e) => e.type === 'route' && isVisibleInVariant(e, sourceId));
+  const r = await ask({
+    title: 'Créer un emplacement d’affichage',
+    message: 'Nommez l’affiche, puis cliquez sur le plan pour placer le repère « Vous êtes ici ».',
+    fields: [
+      { key: 'name', label: 'Emplacement (ex. Hall d’entrée)', type: 'text', value: '', required: true },
+      ...(routes.length && !reusable ? [{
+        key: 'routes', label: 'Itinéraires de la version active', type: 'select' as const, value: 'reuse',
+        options: [{ value: 'reuse', label: 'Reprendre les itinéraires' }, { value: 'adapt', label: 'Créer des copies modifiables pour cette affiche' }],
+      }] : []),
+    ],
+    invalid: (values) => floor.variants.some((v) => (!reusable || v.id !== sourceId)
+      && v.name.toLocaleLowerCase() === String(values.name).trim().toLocaleLowerCase()) ? 'Ce nom est déjà utilisé pour cet étage.' : null,
+    buttons: [{ label: 'Annuler', value: 'cancel' }, { label: 'Placer le repère', value: 'ok', primary: true }],
+  });
+  if (r.button !== 'ok' || S().project !== s.project || S().floorId !== floor.id) return;
+  const variant = reusable ? { id: sourceId, name: r.values.name.trim() } : newVariant(r.values.name.trim());
+  const adapt = r.values.routes === 'adapt';
+  S().mutateFloor((f) => {
+    if (reusable) f.variants[0].name = variant.name;
+    else {
+      f.variants.push(variant);
+      for (const element of f.elements) {
+        if (!element.variantId && element.excludedVariantIds?.includes(sourceId)) element.excludedVariantIds.push(variant.id);
+      }
+      for (const route of routes) {
+        if (!route.variantId && !adapt) continue;
+        if (!route.variantId) {
+          const shared = f.elements.find((e) => e.id === route.id)!;
+          shared.excludedVariantIds = [...(shared.excludedVariantIds ?? []), variant.id];
+        }
+        f.elements.push({ ...structuredClone(route), id: uid('el'), groupId: undefined, excludedVariantIds: undefined, variantId: variant.id });
+      }
+    }
+  });
+  S().setVariant(variant.id);
+  S().setTool('symbol', 'you-are-here');
+  if (adapt) S().toast('Placez le repère, puis sélectionnez un itinéraire pour l’adapter à cette affiche.', 'info');
+}
+
+export async function manageOrganizationTemplates(): Promise<void> {
+  const floor = currentFloor(S());
+  const building = currentBuilding(S());
+  const projectId = S().project?.id;
+  if (!floor || !building) return;
+  const templates = organizationTemplates();
+  const r = await ask({
+    title: 'Modèles d’organisation',
+    fields: [
+      { key: 'name', label: 'Nom pour enregistrer les réglages de cet étage', type: 'text', value: floor.titleBlock.organization },
+      ...(templates.length ? [
+        { key: 'template', label: 'Modèle enregistré', type: 'select' as const, value: templates[0].name,
+          options: templates.map((t) => ({ value: t.name, label: t.name })) },
+        { key: 'all', label: 'Appliquer à tous les étages de ce bâtiment', type: 'checkbox' as const, value: false },
+      ] : []),
+    ],
+    buttons: [
+      { label: 'Fermer', value: 'cancel' },
+      ...(templates.length ? [{ label: 'Supprimer le modèle', value: 'delete' }, { label: 'Appliquer le modèle', value: 'apply' }] : []),
+      { label: 'Enregistrer les réglages', value: 'save', primary: true },
+    ],
+  });
+  try {
+    const selected = templates.find((t) => t.name === r.values.template);
+    if (r.button === 'save') {
+      const name = String(r.values.name).trim();
+      if (!name) { await alertDialog('Nom du modèle', 'Indiquez un nom pour enregistrer les réglages.'); return; }
+      if (templates.some((t) => t.name === name)
+        && !(await confirmDialog('Remplacer le modèle', `Remplacer « ${name} » par les réglages de cet étage ?`, 'Remplacer'))) return;
+      writeOrganizationTemplates([...templates.filter((t) => t.name !== name), templateFromFloor(name, floor)]);
+      S().toast(`Modèle « ${name} » enregistré sur ce poste.`, 'success');
+    }
+    if (r.button === 'delete' && selected
+      && await confirmDialog('Supprimer le modèle', `Supprimer « ${selected.name} » de ce poste ?`, 'Supprimer', true)) {
+      writeOrganizationTemplates(templates.filter((t) => t !== selected));
+    }
+    if (r.button === 'apply' && selected && S().project?.id === projectId) {
+      const floors = r.values.all ? building.floors : [floor];
+      if (!(await confirmDialog('Appliquer le modèle', `Remplacer les réglages de présentation, le logo, les consignes et les numéros d’urgence sur ${floors.length} étage(s) ?`, 'Appliquer'))
+        || S().project?.id !== projectId) return;
+      let reset = false;
+      S().mutate((p) => {
+        for (const target of p.buildings.find((b) => b.id === building.id)?.floors ?? []) {
+          if (floors.some((f) => f.id === target.id) && applyOrganizationTemplate(target, selected)) reset = true;
+        }
+      });
+      S().toast(reset ? 'Modèle appliqué. Les étages dont les consignes ou numéros ont changé sont à valider.' : 'Modèle appliqué.', reset ? 'warning' : 'success');
+    }
+  } catch (e) {
+    await alertDialog('Modèle indisponible', errMsg(e));
+  }
 }
 
 export async function openProjectAction(path?: string): Promise<void> {
@@ -301,7 +412,7 @@ export async function validateAction(): Promise<void> {
   if (!f) return;
   const r = await ask({
     title: 'Valider le plan',
-    message: 'La validation est une décision explicite de votre part. Elle sera indiquée dans le cartouche avec votre nom et la date. Elle ne constitue pas une certification de conformité. Toute modification ultérieure du plan repassera automatiquement le statut à « À valider ».',
+    message: 'Vérifiez toutes les affiches de cet étage. Votre nom et la date seront inscrits dans le cartouche. Une modification du plan, des consignes ou des numéros d’urgence remettra le statut à « À valider ». La validation correspond à votre vérification du contenu.',
     fields: [
       { key: 'by', label: 'Validé par (nom et fonction)', type: 'text', value: f.titleBlock.validatedBy || f.titleBlock.author, required: true },
       { key: 'checked', label: 'Je confirme avoir vérifié le contenu de ce plan (itinéraires, équipements, consignes).', type: 'checkbox', value: false },
@@ -314,6 +425,7 @@ export async function validateAction(): Promise<void> {
     fd.titleBlock.status = 'validated';
     fd.titleBlock.validatedBy = String(r.values.by).trim();
     fd.titleBlock.validatedAt = new Date().toISOString();
+    delete fd.titleBlock.validationReason;
   }, { keepValidation: true });
   S().toast('Plan validé.', 'success');
 }
@@ -329,9 +441,44 @@ export function currentExportJob(variantScope: 'current' | 'all', page?: PageSet
   };
 }
 
-function exportBaseName(job: ExportJob, variantId?: string): string {
+function exportBaseName(job: ExportJob, variantId?: string, includeVariant = job.floor.variants.length > 1): string {
   const v = job.floor.variants.find((x) => x.id === variantId);
-  return safeFileName([job.floor.titleBlock.title, job.building.name, job.floor.name, job.floor.variants.length > 1 && v ? v.name : ''].filter(Boolean).join(' - '));
+  return safeFileName([job.floor.titleBlock.title, job.building.name, job.floor.name, includeVariant && v ? v.name : ''].filter(Boolean).join(' - '));
+}
+
+export async function exportBuildingPdf(jobs: ExportJob[], separate: boolean): Promise<void> {
+  const first = jobs[0];
+  if (!first) return;
+  const title = `Plans d’évacuation - ${first.building.name}`;
+  const count = jobs.reduce((total, job) => total + job.variantIds.length, 0);
+  try {
+    if (!separate) {
+      const out = await api().exportPdf({ html: buildBatchPrintHtml(jobs, title), paper: first.page.paper,
+        landscape: first.page.orientation === 'landscape', suggestedName: `${safeFileName(title)}.pdf` });
+      if (out) {
+        S().toast(`PDF du bâtiment exporté · ${count} page(s).`, 'success');
+      }
+      return;
+    }
+    const dir = await api().createExportFolder(title);
+    if (!dir) return;
+    let completed = 0;
+    for (const job of jobs) {
+      for (const variantId of job.variantIds) {
+        const prefix = String(completed + 1).padStart(String(count).length, '0');
+        const path = `${dir}\\${prefix} - ${exportBaseName(job, variantId, true)}.pdf`;
+        const out = await exportPdfAction({ ...job, variantIds: [variantId] }, path);
+        if (!out) {
+          S().toast(`Export interrompu · ${completed} fichier(s) sur ${count}.`, 'warning');
+          return;
+        }
+        completed++;
+      }
+    }
+    S().toast(`${completed} fichier(s) PDF exporté(s).`, 'success');
+  } catch (e) {
+    await alertDialog('Échec de l’export du bâtiment', errMsg(e));
+  }
 }
 
 export async function exportPdfAction(job: ExportJob | null = currentExportJob('current'), path?: string): Promise<string | null> {
@@ -344,7 +491,6 @@ export async function exportPdfAction(job: ExportJob | null = currentExportJob('
     });
     if (out && !path) {
       S().toast(`PDF exporté (${job.variantIds.length} page${job.variantIds.length > 1 ? 's' : ''}).`, 'success');
-      api().showInFolder(out);
     }
     return out;
   } catch (e) {
@@ -364,7 +510,7 @@ export async function exportPngAction(job: ExportJob | null = currentExportJob('
       if (!p) break;
       out.push(p);
     }
-    if (out.length && !dir) { S().toast(`${out.length} image(s) PNG exportée(s) à ${dpi} ppp.`, 'success'); api().showInFolder(out[0]); }
+    if (out.length && !dir) S().toast(`${out.length} image(s) PNG exportée(s) à ${dpi} ppp.`, 'success');
   } catch (e) {
     await alertDialog('Échec de l’export PNG', errMsg(e));
   }

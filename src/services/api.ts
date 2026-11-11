@@ -23,6 +23,7 @@ export interface EvacBridge {
   /** Convertit un DWG en DXF ; `converter` force un exécutable (tests). */
   dwgConvert(a: { data: Uint8Array; converter?: string }): Promise<{ dxf: Uint8Array; version: string }>;
   exportPdf(a: { html: string; paper: string; landscape: boolean; suggestedName: string; path?: string }): Promise<string | null>;
+  createExportFolder(name: string): Promise<string | null>;
   print(a: { html: string; paper: string; landscape: boolean }): Promise<{ success: boolean; reason: string; spooler?: 'running' | 'stopped' | 'unknown' }>;
   autosaveWrite(a: { id: string; name: string; filePath: string | null; content: string }): Promise<boolean>;
   autosaveClear(id: string): Promise<boolean>;

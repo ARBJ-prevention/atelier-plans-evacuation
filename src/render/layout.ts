@@ -1,4 +1,4 @@
-import { floorContentBounds, usedSymbolIds, type Rect } from '../model/geometry';
+import { floorContentBounds, isVisibleInVariant, usedSymbolIds, type Rect } from '../model/geometry';
 import type { FrameKey, Floor, PageSetup, PageTheme } from '../model/types';
 
 export const PAPER_MM: Record<string, [number, number]> = { A4: [210, 297], A3: [297, 420], A2: [420, 594] };
@@ -55,7 +55,7 @@ export interface ThemeTokens {
    * (page en portrait, numéros longs, logo…), ils passent automatiquement dans le cadre rouge latéral.
    */
   numbersInHeader?: boolean;
-  /** Titres, intertitres des consignes et cadre d'urgence en dégradé avec reflets (thème Horizon). */
+  /** Titres des cartes et cadre d'urgence en dégradé avec reflets (thème Horizon). */
   gradients?: boolean;
   /** Thème pensé avec vue aérienne + croquis de situation (activés à la sélection). */
   extras?: boolean;
@@ -225,16 +225,32 @@ function numbersFitInHeader(page: PageSetup, T: ThemeTokens, pageW: number, head
   return t.length * titleFs * (T.titleUpper ? 1.12 : 1) * 0.52 <= innerW - logoW - icon - numW - 6;
 }
 
-/** Hauteur de texte des consignes dans un cadre de largeur donnée (mêmes règles que le rendu). */
-function instructionsHeight(text: string, widthMm: number): number {
-  const fs = 2.75, lh = fs * 1.38;
-  let hgt = 12 + 2.5;
-  for (const ln of wrapText(text, widthMm - 12, fs)) {
-    if (!ln.trim()) hgt += lh * 0.5;
-    else if (ln.length > 3 && ln === ln.toUpperCase() && /[A-ZÀ-Ý]/.test(ln)) hgt += lh * 1.5;
-    else hgt += lh;
+export const INSTRUCTION_FONT = 2.75;
+const INSTRUCTION_LINE_HEIGHT = INSTRUCTION_FONT * 1.38;
+
+export function instructionLines(text: string, widthMm: number) {
+  return text.split('\n').flatMap((paragraph) => {
+    const label = paragraph.trim();
+    const heading = label.length > 3 && label === label.toUpperCase() && /[A-ZÀ-Ý]/.test(label) ? label : '';
+    const lines = wrapText(paragraph, widthMm - 12, INSTRUCTION_FONT);
+    return lines.map((line, i) => ({
+      text: line,
+      heading,
+      startsSection: Boolean(heading) && i === 0,
+      advance: INSTRUCTION_LINE_HEIGHT * (!line ? 0.5 : heading && i === lines.length - 1 ? 1.5 : 1),
+    }));
+  });
+}
+
+/** Hauteur de texte des consignes dans un cadre de largeur donnée. */
+export function instructionsHeight(text: string, widthMm: number): number {
+  let baseline = 12;
+  let height = 0;
+  for (const line of instructionLines(text, widthMm)) {
+    if (line.text) height = baseline + 2.5;
+    baseline += line.advance;
   }
-  return hgt;
+  return height;
 }
 
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
@@ -308,7 +324,7 @@ export function computeLayout(floor: Floor, variantId: string, page: PageSetup =
       const legendW = nCards === 2 ? rest * 0.56 - G / 2 : rest;   // même partage que le rendu
       const instrW = nCards === 2 ? rest * 0.44 - G / 2 : rest;
       const items = usedSymbolIds(floor, variantId).length
-        + new Set(floor.elements.filter((e) => e.type === 'route' && (!e.variantId || e.variantId === variantId)).map((e) => (e as { kind: string }).kind)).size;
+        + new Set(floor.elements.filter((e) => e.type === 'route' && isVisibleInVariant(e, variantId)).map((e) => (e as { kind: string }).kind)).size;
       const legendCols = legendW >= 105 ? 3 : legendW >= 60 ? 2 : 1;
       const need = Math.max(
         page.showLegend ? 11 + Math.ceil(items / legendCols) * 7 + 2 : 0,

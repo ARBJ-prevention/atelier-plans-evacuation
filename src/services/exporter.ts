@@ -12,17 +12,30 @@ export interface ExportJob {
 
 /** Document HTML (une page par version) prêt pour printToPDF / impression. */
 export function buildPrintHtml(job: ExportJob): string {
-  const { w, h } = pageSizeMm(job.page);
-  const pages = job.variantIds.map((vid, i) =>
-    `<div class="page">${renderPageSvg({ building: job.building, floor: job.floor, variantId: vid, customSymbols: job.customSymbols, page: job.page, uniqueKey: `p${i}` })}</div>`,
-  );
-  return `<!doctype html><html lang="fr"><head><meta charset="utf-8"><title>${escapeHtml(job.floor.titleBlock.title)}</title>
+  return buildBatchPrintHtml([job], job.floor.titleBlock.title);
+}
+
+/** Une règle de papier par format, avec les dimensions et le dessin propres à chaque étage. */
+export function buildBatchPrintHtml(jobs: ExportJob[], title: string): string {
+  const sizes = new Map<string, string>();
+  let index = 0;
+  const pages = jobs.flatMap((job) => {
+    const { w, h } = pageSizeMm(job.page);
+    const name = `sheet-${job.page.paper}-${job.page.orientation}`;
+    sizes.set(name, `@page ${name} { size: ${w}mm ${h}mm; margin: 0; }
+.${name} { page: ${name}; width: ${w}mm; height: ${h}mm; }
+.${name} > svg { width: ${w}mm; height: ${h}mm; }`);
+    return job.variantIds.map((vid) => `<div class="page ${name}">${renderPageSvg({
+      building: job.building, floor: job.floor, variantId: vid, customSymbols: job.customSymbols, page: job.page, uniqueKey: `p${index++}`,
+    })}</div>`);
+  });
+  return `<!doctype html><html lang="fr"><head><meta charset="utf-8"><title>${escapeHtml(title)}</title>
 <style>
-@page { size: ${job.page.paper} ${job.page.orientation}; margin: 0; }
 html, body { margin: 0; padding: 0; background: #fff; }
-.page { width: ${w}mm; height: ${h}mm; overflow: hidden; page-break-after: always; break-after: page; }
+.page { overflow: hidden; page-break-after: always; break-after: page; }
 .page:last-child { page-break-after: auto; break-after: auto; }
-svg { display: block; width: ${w}mm; height: ${h}mm; }
+.page > svg { display: block; }
+${[...sizes.values()].join('\n')}
 </style></head><body>${pages.join('\n')}</body></html>`;
 }
 

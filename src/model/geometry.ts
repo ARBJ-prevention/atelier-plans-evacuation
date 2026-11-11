@@ -1,5 +1,5 @@
 import { getBuiltinSymbol } from '../symbols/library';
-import type { Element, Floor, Pt, SymbolElement } from './types';
+import type { DoorElement, Element, Floor, Pt, SymbolElement, WindowElement } from './types';
 
 export interface Rect { x: number; y: number; w: number; h: number }
 
@@ -58,17 +58,53 @@ export function legendSize(fontSize: number, count: number, columns = 1): { w: n
   return { w: fontSize * 18 * cols, h: fontSize * 2.2 + rows * row + fontSize * 0.6 };
 }
 
+export function doorDimensions(width: number) {
+  return { gap: Math.max(6, width * 0.16), stroke: Math.max(2, width * 0.035) };
+}
+
+function doorBox(el: DoorElement, wallDepth?: number) {
+  const w = el.width;
+  const { gap: defaultGap, stroke } = doorDimensions(w);
+  const gap = wallDepth ?? defaultGap;
+  let halfWidth = w / 2;
+  let top = -gap / 2;
+  let bottom = gap / 2;
+  switch (el.doorType) {
+    case 'single':
+    case 'double':
+      halfWidth += stroke / 2;
+      top = Math.min(top, -(el.doorType === 'single' ? w : w / 2) - stroke / 2);
+      break;
+    case 'sliding':
+      halfWidth += stroke * 0.3;
+      top = Math.min(top, -stroke * 2.5);
+      bottom = Math.max(bottom, stroke * 2.5);
+      break;
+    case 'revolving':
+      halfWidth += stroke * 0.3;
+      top = Math.min(top, -halfWidth);
+      bottom = Math.max(bottom, halfWidth);
+      break;
+  }
+  return {
+    cx: el.x,
+    cy: el.y + (top + bottom) / 2 * (el.flipY ? -1 : 1),
+    w: halfWidth * 2,
+    h: bottom - top,
+  };
+}
+
 /** Taille locale (non pivotée) d'un élément « boîte » et son centre. */
-export function boxOf(el: Element, legendCount = 6): { cx: number; cy: number; w: number; h: number } | null {
+export function boxOf(el: Element, legendCount = 6, wallDepth?: number): { cx: number; cy: number; w: number; h: number } | null {
   switch (el.type) {
     case 'symbol': return { cx: el.x, cy: el.y, w: el.size * (el.stretchX ?? 1), h: el.size * (el.stretchY ?? 1) };
-    case 'door': return { cx: el.x, cy: el.y, w: el.width, h: el.doorType === 'double' ? el.width / 2 : el.width };
-    case 'window': return { cx: el.x, cy: el.y, w: el.width, h: Math.max(el.depth, 8) };
+    case 'door': return doorBox(el, wallDepth);
+    case 'window': return { cx: el.x, cy: el.y, w: el.width, h: el.depth };
     case 'shape': return { cx: el.x, cy: el.y, w: el.w, h: el.shape === 'line' ? Math.max(el.strokeWidth * 3, 6) : el.h };
     case 'stairs': return { cx: el.x, cy: el.y, w: el.w, h: el.h };
     case 'image': return { cx: el.x, cy: el.y, w: el.w, h: el.h };
     case 'text': {
-      const s = textSize(el.text, el.fontSize, el.lineHeight, el.letterSpacing);
+      const s = textSize(el.uppercase ? el.text.toUpperCase() : el.text, el.fontSize, el.lineHeight, el.letterSpacing);
       const pad = el.background || el.border ? el.fontSize * el.padding : 0;
       const left = el.align === 'start' ? el.x : el.align === 'middle' ? el.x - s.w / 2 : el.x - s.w;
       return { cx: left + s.w / 2, cy: el.y + s.h / 2, w: s.w + 2 * pad, h: s.h + 2 * pad };
@@ -81,6 +117,79 @@ export function boxOf(el: Element, legendCount = 6): { cx: number; cy: number; w
   }
 }
 
+export const RESIZE_DIRECTIONS: readonly Pt[] = [
+  [-1, -1], [1, -1], [1, 1], [-1, 1], [0, -1], [1, 0], [0, 1], [-1, 0],
+];
+
+/** Redimensionne dans les axes de l'objet et conserve le point opposé dans le plan. */
+export function resizeBoxElement(
+  el: Element, direction: Pt, delta: Pt, proportional: boolean, legendCount = 6, wallDepth?: number,
+): Element {
+  const box = boxOf(el, legendCount, wallDepth);
+  if (!box || !('x' in el)) return el;
+  const [sx, sy] = direction;
+  const angle = el.type === 'legend' ? 0 : el.rotation;
+  const [dx, dy] = rotatePoint(delta, [0, 0], -angle);
+  const dw = sx * dx, dh = sy * dy;
+  const width = box.w + dw, height = box.h + dh;
+  const corner = !!(sx && sy);
+  const scale = corner
+    ? 1 + (dw * box.w + dh * box.h) / (box.w ** 2 + box.h ** 2)
+    : sx ? width / Math.max(1, box.w) : height / Math.max(1, box.h);
+  let resized: typeof el;
+  switch (el.type) {
+    case 'symbol':
+      resized = corner
+        ? { ...el, size: Math.max(8, el.size * scale) }
+        : sx ? { ...el, stretchX: Math.max(0.15, Math.min(12, width / el.size)) }
+          : { ...el, stretchY: Math.max(0.15, Math.min(12, height / el.size)) };
+      break;
+    case 'image':
+    case 'stairs':
+    case 'shape': {
+      const min = el.type === 'stairs' ? 20 : el.type === 'image' ? 10 : 6;
+      if (el.type === 'shape' && el.shape === 'line') {
+        resized = { ...el, w: Math.max(min, width) };
+      } else if (corner && proportional) {
+        const k = Math.max(scale, min / Math.min(el.w, el.h));
+        resized = { ...el, w: el.w * k, h: el.h * k };
+      } else {
+        resized = { ...el, w: sx ? Math.max(min, width) : el.w, h: sy ? Math.max(min, height) : el.h };
+      }
+      break;
+    }
+    case 'window': {
+      const k = Math.max(scale, 30 / el.width, 4 / el.depth);
+      resized = corner && proportional
+        ? { ...el, width: el.width * k, depth: el.depth * k }
+        : { ...el, width: sx ? Math.max(30, width) : el.width, depth: sy ? Math.max(4, height) : el.depth };
+      break;
+    }
+    case 'door':
+      resized = { ...el, width: Math.max(30, el.width + dw) };
+      break;
+    case 'text': {
+      const fontSize = Math.max(4, el.fontSize * scale);
+      resized = { ...el, fontSize, letterSpacing: el.letterSpacing * fontSize / el.fontSize };
+      break;
+    }
+    case 'legend':
+      resized = { ...el, fontSize: Math.max(4, el.fontSize * scale) };
+      break;
+  }
+  const nextBox = boxOf(resized, legendCount, wallDepth)!;
+  const fixed = (item: typeof el, b: typeof box): Pt => {
+    const pivot: Pt = item.type === 'text' || item.type === 'door' ? [item.x, item.y] : [b.cx, b.cy];
+    const anchor: Pt = item.type === 'door'
+      ? [item.x - sx * item.width / 2, item.y]
+      : [b.cx - sx * b.w / 2, b.cy - sy * b.h / 2];
+    return rotatePoint(anchor, pivot, angle);
+  };
+  const [x, y] = fixed(el, box);
+  const [nextX, nextY] = fixed(resized, nextBox);
+  return { ...resized, x: resized.x + x - nextX, y: resized.y + y - nextY };
+}
+
 export function elementBounds(el: Element, legendCount = 6): Rect {
   if ('points' in el) {
     const r = rectFromPoints(el.points);
@@ -88,14 +197,7 @@ export function elementBounds(el: Element, legendCount = 6): Rect {
     return inflate(r, pad);
   }
   const b = boxOf(el, legendCount)!;
-  if (el.type === 'door') {
-    const w = el.width;
-    const leaf = el.doorType === 'double' ? w / 2 : el.doorType === 'single' ? w : w / 2;
-    const ys = el.doorType === 'revolving' ? [-w / 2, w / 2] : [el.flipY ? leaf : -leaf, 6];
-    const all: Pt[] = [[-w / 2, ys[0]], [w / 2, ys[0]], [w / 2, ys[1]], [-w / 2, ys[1]]].map(([x, y]) => [el.x + x, el.y + y] as Pt);
-    return rectFromPoints(all.map((p) => rotatePoint(p, [el.x, el.y], el.rotation)));
-  }
-  const rotPivot: Pt = el.type === 'text' ? [el.x, el.y] : [b.cx, b.cy];
+  const rotPivot: Pt = el.type === 'text' || el.type === 'door' ? [el.x, el.y] : [b.cx, b.cy];
   const corners = boxCorners(b.cx, b.cy, b.w, b.h, 0).map((p) => (el.rotation ? rotatePoint(p, rotPivot, el.rotation) : p));
   return rectFromPoints(corners);
 }
@@ -191,7 +293,173 @@ export function symbolFuseSides(el: SymbolElement, floor: Floor | null | undefin
 }
 
 export function isVisibleInVariant(el: Element, variantId: string): boolean {
-  return !el.variantId || el.variantId === variantId;
+  return el.variantId ? el.variantId === variantId : !el.excludedVariantIds?.includes(variantId);
+}
+
+export const DEFAULT_SYMBOL_WALL_GAP = 6;
+const SYMBOL_WALL_SNAP_RANGE = 50;
+
+/** Aimante le pictogramme à la distance de retrait, du côté indiqué par le pointeur. */
+export function snapSymbolToWalls(
+  floor: Floor, variantId: string, symbol: SymbolElement,
+  { at = [symbol.x, symbol.y], gap }: { at?: Pt; gap: number },
+): SymbolElement {
+  if (getBuiltinSymbol(symbol.symbolId)?.planSymbol) return symbol;
+  const halfSize = symbol.size * (symbol.halo ? 0.63 : 0.5);
+  const halfW = halfSize * (symbol.stretchX ?? 1);
+  const halfH = halfSize * (symbol.stretchY ?? 1);
+  const radius = Math.hypot(halfW, halfH) + DEFAULT_SYMBOL_WALL_GAP;
+  const targets = [];
+  for (const { a, b, length, depth: thickness } of visibleWallSegments(floor, variantId)) {
+    const depth = thickness / 2;
+    const nearby = 2 * (radius + Math.SQRT2 * depth + SYMBOL_WALL_SNAP_RANGE);
+    if (distToSegment(at, a, b) > nearby) continue;
+    const [ax, ay] = a;
+    const ux = (b[0] - ax) / length, uy = (b[1] - ay) / length;
+    const [sx, sy] = rotatePoint([ux, uy], [0, 0], -symbol.rotation);
+    const face = halfW * Math.abs(sy) + halfH * Math.abs(sx) + depth;
+    const endReach = halfW * Math.abs(sx) + halfH * Math.abs(sy) + depth + DEFAULT_SYMBOL_WALL_GAP;
+    const across = (at[1] - ay) * ux - (at[0] - ax) * uy;
+    const along = (at[0] - ax) * ux + (at[1] - ay) * uy;
+    // La détection du mur est indépendante du retrait choisi.
+    const offset = Math.abs(Math.abs(across) - (face + DEFAULT_SYMBOL_WALL_GAP));
+    if (offset > SYMBOL_WALL_SNAP_RANGE || along <= -endReach || along >= length + endReach) continue;
+    const side = Math.sign(across) || 1;
+    targets.push({ ax, ay, ux, uy, side, reach: face + gap, offset });
+  }
+
+  targets.sort((a, b) => a.offset - b.offset);
+  const primary = targets[0];
+  if (!primary) return symbol;
+  const push = primary.reach * primary.side - ((symbol.y - primary.ay) * primary.ux - (symbol.x - primary.ax) * primary.uy);
+  let x = symbol.x - push * primary.uy;
+  let y = symbol.y + push * primary.ux;
+  // Longer le premier mur pour rejoindre le second et conserver les deux retraits.
+  const secondary = targets.find((s) => Math.abs(s.ux * primary.uy - s.uy * primary.ux) >= 0.5);
+  if (secondary) {
+    const push = secondary.reach * secondary.side - ((y - secondary.ay) * secondary.ux - (x - secondary.ax) * secondary.uy);
+    const along = push / (secondary.ux * primary.uy - secondary.uy * primary.ux);
+    x += along * primary.ux;
+    y += along * primary.uy;
+  }
+  return x === symbol.x && y === symbol.y ? symbol : { ...symbol, x, y };
+}
+
+function* visibleWallSegments(floor: Floor, variantId: string) {
+  const visibleLayers = new Set(floor.layers.filter((layer) => layer.visible).map((layer) => layer.id));
+  for (const wall of floor.elements) {
+    if (wall.type !== 'wall' || !visibleLayers.has(wall.layer) || !isVisibleInVariant(wall, variantId)) continue;
+    const segmentCount = wall.closed ? wall.points.length : wall.points.length - 1;
+    for (let i = 0; i < segmentCount; i++) {
+      const a = wall.points[i], b = wall.points[(i + 1) % wall.points.length];
+      const length = distance(a, b);
+      if (length) yield { a, b, length, depth: wall.thickness };
+    }
+  }
+}
+
+function openingTurn(angle: number, rotation: number): number {
+  // Les deux sens d'un même mur sont équivalents.
+  return angle - rotation - 180 * Math.round((angle - rotation) / 180);
+}
+
+/** Avec une tolérance, cherche un point de pose. Sans tolérance, retrouve le mur d'une ouverture déjà alignée. */
+export function openingWallFit(
+  floor: Floor, variantId: string, opening: Pick<DoorElement | WindowElement, 'x' | 'y' | 'width' | 'rotation'>, snapDistance?: number,
+) {
+  const halfWidth = opening.width / 2;
+  let best: { x: number; y: number; rotation: number; depth: number } | undefined;
+  let bestDistance = Infinity;
+  let bestTurn = Infinity;
+  for (const { a: [ax, ay], b: [bx, by], length, depth } of visibleWallSegments(floor, variantId)) {
+    if (length < opening.width) continue;
+    const ux = (bx - ax) / length, uy = (by - ay) / length;
+    const along = (opening.x - ax) * ux + (opening.y - ay) * uy;
+    const nearest = Math.max(0, Math.min(length, along));
+    const dist = Math.hypot(opening.x - ax - nearest * ux, opening.y - ay - nearest * uy);
+    const turn = openingTurn(Math.atan2(uy, ux) * 180 / Math.PI, opening.rotation);
+    if (snapDistance === undefined) {
+      if (dist > 0.01 || Math.abs(turn) > 0.01 || along < halfWidth - 0.01 || along > length - halfWidth + 0.01) continue;
+    } else if (dist > depth / 2 + snapDistance) continue;
+    if (dist > bestDistance || (dist === bestDistance && Math.abs(turn) >= bestTurn)) continue;
+    const center = Math.max(halfWidth, Math.min(length - halfWidth, along));
+    best = { x: ax + center * ux, y: ay + center * uy, rotation: opening.rotation + turn, depth };
+    bestDistance = dist;
+    bestTurn = Math.abs(turn);
+  }
+  return best;
+}
+
+/** Accroche le bord déplacé, ou les deux bords lors d'un changement de largeur seul. */
+export function windowResizeWallFit(floor: Floor, variantId: string, opening: WindowElement, side: number, tolerance: number) {
+  const halfWidth = opening.width / 2;
+  const [faceX, faceY] = rotatePoint([0, side || 1], [0, 0], opening.rotation);
+  let best: { window: WindowElement; guides: [Pt, Pt][] } | undefined;
+  let bestEdge = Infinity, bestOpposite = Infinity;
+  for (const { a: [ax, ay], b: [bx, by], length, depth } of visibleWallSegments(floor, variantId)) {
+    const ux = (bx - ax) / length, uy = (by - ay) / length;
+    const turn = openingTurn(Math.atan2(uy, ux) * 180 / Math.PI, opening.rotation);
+    if (Math.abs(turn) > 5) continue;
+    const along = (opening.x - ax) * ux + (opening.y - ay) * uy;
+    if (along < halfWidth - 0.001 || along > length - halfWidth + 0.001) continue;
+    const across = (opening.y - ay) * ux - (opening.x - ax) * uy;
+    const halfDepth = depth / 2;
+    if (Math.abs(across) > halfDepth) continue;
+
+    const faceProjection = faceY * ux - faceX * uy;
+    const faceOffset = faceProjection * opening.depth / 2;
+    const target = Math.sign(faceProjection) * halfDepth;
+    const tilt = Math.abs(faceX * ux + faceY * uy) * halfWidth;
+    const movedEdge = Math.abs(across + faceOffset - target);
+    const opposite = Math.abs(across - faceOffset + target);
+    const edge = (side ? movedEdge : Math.max(movedEdge, opposite)) + tilt;
+    if (edge > Math.min(tolerance, halfDepth) || edge > bestEdge || (edge === bestEdge && opposite >= bestOpposite)) continue;
+
+    best = {
+      window: { ...opening, x: ax + along * ux, y: ay + along * uy, rotation: opening.rotation + turn, depth },
+      guides: [-halfDepth, halfDepth].map((offset): [Pt, Pt] => [
+        [ax - uy * offset, ay + ux * offset], [bx - uy * offset, by + ux * offset],
+      ]),
+    };
+    bestEdge = edge;
+    bestOpposite = opposite;
+  }
+  return best;
+}
+
+export function windowFrameWidth(width: number, depth: number): number {
+  return Math.min(width / 2, depth / 2, Math.max(1, depth * 0.12));
+}
+
+/** Aligne le bord intérieur du jambage sur la face d'un mur transversal. */
+export function windowGlassWallFit(floor: Floor, variantId: string, opening: WindowElement, side: number, tolerance: number) {
+  const [ux, uy] = rotatePoint([1, 0], [0, 0], opening.rotation);
+  const frame = windowFrameWidth(opening.width, opening.depth);
+  const glassEdge = side * (opening.width / 2 - frame);
+  let best: { window: WindowElement; guide: [Pt, Pt] } | undefined;
+  let closest = tolerance;
+  for (const { a, b, length, depth } of visibleWallSegments(floor, variantId)) {
+    const vx = (b[0] - a[0]) / length, vy = (b[1] - a[1]) / length;
+    if (Math.abs(vx * ux + vy * uy) > 1e-6) continue;
+    const along = (opening.x - a[0]) * vx + (opening.y - a[1]) * vy;
+    if (along + opening.depth / 2 <= 0 || along - opening.depth / 2 >= length) continue;
+    for (const offset of [-depth / 2, depth / 2]) {
+      const edge = (a[0] - opening.x) * ux + (a[1] - opening.y) * uy + offset;
+      const delta = edge - glassEdge;
+      const width = opening.width + side * delta;
+      if (Math.abs(delta) > closest || width < 30 || windowFrameWidth(width, opening.depth) !== frame) continue;
+      const dx = ux * offset, dy = uy * offset;
+      // Traverser le vitrage et prolonger le repère jusqu'au bout de la face du mur.
+      const start = Math.min(0, along - opening.depth / 2), end = Math.max(length, along + opening.depth / 2);
+      const point = (t: number): Pt => [a[0] + dx + vx * t, a[1] + dy + vy * t];
+      best = {
+        window: { ...opening, width, x: opening.x + ux * delta / 2, y: opening.y + uy * delta / 2 },
+        guide: [point(start), point(end)],
+      };
+      closest = Math.abs(delta);
+    }
+  }
+  return best;
 }
 
 /** Emprise totale de l'étage (fond + éléments visibles de la version). */
@@ -202,9 +470,11 @@ export function floorContentBounds(floor: Floor, variantId: string): Rect {
     rects.push({ x: b.x, y: b.y, w: b.naturalWidth * b.scale, h: b.naturalHeight * b.scale });
   }
   const visibleLayers = new Set(floor.layers.filter((l) => l.visible).map((l) => l.id));
+  let legendItems: number | undefined;
   for (const el of floor.elements) {
     if (!visibleLayers.has(el.layer) || !isVisibleInVariant(el, variantId)) continue;
-    rects.push(elementBounds(el, usedSymbolIds(floor, variantId).length));
+    if (el.type === 'legend') legendItems ??= usedSymbolIds(floor, variantId).length;
+    rects.push(elementBounds(el, legendItems));
   }
   const u = unionRects(rects);
   return u && u.w > 0 && u.h > 0 ? inflate(u, Math.max(u.w, u.h) * 0.02) : { x: 0, y: 0, w: 1000, h: 700 };
@@ -219,8 +489,9 @@ export function usedSymbolIds(floor: Floor, variantId: string): string[] {
       ids.push(el.symbolId);
     }
     // Les portes coupe-feu ont leur propre entrée de légende.
-    if (el.type === 'door' && el.fireRated && visibleLayers.has(el.layer) && isVisibleInVariant(el, variantId) && !ids.includes('door-fire')) {
-      ids.push('door-fire');
+    if (el.type === 'door' && el.fireRated && visibleLayers.has(el.layer) && isVisibleInVariant(el, variantId)) {
+      const symbolId = el.doorType === 'double' ? 'door-double-fire' : 'door-fire';
+      if (!ids.includes(symbolId)) ids.push(symbolId);
     }
   }
   return ids;

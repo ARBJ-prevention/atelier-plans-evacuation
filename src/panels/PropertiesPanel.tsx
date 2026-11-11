@@ -214,6 +214,10 @@ function ElementProps({ el, floor }: { el: Element; floor: Floor }) {
         <div>
           <h2>{title}</h2>
           <p className="muted small">{el.type === 'symbol' ? symbolName(e.symbolId, customSymbols) : LAYER_NAMES[el.layer]}{locked ? ' · verrouillé' : ''}</p>
+          <button className="scope-link" onClick={() => setTab('layout')}>
+            {el.variantId ? `Uniquement « ${floor.variants.find((v) => v.id === el.variantId)?.name ?? variant?.name} »`
+              : el.excludedVariantIds?.length ? 'Commun · exceptions selon l’affiche' : 'Commun à toutes les versions'}
+          </button>
         </div>
       </div>
       <div className="ptabs" role="tablist">
@@ -425,9 +429,11 @@ function ElementProps({ el, floor }: { el: Element; floor: Floor }) {
                 </select>
               </Row>
               <Row label="Versions">
-                <select value={el.variantId ? 'own' : 'all'} onChange={(ev) => upd({ variantId: ev.target.value === 'own' ? variantId : undefined })}>
+                <select value={el.variantId ? 'own' : el.excludedVariantIds?.length ? 'shared' : 'all'}
+                  onChange={(ev) => upd({ variantId: ev.target.value === 'own' ? variantId : undefined, excludedVariantIds: undefined })}>
                   <option value="all">Toutes les versions</option>
                   <option value="own">Uniquement « {variant?.name} »</option>
+                  {!!el.excludedVariantIds?.length && <option value="shared" disabled>Commun avec exceptions</option>}
                 </select>
               </Row>
             </Section>
@@ -565,12 +571,17 @@ function PlanTab({ floor }: { floor: Floor }) {
   const building = useStore((s) => currentBuilding(s));
   const tb = floor.titleBlock;
   const S = useStore.getState;
-  const setTb = (patch: Partial<typeof tb>, key = Object.keys(patch).join(',')) =>
-    S().mutateFloor((f) => { Object.assign(f.titleBlock, patch); }, { keepValidation: true, coalesce: `tb:${key}` });
+  const setTb = (patch: Partial<typeof tb>, key = Object.keys(patch).join(',')) => {
+    const reason = patch.instructions !== undefined && patch.instructions !== tb.instructions ? 'Consignes modifiées depuis la validation'
+      : patch.emergencyNumbers !== undefined && patch.emergencyNumbers !== tb.emergencyNumbers ? 'Numéros d’urgence modifiés depuis la validation' : undefined;
+    S().mutateFloor((f) => { Object.assign(f.titleBlock, patch); },
+      { keepValidation: !reason, validationReason: reason, coalesce: `tb:${floor.id}:${key}` });
+  };
   return (
     <>
       <section className={`status-box status-${tb.status}`}>
         <div className="row between"><span className="small">Statut du plan</span><span className={`chip status-${tb.status}`}>{STATUS_LABEL[tb.status]}</span></div>
+        {tb.status === 'to_validate' && tb.validationReason && <p className="small">{tb.validationReason}.</p>}
         {tb.status === 'validated' ? (
           <>
             <p className="small">Validé par <b>{tb.validatedBy}</b> le {new Date(tb.validatedAt).toLocaleString('fr-BE')}.</p>
@@ -578,7 +589,7 @@ function PlanTab({ floor }: { floor: Floor }) {
           </>
         ) : (
           <div className="row gap">
-            <Seg value={tb.status} options={[['draft', 'Brouillon'], ['to_validate', 'À valider']]} onChange={(v) => setTb({ status: v })} />
+            <Seg value={tb.status} options={[['draft', 'Brouillon'], ['to_validate', 'À valider']]} onChange={(v) => setTb({ status: v, validationReason: undefined })} />
             <button className="btn small primary" onClick={() => A.validateAction()}><Icon name="check" size={15} /> Valider…</button>
           </div>
         )}
@@ -624,7 +635,7 @@ function PlanTab({ floor }: { floor: Floor }) {
         <button className="btn small" onClick={() => setTb({ emergencyNumbers: EMERGENCY_NUMBERS[project.country] ?? EMERGENCY_NUMBERS.INT })}>Numéros du pays</button>
       </Section>
       <Section title="Consignes" icon="textIcon">
-        <textarea className="ta instructions" rows={9} value={tb.instructions} onChange={(e) => setTb({ instructions: e.target.value })} />
+        <textarea id="floor-instructions" aria-label="Consignes" className="ta instructions" rows={9} value={tb.instructions} onChange={(e) => setTb({ instructions: e.target.value })} />
         <p className="muted tiny">Lignes en MAJUSCULES = titres colorés ; « 1. … » = étapes numérotées.</p>
         <button className="btn small" onClick={async () => {
           if (await confirmDialog('Rétablir les consignes', `Remplacer le texte par le modèle « ${getCountry(project.country).name} » ?`, 'Remplacer')) setTb({ instructions: getCountry(project.country).instructions });
