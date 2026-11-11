@@ -54,11 +54,24 @@ const doorLeaf = (extra = '') => `
   <path d="M15 85 V15" stroke-width="5"/>
   <path d="M15 15 A70 70 0 0 1 85 85" fill="none" stroke-width="2" stroke-dasharray="5 4"/>${extra}`;
 
+
+/** Silhouette « personne courant vers une porte » des signaux ISO 7010 E002 (domaine public, MaxxL / Wikimedia Commons), coordonnées d’origine (boîte ≈ x 78–150, y 80–173). */
+const EXIT_MAN_E002 = "m 88.897663,80.709657 v 60.715533 c -6.316373,0.48241 -10.5308,5.63536 -10.5308,10.31517 v 2.4687 l 2.468698,-0.006 8.062102,-0.0182 v 12.73893 l -6.082136,5.9854 h 40.129013 l 7.43227,-7.11934 h 9.2387 l -7.43284,7.11934 h 11.45592 l 6.08214,-5.98542 V 125.1738 h -10.66451 c -0.0833,5.9e-4 -0.16247,0.004 -0.24579,0.004 -0.0556,0 -0.0832,-0.007 -0.13598,-0.008 -0.0349,-5.8e-4 -0.0686,-0.002 -0.10294,-0.004 -1.43847,-0.0274 -1.75019,-0.28172 -2.77878,-1.31031 l -6.24145,-7.37766 c -1.73064,3.78552 -3.36138,7.00437 -5.08475,10.65995 -0.19459,0.37374 -0.65441,1.21334 -0.30951,1.86731 l 17.15286,34.63575 -6.29263,-0.021 c -3.29001,0.0726 -4.66137,-2.19803 -5.81814,-4.23075 -4.63991,-9.35178 -9.30161,-18.69659 -13.94909,-28.04895 l -0.87733,16.64253 c -0.22955,2.88042 -2.17565,3.61243 -4.72575,3.69137 l -28.817027,0.0659 c 0,-3.31243 3.281927,-7.68712 8.626505,-7.89482 0,0 10.292026,0.11556 15.673012,0.13711 0.68225,0 0.86922,-0.38098 0.94846,-0.94845 0.24993,-4.28189 0.48763,-8.59103 0.7533,-12.87205 0.16632,-2.12536 0.3528,-3.59821 0.96949,-5.20708 2.0106,-4.31016 4.02228,-8.59953 6.03491,-12.89424 l -7.36399,-0.0859 c -0.19342,-0.007 -0.34356,0.0358 -0.44435,0.20823 l -5.32998,9.33771 c -2.198192,4.00865 -8.138332,1.08508 -6.148138,-3.16681 l 6.536168,-10.93249 c 1.14949,-1.70937 1.6747,-2.29896 4.66145,-2.39188 0,0 13.95626,-0.0222 20.94497,-0.0222 v -5.8e-4 c 2.27014,-0.0504 2.52919,0.66163 3.61401,1.81782 2.91625,3.5982 6.10478,7.43502 8.94966,10.7891 0.3953,0.47396 0.61745,0.67583 1.55836,0.66796 1.74231,-0.0292 3.27034,0.002 4.6188,0.0808 h 4.28821 V 80.709277 Z m 38.649157,8.33748 c 4.00109,0 7.06757,3.07482 7.06757,7.09658 0,4.029633 -3.06678,7.103983 -7.06757,7.103983 -4.00049,0 -7.07496,-3.07435 -7.07496,-7.103983 0,-4.02205 3.07447,-7.09658 7.07496,-7.09658 z";
+/** Luminaire d’éclairage de sécurité (bloc + panneau vert + flèche + halo), d’après le pictogramme fourni. */
+const exitLuminaire = `
+    <rect x="9" y="17" width="82" height="7" rx="2.5" fill="#34414c"/>
+    <rect x="12" y="18.6" width="76" height="2.6" rx="1.3" fill="#8b98a3"/>
+    <rect x="12" y="23" width="76" height="47" rx="4" fill="#34414c"/>
+    <rect x="15" y="26" width="70" height="41" rx="2" fill="#e9eef1"/>
+    <rect x="16.5" y="27.5" width="67" height="34" rx="1.5" fill="#0b7d3e"/>
+    <rect x="16.5" y="61.5" width="67" height="4" rx="1" fill="#fff1bf"/>
+    <path d="${EXIT_MAN_E002}" fill="${W}" transform="translate(19.5 30.5) scale(0.31) translate(-78.4 -80.7)"/>
+    <path d="M50 41 H68 V34.5 L80.5 44.5 L68 54.5 V48 H50 Z" fill="${W}"/>
+    <path d="M30 75 L27 82 M50 75 V83 M70 75 L73 82" stroke="#d4a017" stroke-width="2.6" stroke-linecap="round"/>`;
+
 export const DRAWN_SYMBOLS: SymbolDef[] = [
   // ── Évacuation ─────────────────────────────────────────────────────────────
-  own('baes', 'Bloc d’éclairage de sécurité (BAES)', CAT.evac, `
-    <rect x="6" y="28" width="88" height="44" rx="6" fill="${W}" stroke="${GREEN}" stroke-width="6"/>
-    <path d="M26 50 H70 M58 38 L70 50 L58 62" fill="none" stroke="${GREEN}" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>`),
+  own('baes', 'Bloc d’éclairage de sécurité (BAES)', CAT.evac, exitLuminaire),
   own('baes-ambiance', 'Éclairage d’ambiance (anti-panique)', CAT.evac, `
     <rect x="6" y="28" width="88" height="44" rx="6" fill="${W}" stroke="${GREEN}" stroke-width="6"/>
     <circle cx="50" cy="50" r="10" fill="${GREEN}"/>
@@ -72,6 +85,7 @@ export const DRAWN_SYMBOLS: SymbolDef[] = [
   own('exit-text', 'Issue de secours (texte)', CAT.evac, `${bg(GREEN)}${label('SORTIE', 47, 22)}${label('DE SECOURS', 72, 15)}`),
   own('evac-guide', 'Guide-file / serre-file', CAT.evac, `${bg(GREEN)}
     <circle cx="50" cy="50" r="34" fill="none" stroke="${W}" stroke-width="6"/>${label('GF', 60, 28)}`),
+
 
   // ── Lutte contre l'incendie ────────────────────────────────────────────────
   own('alarm-sounder', 'Diffuseur d’alarme sonore', CAT.fire, `${bg(RED)}
