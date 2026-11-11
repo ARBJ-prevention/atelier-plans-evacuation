@@ -3,7 +3,7 @@ import { makeElement } from '../model/defaults';
 import { getCountry } from '../model/countries';
 import {
   boxOf, constrain45, distance, distToSegment, elementBounds, floorContentBounds, isVisibleInVariant,
-  openingWallFit, polylineLength, snapPointToWalls, wallJoints, rectContains, rectFromPoints, rectsIntersect, RESIZE_DIRECTIONS, resizeBoxElement, rotatePoint, snapSymbolToWalls, snapToGrid, translateElement,
+  openingWallFit, polylineLength, raiseOpeningAboveWalls, snapPointToWalls, wallJoints, rectContains, rectFromPoints, rectsIntersect, RESIZE_DIRECTIONS, resizeBoxElement, rotatePoint, snapSymbolToWalls, snapToGrid, translateElement,
   unionRects, windowGlassWallFit, windowResizeWallFit, type Rect,
 } from '../model/geometry';
 import type { DoorElement, Element, Floor, Pt, SymbolElement, WindowElement } from '../model/types';
@@ -92,6 +92,7 @@ export function Canvas({ onCalibrate }: CanvasProps) {
   const [guideLines, setGuideLines] = useState<{ x?: number; y?: number }>({});
   /** Point d'accroche d'un mur sur un autre (extrémité ou axe), affiché pendant le tracé ou le déplacement. */
   const [wallHint, setWallHint] = useState<Pt | null>(null);
+  const [wallFaceGuides, setWallFaceGuides] = useState<[Pt, Pt][]>([]);
   const [windowResizeGuides, setWindowResizeGuides] = useState<[Pt, Pt][]>([]);
   const [glassGuide, setGlassGuide] = useState<[Pt, Pt] | undefined>();
   const [calib, setCalib] = useState<Pt[]>([]);
@@ -170,9 +171,12 @@ export function Canvas({ onCalibrate }: CanvasProps) {
   }, []);
 
   /** Point de mur : accroché à l'extrémité ou à l'axe d'un mur voisin (Alt pour un placement libre), sinon à la grille. */
-  const snapWall = (p: Pt, e: { altKey: boolean }, exclude: Set<string> = new Set()): Pt => {
-    const hit = e.altKey ? null : snapPointToWalls(floor, variantId, p, 10 / useStore.getState().view.zoom, exclude);
+  const snapWall = (p: Pt, e: { altKey: boolean }, exclude: Set<string> = new Set(), ownThickness?: number): Pt => {
+    const st = useStore.getState();
+    const own = ownThickness ?? st.presets.wallThickness ?? 0;
+    const hit = e.altKey ? null : snapPointToWalls(floor, variantId, p, 10 / st.view.zoom, exclude, own);
     setWallHint(hit ? hit.point : null);
+    setWallFaceGuides(hit ? hit.faces : []);
     return hit ? hit.point : snap(p, e);
   };
 
@@ -258,7 +262,8 @@ export function Canvas({ onCalibrate }: CanvasProps) {
     boxOf(el, lc, el.type === 'door' ? openingWallFit(floor, variantId, el)?.depth : undefined);
   const snapOpening = (opening: DoorElement | WindowElement, altKey: boolean) => {
     const s = useStore.getState();
-    if (altKey || !(s.grid.snap || (opening.type === 'window' && s.guides))) return undefined;
+    // les ouvertures s'accrochent aux murs même sans le magnétisme de la grille (Alt : pose libre)
+    if (altKey) return undefined;
     const fit = openingWallFit(floor, variantId, opening, 10 / s.view.zoom);
     if (!fit) return undefined;
     const { depth, ...pose } = fit;
@@ -446,7 +451,7 @@ export function Canvas({ onCalibrate }: CanvasProps) {
     const s = useStore.getState();
     const p = toWorld(e.clientX, e.clientY);
     const sp = s.tool === 'wall' && !drag.current ? snapWall(p, e) : snap(p, e);
-    if (s.tool !== 'wall' && !drag.current && wallHint) setWallHint(null);
+    if (s.tool !== 'wall' && !drag.current && wallHint) { setWallHint(null); setWallFaceGuides([]); }
     setCursor(POLY_TOOLS.includes(s.tool) && draft.length && e.shiftKey ? constrain45(draft[draft.length - 1], sp) : (s.tool === 'calibrate' ? p : sp));
     const d = drag.current;
     if (!d) return;
@@ -500,14 +505,15 @@ export function Canvas({ onCalibrate }: CanvasProps) {
         if (only?.type === 'wall' && !e.altKey) {
           // accroche le mur déplacé aux murs voisins par le sommet le plus proche d'une extrémité ou d'un axe
           const exclude = new Set([only.id, ...(d.joints ?? []).map((j) => j.id)]);
-          let fix: { dx: number; dy: number; at: Pt; dist: number } | null = null;
+          let fix: { dx: number; dy: number; at: Pt; dist: number; faces: [Pt, Pt][] } | null = null;
           for (const v of only.points) {
             const q: Pt = [v[0] + dx, v[1] + dy];
-            const hit = snapPointToWalls(floor, variantId, q, 10 / s.view.zoom, exclude);
-            if (hit && (!fix || distance(q, hit.point) < fix.dist)) fix = { dx: hit.point[0] - q[0], dy: hit.point[1] - q[1], at: hit.point, dist: distance(q, hit.point) };
+            const hit = snapPointToWalls(floor, variantId, q, 10 / s.view.zoom, exclude, only.thickness);
+            if (hit && (!fix || distance(q, hit.point) < fix.dist)) fix = { dx: hit.point[0] - q[0], dy: hit.point[1] - q[1], at: hit.point, dist: distance(q, hit.point), faces: hit.faces };
           }
           if (fix) { dx += fix.dx; dy += fix.dy; delete g.x; delete g.y; }
           setWallHint(fix ? fix.at : null);
+          setWallFaceGuides(fix ? fix.faces : []);
         }
         setGuideLines(g);
         const moved = new Map(d.orig.map((o) => [o.id, translateElement(o, dx, dy)]));
@@ -527,7 +533,7 @@ export function Canvas({ onCalibrate }: CanvasProps) {
       case 'vertex': {
         if (!d.began) { d.began = true; s.beginLive(); }
         const el = elById(d.id) as any;
-        let pt = el?.type === 'wall' ? snapWall(p, e, new Set([d.id, ...(d.joints ?? []).map((j) => j.id)])) : sp;
+        let pt = el?.type === 'wall' ? snapWall(p, e, new Set([d.id, ...(d.joints ?? []).map((j) => j.id)]), el.thickness) : sp;
         if (e.shiftKey && el?.points) {
           const ref = el.points[d.index - 1] ?? el.points[d.index + 1];
           if (ref) pt = constrain45(ref, sp);
@@ -618,10 +624,23 @@ export function Canvas({ onCalibrate }: CanvasProps) {
     const d = drag.current;
     drag.current = null;
     setGuideLines({});
-    setWallHint(null);
+    setWallHint(null); setWallFaceGuides([]);
     setWindowResizeGuides([]);
     setGlassGuide(undefined);
     if (!d) return;
+    if (d.kind === 'move' && d.began) {
+      // une porte ou fenêtre déposée sur un mur passe au-dessus des murs, pour ne pas rester cachée dessous
+      const ids = d.orig
+        .filter((o) => o.type === 'door' || o.type === 'window')
+        .map((o) => o.id)
+        .filter((id) => {
+          const el = floor.elements.find((x) => x.id === id);
+          return (el?.type === 'door' || el?.type === 'window') && !!openingWallFit(floor, variantId, el);
+        });
+      if (ids.length) {
+        s.mutateFloor((f) => { for (const id of ids) raiseOpeningAboveWalls(f.elements as Element[], id); }, { history: false, keepValidation: true });
+      }
+    }
     if (d.kind === 'marquee') {
       const p = toWorld(e.clientX, e.clientY);
       const r = rectFromPoints([d.start, p]);
@@ -840,6 +859,9 @@ export function Canvas({ onCalibrate }: CanvasProps) {
             {selBoxes}
             {handles}
             {marquee && <rect className="marquee" x={marquee.x} y={marquee.y} width={marquee.w} height={marquee.h} />}
+            {wallHint && wallFaceGuides.map(([[x1, y1], [x2, y2]], i) => (
+              <line key={`wf${i}`} className="guide" x1={x1} y1={y1} x2={x2} y2={y2} />
+            ))}
             {wallHint && <circle className="wall-snap" cx={wallHint[0]} cy={wallHint[1]} r={7 / z} />}
             {guidesOn && guideLines.x !== undefined && <line className="guide" x1={guideLines.x} x2={guideLines.x} y1={-1e5} y2={1e5} />}
             {guidesOn && guideLines.y !== undefined && <line className="guide" y1={guideLines.y} y2={guideLines.y} x1={-1e5} x2={1e5} />}

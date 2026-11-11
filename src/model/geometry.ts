@@ -302,23 +302,53 @@ function* visibleWalls(floor: Floor, variantId: string, exclude: Set<string>) {
   }
 }
 
+/** Lignes des deux faces d'un segment de mur (décalées de ± épaisseur/2), prolongées loin de part et d'autre. */
+function wallFaceLines(a: Pt, b: Pt, thickness: number): [Pt, Pt][] {
+  const L = distance(a, b);
+  if (!L) return [];
+  const ux = (b[0] - a[0]) / L, uy = (b[1] - a[1]) / L, h = thickness / 2, far = 1e5;
+  return [h, -h].map((o): [Pt, Pt] => {
+    const ox = -uy * o, oy = ux * o;
+    return [[a[0] + ox - ux * far, a[1] + oy - uy * far], [b[0] + ox + ux * far, b[1] + oy + uy * far]];
+  });
+}
+
 /**
  * Aimantation d'un point de mur sur les autres murs : une extrémité ou un angle proche en priorité,
  * sinon le point le plus proche de l'axe d'un mur (jonction en T). `tolerance` en unités plan.
+ * La portée tient compte des épaisseurs (celle du mur visé et `ownThickness`, celle du mur manipulé) :
+ * deux murs épais dont les bords se touchent s'accrochent même si leurs axes restent éloignés.
+ * `faces` : lignes des faces du mur visé, à afficher comme repères d'alignement.
  */
 export function snapPointToWalls(
-  floor: Floor, variantId: string, p: Pt, tolerance: number, exclude: Set<string> = new Set(),
-): { point: Pt; kind: 'end' | 'axis' } | null {
-  let end: Pt | null = null, bestEnd = tolerance;
+  floor: Floor, variantId: string, p: Pt, tolerance: number, exclude: Set<string> = new Set(), ownThickness = 0,
+): { point: Pt; kind: 'end' | 'axis'; faces: [Pt, Pt][] } | null {
+  let end: Pt | null = null, bestEnd = Infinity;
   for (const w of visibleWalls(floor, variantId, exclude)) {
+    const reach = tolerance + 0.75 * ((w.thickness || 0) + ownThickness);
     for (const v of w.points) {
       const d = distance(p, v);
-      if (d <= bestEnd) { bestEnd = d; end = v; }
+      if (d <= reach && d < bestEnd) { bestEnd = d; end = v; }
     }
   }
-  if (end) return { point: [end[0], end[1]], kind: 'end' };
-  let axis: Pt | null = null, bestAxis = tolerance;
+  if (end) {
+    const at = end as Pt, faces: [Pt, Pt][] = [];
+    // repères : faces de tous les segments qui partent de ce sommet (angle partagé par plusieurs murs)
+    for (const w of visibleWalls(floor, variantId, exclude)) {
+      const n = w.points.length;
+      w.points.forEach((v, i) => {
+        if (distance(v, at) > 1e-6) return;
+        const prev = i > 0 ? w.points[i - 1] : w.closed ? w.points[n - 1] : undefined;
+        const next = i < n - 1 ? w.points[i + 1] : w.closed ? w.points[0] : undefined;
+        if (prev) faces.push(...wallFaceLines(prev, v, w.thickness || 0));
+        if (next) faces.push(...wallFaceLines(v, next, w.thickness || 0));
+      });
+    }
+    return { point: [at[0], at[1]], kind: 'end', faces };
+  }
+  let axis: { q: Pt; faces: [Pt, Pt][] } | null = null, bestAxis = Infinity;
   for (const w of visibleWalls(floor, variantId, exclude)) {
+    const reach = tolerance + ((w.thickness || 0) + ownThickness) / 2;
     const n = w.points.length, segs = w.closed ? n : n - 1;
     for (let i = 0; i < segs; i++) {
       const a = w.points[i], b = w.points[(i + 1) % n];
@@ -327,10 +357,12 @@ export function snapPointToWalls(
       const t = Math.max(0, Math.min(1, ((p[0] - a[0]) * abx + (p[1] - a[1]) * aby) / L2));
       const q: Pt = [a[0] + abx * t, a[1] + aby * t];
       const d = distance(p, q);
-      if (d <= bestAxis) { bestAxis = d; axis = q; }
+      if (d <= reach && d < bestAxis) { bestAxis = d; axis = { q, faces: wallFaceLines(a, b, w.thickness || 0) }; }
     }
   }
-  return axis ? { point: axis, kind: 'axis' } : null;
+  if (!axis) return null;
+  const { q, faces } = axis as { q: Pt; faces: [Pt, Pt][] };
+  return { point: q, kind: 'axis', faces };
 }
 
 /**
@@ -421,6 +453,23 @@ function* visibleWallSegments(floor: Floor, variantId: string) {
 function openingTurn(angle: number, rotation: number): number {
   // Les deux sens d'un même mur sont équivalents.
   return angle - rotation - 180 * Math.round((angle - rotation) / 180);
+}
+
+/**
+ * Une porte ou fenêtre posée sur un mur doit être dessinée au-dessus des murs (sinon le mur la recouvre).
+ * Si un mur du même calque vient après elle dans l'ordre de dessin, elle passe juste après le dernier.
+ * Modifie le tableau ; renvoie vrai si l'ordre a changé.
+ */
+export function raiseOpeningAboveWalls(elements: Element[], id: string): boolean {
+  const from = elements.findIndex((el) => el.id === id);
+  if (from === -1) return false;
+  const opening = elements[from];
+  let lastWall = -1;
+  elements.forEach((el, i) => { if (el.type === 'wall' && el.layer === opening.layer) lastWall = i; });
+  if (lastWall < from) return false;
+  elements.splice(from, 1);
+  elements.splice(lastWall, 0, opening); // lastWall a reculé d'une place : insertion juste après lui
+  return true;
 }
 
 /** Avec une tolérance, cherche un point de pose. Sans tolérance, retrouve le mur d'une ouverture déjà alignée. */

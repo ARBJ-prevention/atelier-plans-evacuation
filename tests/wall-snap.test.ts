@@ -15,18 +15,29 @@ function floorWithWalls() {
 describe('aimantation des murs entre eux', () => {
   it('accroche un point à l’extrémité ou à l’angle le plus proche, en priorité sur l’axe', () => {
     const { floor, variantId } = floorWithWalls();
-    expect(snapPointToWalls(floor, variantId, [494, 6], 10)).toEqual({ point: [500, 0], kind: 'end' });
+    expect(snapPointToWalls(floor, variantId, [494, 6], 10)).toMatchObject({ point: [500, 0], kind: 'end' });
   });
 
   it('accroche un point sur l’axe d’un mur (jonction en T)', () => {
     const { floor, variantId } = floorWithWalls();
-    expect(snapPointToWalls(floor, variantId, [320, 7], 10)).toEqual({ point: [320, 0], kind: 'axis' });
+    expect(snapPointToWalls(floor, variantId, [320, 7], 10)).toMatchObject({ point: [320, 0], kind: 'axis' });
   });
 
   it('n’accroche rien au-delà de la tolérance ni sur le mur exclu', () => {
     const { floor, variantId, facade } = floorWithWalls();
     expect(snapPointToWalls(floor, variantId, [320, 40], 10)).toBeNull();
     expect(snapPointToWalls(floor, variantId, [320, 7], 10, new Set([facade.id]))).toBeNull();
+  });
+
+  it('accroche deux murs épais dont les bords se touchent (axes éloignés de l’épaisseur)', () => {
+    const { floor, variantId } = floorWithWalls();
+    // extrémité d'un mur de 14 posée bord à bord contre l'angle (500, 0) : axes à 14 u l'un de l'autre
+    const hit = snapPointToWalls(floor, variantId, [514, 3], 0.3, new Set(), 14);
+    expect(hit).toMatchObject({ point: [500, 0], kind: 'end' });
+    // repères : faces des deux segments de l'angle (y = ±7 pour la façade, x = 493 / 507 pour le côté)
+    expect(hit!.faces).toHaveLength(4);
+    expect(hit!.faces.some(([a, b]) => Math.abs(a[1] + 7) < 1e-6 && Math.abs(b[1] + 7) < 1e-6)).toBe(true);
+    expect(snapPointToWalls(floor, variantId, [514, 3], 0.3)).toBeNull();
   });
 
   it('retrouve les murs raccordés : angle commun et jonction en T sur le mur déplacé', () => {
