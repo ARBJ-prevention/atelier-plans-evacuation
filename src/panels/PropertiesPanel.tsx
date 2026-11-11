@@ -7,7 +7,7 @@ import type { DashStyle, Element, FillPattern, Floor, LayerId, PageSetup, PageTh
 import { symbolName } from '../render/ElementView';
 import { THEMES } from '../render/layout';
 import { STATUS_LABEL } from '../render/PrintPage';
-import { BUILTIN_SYMBOLS } from '../symbols/library';
+import { SYMBOLS_BY_CATEGORY } from '../symbols/library';
 import { currentFloor, currentVariantId, useStore } from '../store/store';
 import { confirmDialog } from '../ui/dialogs';
 import { Icon } from '../ui/icons';
@@ -230,9 +230,9 @@ function ElementProps({ el, floor }: { el: Element; floor: Floor }) {
               <Section title="Pictogramme" icon="symbol">
                 <Row label="Signal">
                   <select value={e.symbolId} onChange={(ev) => upd({ symbolId: ev.target.value })}>
-                    {Array.from(new Set(BUILTIN_SYMBOLS.map((s) => s.category))).map((c) => (
+                    {SYMBOLS_BY_CATEGORY.map(([c, list]) => (
                       <optgroup key={c} label={c}>
-                        {BUILTIN_SYMBOLS.filter((s) => s.category === c).map((s) => <option key={s.id} value={s.id}>{s.code ? `${s.code} — ` : ''}{s.name}</option>)}
+                        {list.map((s) => <option key={s.id} value={s.id}>{s.code ? `${s.code} — ` : ''}{s.name}</option>)}
                       </optgroup>
                     ))}
                     {customSymbols.length > 0 && <optgroup label="Importés">{customSymbols.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</optgroup>}

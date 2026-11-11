@@ -6,19 +6,26 @@ import { useStore } from '../store/store';
 import { confirmDialog } from '../ui/dialogs';
 import { Icon } from '../ui/icons';
 
+const OPEN_BY_DEFAULT = ['Évacuation', 'Lutte contre l’incendie', 'Premiers secours'];
+
 export function LibraryPanel() {
   const project = useStore((s) => s.project)!;
   const tool = useStore((s) => s.tool);
   const pending = useStore((s) => s.pendingSymbol);
   const [q, setQ] = useState('');
-  const [closed, setClosed] = useState<Record<string, boolean>>({});
+  // Catégories les plus utilisées ouvertes au départ, les autres repliées.
+  const [closed, setClosed] = useState<Record<string, boolean>>(() =>
+    Object.fromEntries(SYMBOL_CATEGORIES.filter((c) => !OPEN_BY_DEFAULT.includes(c)).map((c) => [c, true])));
 
   const norm = (s: string) => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
   const all = [
     ...BUILTIN_SYMBOLS.map((s) => ({ id: s.id, name: s.name, category: s.category, code: s.code ?? '', custom: false })),
     ...project.customSymbols.map((s) => ({ id: s.id, name: s.name, category: s.category, code: '', custom: true })),
-  ].filter((s) => !q || norm(`${s.name} ${s.code}`).includes(norm(q)));
+  ].filter((s) => !q || norm(`${s.name} ${s.code} ${s.category}`).includes(norm(q)));
   const cats = Array.from(new Set([...SYMBOL_CATEGORIES, ...project.customSymbols.map((s) => s.category)]));
+
+  const allClosed = cats.every((c) => closed[c]);
+  const toggleAll = () => setClosed(Object.fromEntries(cats.map((c) => [c, !allClosed])));
 
   const removeCustom = async (id: string, name: string) => {
     const used = project.buildings.some((b) => b.floors.some((f) => f.elements.some((e) => e.type === 'symbol' && e.symbolId === id)));
@@ -32,7 +39,8 @@ export function LibraryPanel() {
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="6" /><path d="M16 16 L21 21" /></svg>
         <input className="search" placeholder="Rechercher (nom ou code ISO, ex. F001)…" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Rechercher un pictogramme" />
       </div>
-      <p className="muted tiny">Cliquez puis cliquez sur le plan, ou glissez-déposez. Signaux ISO 7010 officiels (domaine public / CC0).</p>
+      {!q && <button className="btn small full" onClick={toggleAll}>{allClosed ? 'Tout déplier' : 'Tout replier'}</button>}
+      <p className="muted tiny">Cliquez puis cliquez sur le plan, ou glissez-déposez. Signaux ISO 7010 (domaine public / CC0) et dessins originaux (CC0).</p>
       {cats.map((c) => {
         const items = all.filter((s) => s.category === c);
         if (!items.length) return null;
@@ -65,7 +73,7 @@ export function LibraryPanel() {
       {all.length === 0 && <p className="muted small">Aucun pictogramme ne correspond à « {q} ».</p>}
       <button className="btn small full" onClick={() => importSymbolAction()}><Icon name="import" size={15} /> Importer un pictogramme (SVG, PNG)</button>
       <p className="muted tiny">
-        Les pictogrammes « Repères » et « Mobilier » sont des dessins originaux (CC0) pour les éléments sans signal ISO 7010.
+        Les pictogrammes sans code ISO sont des dessins originaux (CC0). Les symboles de plan (structure, mobilier, sanitaires, équipements) ne figurent pas dans la légende.
         Vérifiez toujours les exigences applicables dans votre pays.
       </p>
     </div>

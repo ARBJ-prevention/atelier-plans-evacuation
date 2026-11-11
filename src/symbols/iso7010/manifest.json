@@ -317,16 +317,25 @@
   {
     "id": "iso-P020",
     "name": "Ascenseur interdit en cas d’incendie",
-    "category": "Interdictions et dangers",
+    "category": "Interdictions",
     "code": "P020",
     "license": "Public domain",
     "author": "ISO",
     "source": "https://commons.wikimedia.org/wiki/File:ISO_7010_P020.svg"
   },
   {
+    "id": "iso-P001",
+    "name": "Interdiction générale",
+    "category": "Interdictions",
+    "code": "P001",
+    "license": "Public domain",
+    "author": "ISO",
+    "source": "https://commons.wikimedia.org/wiki/File:ISO_7010_P001.svg"
+  },
+  {
     "id": "iso-P002",
     "name": "Interdiction de fumer",
-    "category": "Interdictions et dangers",
+    "category": "Interdictions",
     "code": "P002",
     "license": "Public domain",
     "author": "ISO",
@@ -335,7 +344,7 @@
   {
     "id": "iso-P003",
     "name": "Flamme nue interdite",
-    "category": "Interdictions et dangers",
+    "category": "Interdictions",
     "code": "P003",
     "license": "Public domain",
     "author": "ISO",
@@ -344,16 +353,178 @@
   {
     "id": "iso-P004",
     "name": "Passage interdit aux piétons",
-    "category": "Interdictions et dangers",
+    "category": "Interdictions",
     "code": "P004",
     "license": "Public domain",
     "author": "ISO",
     "source": "https://commons.wikimedia.org/wiki/File:ISO_7010_P004.svg"
   },
   {
+    "id": "iso-P005",
+    "name": "Eau non potable",
+    "category": "Interdictions",
+    "code": "P005",
+    "license": "Public domain",
+    "author": "ISO",
+    "source": "https://commons.wikimedia.org/wiki/File:ISO_7010_P005.svg"
+  },
+  {
+    "id": "iso-P006",
+    "name": "Interdit aux chariots élévateurs",
+    "category": "Interdictions",
+    "code": "P006",
+    "license": "Public domain",
+    "author": "ISO",
+    "source": "https://commons.wikimedia.org/wiki/File:ISO_7010_P006.svg"
+  },
+  {
+    "id": "iso-P007",
+    "name": "Interdit aux porteurs d’implant cardiaque",
+    "category": "Interdictions",
+    "code": "P007",
+    "license": "Public domain",
+    "author": "ISO",
+    "source": "https://commons.wikimedia.org/wiki/File:ISO_7010_P007.svg"
+  },
+  {
+    "id": "iso-P010",
+    "name": "Ne pas toucher",
+    "category": "Interdictions",
+    "code": "P010",
+    "license": "Public domain",
+    "author": "ISO",
+    "source": "https://commons.wikimedia.org/wiki/File:ISO_7010_P010.svg"
+  },
+  {
+    "id": "iso-P011",
+    "name": "Ne pas éteindre avec de l’eau",
+    "category": "Interdictions",
+    "code": "P011",
+    "license": "Public domain",
+    "author": "ISO",
+    "source": "https://commons.wikimedia.org/wiki/File:ISO_7010_P011.svg"
+  },
+  {
+    "id": "iso-P012",
+    "name": "Charge lourde interdite",
+    "category": "Interdictions",
+    "code": "P012",
+    "license": "Public domain",
+    "author": "ISO",
+    "source": "https://commons.wikimedia.org/wiki/File:ISO_7010_P012.svg"
+  },
+  {
+    "id": "iso-P013",
+    "name": "Téléphone portable interdit",
+    "category": "Interdictions",
+    "code": "P013",
+    "license": "Public domain",
+    "author": "ISO",
+    "source": "https://commons.wikimedia.org/wiki/File:ISO_7010_P013.svg"
+  },
+  {
+    "id": "iso-P014",
+    "name": "Interdit aux porteurs d’implant métallique",
+    "category": "Interdictions",
+    "code": "P014",
+    "license": "Public domain",
+    "author": "ISO",
+    "source": "https://commons.wikimedia.org/wiki/File:ISO_7010_P014.svg"
+  },
+  {
+    "id": "iso-P017",
+    "name": "Ne pas pousser",
+    "category": "Interdictions",
+    "code": "P017",
+    "license": "CC0",
+    "author": "ISO",
+    "source": "https://commons.wikimedia.org/wiki/File:ISO_7010_P017.svg"
+  },
+  {
+    "id": "iso-P018",
+    "name": "Ne pas s’asseoir",
+    "category": "Interdictions",
+    "code": "P018",
+    "license": "CC0",
+    "author": "ISO",
+    "source": "https://commons.wikimedia.org/wiki/File:ISO_7010_P018.svg"
+  },
+  {
+    "id": "iso-P019",
+    "name": "Ne pas monter",
+    "category": "Interdictions",
+    "code": "P019",
+    "license": "CC0",
+    "author": "ISO",
+    "source": "https://commons.wikimedia.org/wiki/File:ISO_7010_P019.svg"
+  },
+  {
+    "id": "iso-P021",
+    "name": "Chiens interdits",
+    "category": "Interdictions",
+    "code": "P021",
+    "license": "Public domain",
+    "author": "ISO",
+    "source": "https://commons.wikimedia.org/wiki/File:ISO_7010_P021.svg"
+  },
+  {
+    "id": "iso-P022",
+    "name": "Interdiction de manger et de boire",
+    "category": "Interdictions",
+    "code": "P022",
+    "license": "Public domain",
+    "author": "ISO",
+    "source": "https://commons.wikimedia.org/wiki/File:ISO_7010_P022.svg"
+  },
+  {
+    "id": "iso-P023",
+    "name": "Ne pas encombrer",
+    "category": "Interdictions",
+    "code": "P023",
+    "license": "Public domain",
+    "author": "ISO",
+    "source": "https://commons.wikimedia.org/wiki/File:ISO_7010_P023.svg"
+  },
+  {
+    "id": "iso-P024",
+    "name": "Ne pas marcher ni stationner",
+    "category": "Interdictions",
+    "code": "P024",
+    "license": "Public domain",
+    "author": "ISO",
+    "source": "https://commons.wikimedia.org/wiki/File:ISO_7010_P024.svg"
+  },
+  {
+    "id": "iso-P028",
+    "name": "Port de gants interdit",
+    "category": "Interdictions",
+    "code": "P028",
+    "license": "Public domain",
+    "author": "ISO",
+    "source": "https://commons.wikimedia.org/wiki/File:ISO_7010_P028.svg"
+  },
+  {
+    "id": "iso-P031",
+    "name": "Ne pas manœuvrer l’interrupteur",
+    "category": "Interdictions",
+    "code": "P031",
+    "license": "Public domain",
+    "author": "ISO",
+    "source": "https://commons.wikimedia.org/wiki/File:ISO_7010_P031.svg"
+  },
+  {
+    "id": "iso-W001",
+    "name": "Danger général",
+    "category": "Dangers",
+    "code": "W001",
+    "license": "Public domain",
+    "author": "Maxxl2",
+    "source": "https://commons.wikimedia.org/wiki/File:ISO_7010_W001.svg"
+  },
+  {
     "id": "iso-W012",
     "name": "Danger électrique",
-    "category": "Interdictions et dangers",
+    "category": "Dangers",
     "code": "W012",
     "license": "Public domain",
     "author": "MaxxL",
@@ -362,19 +533,343 @@
   {
     "id": "iso-W021",
     "name": "Matières inflammables",
-    "category": "Interdictions et dangers",
+    "category": "Dangers",
     "code": "W021",
     "license": "Public domain",
     "author": "MaxxL",
     "source": "https://commons.wikimedia.org/wiki/File:ISO_7010_W021.svg"
   },
   {
-    "id": "iso-W001",
-    "name": "Danger général",
-    "category": "Interdictions et dangers",
-    "code": "W001",
+    "id": "iso-W002",
+    "name": "Matières explosives",
+    "category": "Dangers",
+    "code": "W002",
     "license": "Public domain",
     "author": "Maxxl2",
-    "source": "https://commons.wikimedia.org/wiki/File:ISO_7010_W001.svg"
+    "source": "https://commons.wikimedia.org/wiki/File:ISO_7010_W002.svg"
+  },
+  {
+    "id": "iso-W003",
+    "name": "Matières radioactives",
+    "category": "Dangers",
+    "code": "W003",
+    "license": "Public domain",
+    "author": "MaxxL",
+    "source": "https://commons.wikimedia.org/wiki/File:ISO_7010_W003.svg"
+  },
+  {
+    "id": "iso-W004",
+    "name": "Rayonnement laser",
+    "category": "Dangers",
+    "code": "W004",
+    "license": "Public domain",
+    "author": "Maxxl2",
+    "source": "https://commons.wikimedia.org/wiki/File:ISO_7010_W004.svg"
+  },
+  {
+    "id": "iso-W005",
+    "name": "Rayonnement non ionisant",
+    "category": "Dangers",
+    "code": "W005",
+    "license": "Public domain",
+    "author": "Maxxl2",
+    "source": "https://commons.wikimedia.org/wiki/File:ISO_7010_W005.svg"
+  },
+  {
+    "id": "iso-W006",
+    "name": "Champ magnétique",
+    "category": "Dangers",
+    "code": "W006",
+    "license": "Public domain",
+    "author": "Maxxl2",
+    "source": "https://commons.wikimedia.org/wiki/File:ISO_7010_W006.svg"
+  },
+  {
+    "id": "iso-W007",
+    "name": "Obstacle au sol",
+    "category": "Dangers",
+    "code": "W007",
+    "license": "Public domain",
+    "author": "Maxxl2",
+    "source": "https://commons.wikimedia.org/wiki/File:ISO_7010_W007.svg"
+  },
+  {
+    "id": "iso-W008",
+    "name": "Chute avec dénivellation",
+    "category": "Dangers",
+    "code": "W008",
+    "license": "Public domain",
+    "author": "Maxxl2",
+    "source": "https://commons.wikimedia.org/wiki/File:ISO_7010_W008.svg"
+  },
+  {
+    "id": "iso-W009",
+    "name": "Risque biologique",
+    "category": "Dangers",
+    "code": "W009",
+    "license": "Public domain",
+    "author": "MaxxL",
+    "source": "https://commons.wikimedia.org/wiki/File:ISO_7010_W009.svg"
+  },
+  {
+    "id": "iso-W010",
+    "name": "Basse température",
+    "category": "Dangers",
+    "code": "W010",
+    "license": "Public domain",
+    "author": "MaxxL iThe source code of this SVG is valid. This vector image was created with Inkscape by v .",
+    "source": "https://commons.wikimedia.org/wiki/File:ISO_7010_W010.svg"
+  },
+  {
+    "id": "iso-W011",
+    "name": "Sol glissant",
+    "category": "Dangers",
+    "code": "W011",
+    "license": "Public domain",
+    "author": "MaxxL",
+    "source": "https://commons.wikimedia.org/wiki/File:ISO_7010_W011.svg"
+  },
+  {
+    "id": "iso-W014",
+    "name": "Chariots élévateurs",
+    "category": "Dangers",
+    "code": "W014",
+    "license": "Public domain",
+    "author": "MaxxL",
+    "source": "https://commons.wikimedia.org/wiki/File:ISO_7010_W014.svg"
+  },
+  {
+    "id": "iso-W016",
+    "name": "Matières toxiques",
+    "category": "Dangers",
+    "code": "W016",
+    "license": "Public domain",
+    "author": "MaxxL",
+    "source": "https://commons.wikimedia.org/wiki/File:ISO_7010_W016.svg"
+  },
+  {
+    "id": "iso-W017",
+    "name": "Surface chaude",
+    "category": "Dangers",
+    "code": "W017",
+    "license": "Public domain",
+    "author": "MaxxL",
+    "source": "https://commons.wikimedia.org/wiki/File:ISO_7010_W017.svg"
+  },
+  {
+    "id": "iso-W018",
+    "name": "Démarrage automatique",
+    "category": "Dangers",
+    "code": "W018",
+    "license": "Public domain",
+    "author": "MaxxL",
+    "source": "https://commons.wikimedia.org/wiki/File:ISO_7010_W018.svg"
+  },
+  {
+    "id": "iso-W019",
+    "name": "Risque d’écrasement",
+    "category": "Dangers",
+    "code": "W019",
+    "license": "Public domain",
+    "author": "MaxxL",
+    "source": "https://commons.wikimedia.org/wiki/File:ISO_7010_W019.svg"
+  },
+  {
+    "id": "iso-W020",
+    "name": "Obstacle en hauteur",
+    "category": "Dangers",
+    "code": "W020",
+    "license": "CC0",
+    "author": "Bloody666",
+    "source": "https://commons.wikimedia.org/wiki/File:ISO_7010_W020.svg"
+  },
+  {
+    "id": "iso-W022",
+    "name": "Objet pointu",
+    "category": "Dangers",
+    "code": "W022",
+    "license": "CC0",
+    "author": "Bloody666",
+    "source": "https://commons.wikimedia.org/wiki/File:ISO_7010_W022.svg"
+  },
+  {
+    "id": "iso-W023",
+    "name": "Matières corrosives",
+    "category": "Dangers",
+    "code": "W023",
+    "license": "Public domain",
+    "author": "MaxxL",
+    "source": "https://commons.wikimedia.org/wiki/File:ISO_7010_W023.svg"
+  },
+  {
+    "id": "iso-W024",
+    "name": "Écrasement des mains",
+    "category": "Dangers",
+    "code": "W024",
+    "license": "Public domain",
+    "author": "MaxxL",
+    "source": "https://commons.wikimedia.org/wiki/File:ISO_7010_W024.svg"
+  },
+  {
+    "id": "iso-W026",
+    "name": "Batteries",
+    "category": "Dangers",
+    "code": "W026",
+    "license": "Public domain",
+    "author": "MaxxL",
+    "source": "https://commons.wikimedia.org/wiki/File:ISO_7010_W026.svg"
+  },
+  {
+    "id": "iso-W028",
+    "name": "Matières comburantes",
+    "category": "Dangers",
+    "code": "W028",
+    "license": "Public domain",
+    "author": "MaxxL",
+    "source": "https://commons.wikimedia.org/wiki/File:ISO_7010_W028.svg"
+  },
+  {
+    "id": "iso-W029",
+    "name": "Bouteilles de gaz",
+    "category": "Dangers",
+    "code": "W029",
+    "license": "Public domain",
+    "author": "MaxxL",
+    "source": "https://commons.wikimedia.org/wiki/File:ISO_7010_W029.svg"
+  },
+  {
+    "id": "iso-M001",
+    "name": "Obligation générale",
+    "category": "Obligations",
+    "code": "M001",
+    "license": "Public domain",
+    "author": "ISO",
+    "source": "https://commons.wikimedia.org/wiki/File:ISO_7010_M001.svg"
+  },
+  {
+    "id": "iso-M003",
+    "name": "Protection auditive obligatoire",
+    "category": "Obligations",
+    "code": "M003",
+    "license": "Public domain",
+    "author": "ISO",
+    "source": "https://commons.wikimedia.org/wiki/File:ISO_7010_M003.svg"
+  },
+  {
+    "id": "iso-M004",
+    "name": "Lunettes de protection obligatoires",
+    "category": "Obligations",
+    "code": "M004",
+    "license": "Public domain",
+    "author": "ISO",
+    "source": "https://commons.wikimedia.org/wiki/File:ISO_7010_M004.svg"
+  },
+  {
+    "id": "iso-M008",
+    "name": "Chaussures de sécurité obligatoires",
+    "category": "Obligations",
+    "code": "M008",
+    "license": "Public domain",
+    "author": "ISO",
+    "source": "https://commons.wikimedia.org/wiki/File:ISO_7010_M008.svg"
+  },
+  {
+    "id": "iso-M009",
+    "name": "Gants de protection obligatoires",
+    "category": "Obligations",
+    "code": "M009",
+    "license": "Public domain",
+    "author": "ISO",
+    "source": "https://commons.wikimedia.org/wiki/File:ISO_7010_M009.svg"
+  },
+  {
+    "id": "iso-M010",
+    "name": "Vêtement de protection obligatoire",
+    "category": "Obligations",
+    "code": "M010",
+    "license": "Public domain",
+    "author": "ISO",
+    "source": "https://commons.wikimedia.org/wiki/File:ISO_7010_M010.svg"
+  },
+  {
+    "id": "iso-M011",
+    "name": "Se laver les mains",
+    "category": "Obligations",
+    "code": "M011",
+    "license": "Public domain",
+    "author": "ISO",
+    "source": "https://commons.wikimedia.org/wiki/File:ISO_7010_M011.svg"
+  },
+  {
+    "id": "iso-M013",
+    "name": "Écran facial obligatoire",
+    "category": "Obligations",
+    "code": "M013",
+    "license": "Public domain",
+    "author": "ISO",
+    "source": "https://commons.wikimedia.org/wiki/File:ISO_7010_M013.svg"
+  },
+  {
+    "id": "iso-M014",
+    "name": "Casque de protection obligatoire",
+    "category": "Obligations",
+    "code": "M014",
+    "license": "Public domain",
+    "author": "ISO",
+    "source": "https://commons.wikimedia.org/wiki/File:ISO_7010_M014.svg"
+  },
+  {
+    "id": "iso-M015",
+    "name": "Gilet haute visibilité obligatoire",
+    "category": "Obligations",
+    "code": "M015",
+    "license": "Public domain",
+    "author": "ISO",
+    "source": "https://commons.wikimedia.org/wiki/File:ISO_7010_M015.svg"
+  },
+  {
+    "id": "iso-M016",
+    "name": "Masque obligatoire",
+    "category": "Obligations",
+    "code": "M016",
+    "license": "Public domain",
+    "author": "ISO",
+    "source": "https://commons.wikimedia.org/wiki/File:ISO_7010_M016.svg"
+  },
+  {
+    "id": "iso-M017",
+    "name": "Protection respiratoire obligatoire",
+    "category": "Obligations",
+    "code": "M017",
+    "license": "Public domain",
+    "author": "ISO",
+    "source": "https://commons.wikimedia.org/wiki/File:ISO_7010_M017.svg"
+  },
+  {
+    "id": "iso-M018",
+    "name": "Harnais de sécurité obligatoire",
+    "category": "Obligations",
+    "code": "M018",
+    "license": "Public domain",
+    "author": "ISO",
+    "source": "https://commons.wikimedia.org/wiki/File:ISO_7010_M018.svg"
+  },
+  {
+    "id": "iso-M021",
+    "name": "Déconnecter avant intervention",
+    "category": "Obligations",
+    "code": "M021",
+    "license": "Public domain",
+    "author": "ISO",
+    "source": "https://commons.wikimedia.org/wiki/File:ISO_7010_M021.svg"
+  },
+  {
+    "id": "iso-M024",
+    "name": "Utiliser le passage piéton",
+    "category": "Obligations",
+    "code": "M024",
+    "license": "Public domain",
+    "author": "ISO",
+    "source": "https://commons.wikimedia.org/wiki/File:ISO_7010_M024.svg"
   }
 ]

@@ -1,5 +1,8 @@
 # Journal des versions
 
+## À venir
+- Bibliothèque de symboles enrichie et réorganisée en 12 catégories : 97 signaux ISO 7010 (interdictions, dangers et obligations ajoutés) et plus de 90 pictogrammes dessinés pour le logiciel (BAES, extincteurs par agent, colonnes sèches, coupures, portes, escaliers, mobilier, sanitaires, équipements techniques). Catégories secondaires repliées par défaut, bouton « Tout déplier / Tout replier », recherche aussi par catégorie.
+
 ## 2.0.0 — novembre 2026
 - 42 pictogrammes ISO 7010 officiels (domaine public / CC0).
 - Nouvelle interface : ruban à onglets, panneau Propriétés détaillé (style, texte, disposition), règles en mètres, grille plus visible et réglable.

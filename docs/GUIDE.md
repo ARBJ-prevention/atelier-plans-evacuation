@@ -63,16 +63,17 @@ Ouvrez un exemple puis enregistrez-le sous un autre nom pour vous en servir de m
 
 ## 6. Pictogrammes
 
-Onglet **Symboles** : **42 signaux ISO 7010 officiels** (codes E, F, P, W affichés) classés par domaine, plus des repères et du mobilier :
+Onglet **Symboles** : **97 signaux ISO 7010 officiels** (codes E, F, P, W, M affichés) et plus de 90 pictogrammes dessinés pour le logiciel, classés en 12 catégories. Les trois premières sont ouvertes au démarrage ; cliquez sur un titre pour ouvrir ou fermer une catégorie, ou utilisez **Tout déplier / Tout replier**.
 
-- *Évacuation* : sorties de secours (gauche, droite, PMR, escalier, échelle), flèches de direction, point de rassemblement, espace d'attente sécurisé, ouverture des portes, brise-vitre ;
-- *Lutte contre l'incendie* : extincteur, extincteur sur roues, RIA, déclencheur manuel d'alarme, téléphone incendie, matériel incendie, porte coupe-feu, installations fixes d'extinction, diffuseur sonore, couverture anti-feu, détecteur ;
-- *Premiers secours* : premiers secours, DEA, téléphone d'urgence, médecin, lave-œil, douche de sécurité, civière, arrêt d'urgence ;
-- *Interdictions et dangers* : ascenseur interdit en cas d'incendie, interdiction de fumer, flamme nue interdite, passage interdit, danger électrique, matières inflammables, danger général ;
-- *Repères* : « Vous êtes ici », nord, coupures électricité / gaz / eau, désenfumage, clés pompiers, centrale incendie ;
-- *Mobilier et équipements* : bureaux, tables, sièges, sanitaires, cuisine, ascenseur… (exclus automatiquement de la légende).
+- *Évacuation* : sorties de secours (gauche, droite, PMR, escalier, échelle), flèches, point de rassemblement, espace d'attente sécurisé, ouverture des portes, brise-vitre, BAES, éclairage d'ambiance, escaliers d'évacuation, guide-file ;
+- *Lutte contre l'incendie* : extincteurs (dont eau, CO₂, poudre, mousse), RIA, déclencheur manuel, colonnes sèche et humide, poteau d'incendie, sprinkleurs, détecteurs, diffuseurs sonore et lumineux, centrale incendie, désenfumage, exutoire, clapet coupe-feu, couverture anti-feu ;
+- *Premiers secours* : premiers secours, DEA, téléphone d'urgence, lave-œil, douche de sécurité, civière, trousse, infirmerie, SST ;
+- *Interdictions*, *Dangers*, *Obligations* : signaux ISO 7010 P, W et M (EPI, risques, accès) ;
+- *Repères* : « Vous êtes ici », nord, accès des secours, boîte à clés, local à risques ;
+- *Coupures et commandes* : électricité, TGBT, gaz, eau, fioul, photovoltaïque, ventilation, chauffage, arrêt d'urgence ;
+- *Structure du bâtiment*, *Mobilier*, *Sanitaires et cuisine*, *Équipements techniques* : portes, fenêtres, escaliers, rampe, ascenseur, bureaux, tables, rayonnages, WC (dont PMR), cuisine, chaudière, baie informatique… (exclus automatiquement de la légende).
 
-Recherchez par nom ou par code (ex. « F001 »), cliquez puis cliquez sur le plan, ou glissez-déposez. Propriétés : taille, pastille blanche, libellé (position, taille, couleur). **Importer un pictogramme** permet d'ajouter vos propres fichiers SVG ou PNG.
+Recherchez par nom, par code (ex. « F001 ») ou par catégorie, cliquez puis cliquez sur le plan, ou glissez-déposez. Propriétés : taille, pastille blanche, libellé (position, taille, couleur). **Importer un pictogramme** permet d'ajouter vos propres fichiers SVG ou PNG.
 
 ## 7. Itinéraires et flèches d'évacuation
 

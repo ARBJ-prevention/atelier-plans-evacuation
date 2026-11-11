@@ -75,9 +75,10 @@ export async function runSelfTest(outDir: string): Promise<void> {
   });
 
   // 2 bis. Bibliothèque ISO 7010 complète et lisible
-  await check('Bibliothèque ISO 7010 (42 signaux officiels)', async () => {
+  const ISO_EXPECTED = 97;
+  await check(`Bibliothèque ISO 7010 (${ISO_EXPECTED} signaux officiels)`, async () => {
     const iso = BUILTIN_SYMBOLS.filter((s) => s.kind === 'iso');
-    assert(iso.length === 42, `${iso.length} signaux ISO chargés au lieu de 42`);
+    assert(iso.length === ISO_EXPECTED, `${iso.length} signaux ISO chargés au lieu de ${ISO_EXPECTED}`);
     const bad: string[] = [];
     for (const s of iso) {
       const ok = await new Promise<boolean>((resolve) => {

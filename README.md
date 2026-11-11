@@ -20,7 +20,7 @@ Logiciel de bureau Windows, en français et **entièrement hors ligne**, pour cr
 
 ## Nouveautés de la version 2
 
-- **42 signaux ISO 7010 officiels** (domaine public / CC0, licence vérifiée, source de chaque fichier dans `src/symbols/iso7010/manifest.json`), récupérés par `scripts/fetch-iso7010.mjs`.
+- **97 signaux ISO 7010 officiels** (évacuation, incendie, secours, interdictions, dangers, obligations) (domaine public / CC0, licence vérifiée, source de chaque fichier dans `src/symbols/iso7010/manifest.json`), récupérés par `scripts/fetch-iso7010.mjs`.
 - **Ruban** à onglets (Accueil, Insérer, Bâtiment, Mise en page, Affichage) et panneau Propriétés détaillé (Style / Texte / Disposition : remplissage et motifs, traits et tirets, flèches, ombre, opacité, typographie).
 - **4 thèmes de mise en page** (Moderne, Épuré, Institutionnel, Signalétique), couleur d’accent, A2, numéros d’urgence, flèche du nord.
 - **4 plans d’exemple** présentés sur l’écran d’accueil.
