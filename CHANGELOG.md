@@ -1,5 +1,8 @@
 # Journal des versions
 
+## À venir
+- **Plan redessiné automatiquement** à l'import d'un DXF ou d'un DWG : murs et cloisons (épaisseurs réelles, angles raccordés), portes simples et doubles (sens d'ouverture repris), fenêtres, escaliers et pièces nommées sont créés comme éléments modifiables du logiciel, aux vraies dimensions. Fenêtre de vérification avec aperçu, nombre d'éléments par catégorie et rôle de chaque calque (deviné d'après son nom en français, anglais, néerlandais ou allemand, modifiable avec mise à jour immédiate). Les noms de pièces et leur surface sont repris des textes du plan.
+
 ## 2.0.9 — novembre 2026
 - Cadres au choix : Propriétés › Cadres (et fenêtre d'impression) permettent de cocher les zones à entourer — plan, légende, consignes, vue aérienne, croquis de situation, cartouche — sur tous les thèmes. Sans choix, chaque thème garde ses cadres ; bouton « Revenir aux cadres du thème ».
 - Thème Horizon : « En cas d'incendie » en dégradé rouge, « En cas d'évacuation » en dégradé vert, titres de cadres et cadre « Numéros d'urgence » en dégradé, avec les mêmes reflets ronds plus clairs que l'en-tête.
