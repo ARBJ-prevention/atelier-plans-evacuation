@@ -563,7 +563,11 @@ export function recognizePlan(flat: FlatDxf, opt: RecognizeOptions): Recognized 
     // limites : murs redessinés et traits des murs et fenêtres du dessin, sans les menuiseries (vantaux, casiers, cadres)
     // (les contours des poteaux supprimés ne découpent pas les pièces)
     const wallLines = segs.filter((s) => (isWallRole(s.role) || s.role === 'windows') && !s.small);
-    const clean = floodRooms(seeds, finalWalls, [...doors, ...windows], wallLines, m, labelOf, labelSize, true);
+    // menuiseries (portails, baies vitrées sans fenêtre reconnue) et escaliers referment le bâtiment pour la complétion
+    // (sans les vantaux et cadres des portes reconnues : ils enfermeraient un coin d'extérieur devant les portes de façade)
+    const inDoor = (p: P) => doors.some((d) => dist(p, [d.x, d.y]) <= d.width * 1.05 + 0.1 * m);
+    const closers = segs.filter((s) => (s.role === 'doors' || s.role === 'stairs') && !(inDoor(s.a) && inDoor(s.b)));
+    const clean = floodRooms(seeds, finalWalls, [...doors, ...windows], wallLines, m, labelOf, labelSize, true, closers, stairs);
     rooms.push(...clean.rooms);
     if (clean.unplaced.length) {
       const fallback = floodRooms(clean.unplaced, finalWalls, [...doors, ...windows], obstacleSegs, m, labelOf, labelSize, false);
@@ -902,7 +906,7 @@ function obstacleGrid(walls: RawWall[], openings: Opening[], rawSegs: Seg[], m: 
   x0 -= margin; y0 -= margin; x1 += margin; y1 += margin;
   const W = Math.ceil((x1 - x0) / res), H = Math.ceil((y1 - y0) / res);
   const grid = new Uint8Array(W * H); // 1 = obstacle
-  const stamp = (a: P, b: P, radius: number) => {
+  const stamp = (a: P, b: P, radius: number, target = grid) => {
     const L = dist(a, b), n = Math.max(1, Math.ceil(L / (res * 0.5)));
     const rc = Math.max(0.75, radius / res);
     const ri = Math.ceil(rc);
@@ -912,7 +916,7 @@ function obstacleGrid(walls: RawWall[], openings: Opening[], rawSegs: Seg[], m: 
       for (let dy = -ri; dy <= ri; dy++) for (let dx = -ri; dx <= ri; dx++) {
         const gx = cx + dx, gy = cy + dy;
         if (gx < 0 || gy < 0 || gx >= W || gy >= H) continue;
-        if ((gx + 0.5 - px) ** 2 + (gy + 0.5 - py) ** 2 <= rc * rc) grid[gy * W + gx] = 1;
+        if ((gx + 0.5 - px) ** 2 + (gy + 0.5 - py) ** 2 <= rc * rc) target[gy * W + gx] = 1;
       }
     }
   };
@@ -922,7 +926,7 @@ function obstacleGrid(walls: RawWall[], openings: Opening[], rawSegs: Seg[], m: 
     const u = openingDir(d);
     stamp(sub([d.x, d.y], mulv(u, d.width / 2)), add([d.x, d.y], mulv(u, d.width / 2)), 0.03 * m);
   }
-  return { grid, W, H, x0, y0, res };
+  return { grid, W, H, x0, y0, res, stamp };
 }
 
 /** Pièces par remplissage d'une grille depuis chaque nom, jusqu'aux murs et portes refermées. */
@@ -935,10 +939,11 @@ type RoomLabel = { at: P; lines: string[]; height: number };
 function floodRooms(
   labels: RoomLabel[], walls: { a: P; b: P; t: number }[], doors: (DoorElement | WindowElement)[], rawSegs: Seg[], m: number,
   labelOf: (l: string[]) => { label: string; hadArea: boolean }, labelSize: (h: number) => number, circulation = false,
+  closers: Seg[] = [], stairsEls: StairsElement[] = [],
 ): { rooms: AreaElement[]; unplaced: RoomLabel[] } {
   const g = obstacleGrid(walls, doors, rawSegs, m, labels.map((l) => l.at));
   if (!g) return { rooms: [], unplaced: labels };
-  const { grid, W, H, x0, y0, res } = g;
+  const { grid, W, H, x0, y0, res, stamp } = g;
   // 1. Zones fermées : un remplissage depuis chaque texte (surfaces d'abord, puis noms)
   type Seed = { cell: number; name: string; hadArea: boolean; height: number; lab: RoomLabel };
   const unplaced = new Set<RoomLabel>(); // textes tombés dans une zone ouverte vers l'extérieur
@@ -1072,6 +1077,128 @@ function floodRooms(
       }
       if (leaked) { for (const c of cells) comp[c] = -2; continue; }
       if (cells.length >= minCells) parts.push({ cells, names: [], hadArea: false, height: 0 });
+    }
+    completeInterior();
+  }
+
+  /**
+   * 3 ter. Tout l'intérieur du bâtiment reçoit une zone : les petits locaux fermés (casiers, WC, gaines)
+   * rejoignent la pièce voisine, et les espaces qui ne s'ouvraient vers l'extérieur que par une baie
+   * fermée par une menuiserie ou un escalier (portail, rampe, sas d'entrée) deviennent des zones.
+   */
+  function completeInterior() {
+    const N = W * H;
+    // l'intérieur : tout ce que l'extérieur n'atteint pas quand les menuiseries et escaliers referment les baies
+    const closed = grid.slice();
+    for (const s of closers) stamp(s.a, s.b, 0, closed);
+    const outside = new Uint8Array(N);
+    const stack: number[] = [];
+    for (let x = 0; x < W; x++) for (const c of [x, (H - 1) * W + x]) if (!closed[c] && !outside[c]) { outside[c] = 1; stack.push(c); }
+    for (let y = 0; y < H; y++) for (const c of [y * W, y * W + W - 1]) if (!closed[c] && !outside[c]) { outside[c] = 1; stack.push(c); }
+    while (stack.length) {
+      const c = stack.pop()!;
+      const cx = c % W;
+      for (const nb of [cx > 0 ? c - 1 : -1, cx < W - 1 ? c + 1 : -1, c - W, c + W]) {
+        if (nb >= 0 && nb < N && !closed[nb] && !outside[nb]) { outside[nb] = 1; stack.push(nb); }
+      }
+    }
+    const owner = new Int32Array(N).fill(-1);
+    parts.forEach((pr, i) => { for (const c of pr.cells) owner[c] = i; });
+    // les murs redessinés seuls séparent les pièces (les traits fins du dessin et les portes ne comptent pas,
+    // ni les morceaux de mur nés d'une ouverture)
+    const wallMask = new Uint8Array(N);
+    for (const w of walls) if (!(w as RawWall).v) stamp(w.a, w.b, w.t / 2, wallMask);
+    for (const d of doors) {
+      if (d.type !== 'door') continue;
+      const u = openingDir(d), n = perp(u), c: P = [d.x, d.y];
+      // efface le mur sur la largeur de la porte : on passe d'un local à l'autre par elle
+      for (let s = -d.width / 2; s <= d.width / 2; s += res * 0.5) {
+        const p = add(c, mulv(u, s));
+        for (let o = -0.4 * m; o <= 0.4 * m; o += res * 0.5) {
+          const q = add(p, mulv(n, o));
+          const gx = Math.floor((q[0] - x0) / res), gy = Math.floor((q[1] - y0) / res);
+          if (gx >= 0 && gy >= 0 && gx < W && gy < H) wallMask[gy * W + gx] = 0;
+        }
+      }
+    }
+    // l'emprise des escaliers reconnus reste à leur pictogramme
+    const inStair = new Uint8Array(N);
+    for (const st of stairsEls) {
+      const th = (st.rotation * Math.PI) / 180, u: P = [Math.cos(th), Math.sin(th)], n = perp(u), c: P = [st.x, st.y];
+      const hw = st.w / 2 + 0.1 * m, hh = st.h / 2 + 0.1 * m;
+      for (let a = -hw; a <= hw; a += res * 0.5) for (let b = -hh; b <= hh; b += res * 0.5) {
+        const q = add(c, add(mulv(u, a), mulv(n, b)));
+        const gx = Math.floor((q[0] - x0) / res), gy = Math.floor((q[1] - y0) / res);
+        if (gx >= 0 && gy >= 0 && gx < W && gy < H) inStair[gy * W + gx] = 1;
+      }
+    }
+    const isLeft = (c: number) => !grid[c] && !outside[c] && owner[c] < 0 && !inStair[c];
+    const reachN = Math.max(2, Math.ceil((0.35 * m) / res));
+    const mergeMax = (4 * m * m) / (res * res), keepMin = (0.5 * m * m) / (res * res);
+    const seen = new Uint8Array(N);
+    const labelCells = new Map<number, RoomLabel[]>();
+    for (const lab of unplaced) {
+      const c = Math.floor((lab.at[1] - y0) / res) * W + Math.floor((lab.at[0] - x0) / res);
+      if (c >= 0 && c < N) (labelCells.get(c) ?? labelCells.set(c, []).get(c)!).push(lab);
+    }
+    const groups: number[][] = [];
+    for (let c0 = 0; c0 < N; c0++) {
+      if (seen[c0] || !isLeft(c0)) continue;
+      const cells: number[] = [];
+      const st = [c0];
+      seen[c0] = 1;
+      while (st.length) {
+        const c = st.pop()!;
+        cells.push(c);
+        const cx = c % W;
+        for (const nb of [cx > 0 ? c - 1 : -1, cx < W - 1 ? c + 1 : -1, c - W, c + W]) {
+          if (nb >= 0 && nb < N && !seen[nb] && isLeft(nb)) { seen[nb] = 1; st.push(nb); }
+        }
+      }
+      groups.push(cells);
+    }
+    // les grands espaces d'abord : un petit local peut ensuite rejoindre une zone retrouvée
+    groups.sort((a, b) => b.length - a.length);
+    for (const cells of groups) {
+      // textes restés sans pièce (zone qui fuyait par la baie) : ils nomment l'espace retrouvé
+      const labs = cells.flatMap((c) => labelCells.get(c) ?? []);
+      if (labs.length) {
+        const sorted = labs.map((l) => ({ l, ...labelOf(l.lines) })).sort((a, b) => Number(!!b.label) - Number(!!a.label) || b.l.height - a.l.height);
+        const names: Seed[] = sorted.filter((x) => x.label).map((x) => ({ cell: cells[0], name: x.label, hadArea: x.hadArea, height: x.l.height, lab: x.l }));
+        parts.push({ cells, names, hadArea: sorted.some((x) => x.hadArea), height: sorted[0].l.height });
+        for (const x of labs) unplaced.delete(x);
+        for (const c of cells) owner[c] = parts.length - 1;
+        continue;
+      }
+      // pièce voisine la plus en contact, à travers les traits fins et les portes, jamais à travers un mur
+      if (cells.length < mergeMax) {
+        const hits = new Map<number, number>();
+        const depth = new Map<number, number>();
+        const q = cells.slice();
+        for (const c of q) depth.set(c, 0);
+        for (let qi = 0; qi < q.length; qi++) {
+          const c = q[qi], d = depth.get(c)!;
+          if (d >= reachN) continue;
+          const cx = c % W;
+          for (const nb of [cx > 0 ? c - 1 : -1, cx < W - 1 ? c + 1 : -1, c - W, c + W]) {
+            if (nb < 0 || nb >= N || depth.has(nb) || wallMask[nb] || outside[nb]) continue;
+            depth.set(nb, d + 1);
+            if (owner[nb] >= 0) hits.set(owner[nb], (hits.get(owner[nb]) ?? 0) + 1);
+            else q.push(nb);
+          }
+        }
+        let best = -1, bestN = 0;
+        for (const [p, n] of hits) if (n > bestN) { best = p; bestN = n; }
+        if (best >= 0) {
+          parts[best].cells.push(...cells);
+          for (const c of cells) owner[c] = best;
+          continue;
+        }
+      }
+      if (cells.length >= keepMin) {
+        parts.push({ cells, names: [], hadArea: false, height: 0 });
+        for (const c of cells) owner[c] = parts.length - 1;
+      }
     }
   }
 

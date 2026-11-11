@@ -187,6 +187,67 @@ describe('reconnaissance d’un plan d’architecte (dessin en cm)', () => {
 });
 
 /**
+ * Bâtiment de 10 m × 6 m (dessin en cm) : un WC de 1 m × 1,2 m fermé par des cloisons dans un angle,
+ * et un sas d'entrée de 3 m × 2 m dont la façade n'est fermée que par le trait d'une menuiserie
+ * (portail sans battant dessiné). Tout l'intérieur doit recevoir une zone.
+ */
+function completionPlan(): FlatDxf {
+  const prims: DxfPrim[] = [
+    // façade, interrompue en bas entre x = 400 et x = 700 (sas)
+    line(WALL, [[400, 600], [0, 600], [0, 0], [1000, 0], [1000, 600], [700, 600]]),
+    line(WALL, [[400, 580], [20, 580], [20, 20], [980, 20], [980, 580], [700, 580]]),
+    // murs du sas
+    line(WALL, [[380, 600], [380, 400], [720, 400], [720, 600]]),
+    line(WALL, [[400, 600], [400, 420], [700, 420], [700, 600]]),
+    // WC : cloisons de 10 cm dans l'angle en haut à droite
+    rect('157_AR_INT_Cloison coupée', 870, 20, 880, 140), rect('157_AR_INT_Cloison coupée', 870, 140, 980, 150),
+    // portail du sas : simple trait de menuiserie, sans battant
+    line(DOORS, [[400, 590], [700, 590]]),
+    text('TEXTES COTES', [200, 200], '50,00 m²'),
+  ];
+  const layers = [...new Set(prims.map((p) => p.layer))].map((name) => ({
+    name, count: prims.filter((p) => p.layer === name).length, color: '#000000', defaultVisible: true,
+  }));
+  return { prims, layers, insUnits: 5, skipped: {} };
+}
+
+describe('complétion de l’intérieur du bâtiment', () => {
+  const flat = completionPlan();
+  const rec = recognizeArchitect(flat, 'cm');
+  const visible = new Set(flat.layers.map((l) => l.name));
+  const { origin } = renderDxfSvg(flat, { visibleLayers: visible, metersPerUnit: 0.01, unitsPerMeter: UPM, monochrome: true });
+  const toPlan = (x: number, y: number): [number, number] => [(x - origin.minX) * origin.k, (origin.maxY - y) * origin.k];
+  const inPoly = ([px, py]: [number, number], poly: number[][]) => {
+    let inside = false;
+    for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+      const [xi, yi] = poly[i], [xj, yj] = poly[j];
+      if ((yi > py) !== (yj > py) && px < ((xj - xi) * (py - yi)) / (yj - yi) + xi) inside = !inside;
+    }
+    return inside;
+  };
+  const covered = (x: number, y: number) => rec.rooms.some((r) => inPoly(toPlan(x, y), r.points));
+
+  it('couvre le WC fermé et le sas fermé par une menuiserie', () => {
+    expect(covered(925, 80)).toBe(true); // WC
+    expect(covered(550, 500)).toBe(true); // sas
+  });
+
+  it('ne laisse aucun vide à l’intérieur', () => {
+    const holes: string[] = [];
+    for (let x = 50; x < 1000; x += 50) for (let y = 50; y < 580; y += 50) {
+      const nearWall = [20, 380, 400, 420, 700, 720, 870, 880, 980].some((v) => Math.abs(x - v) < 15) || [20, 140, 150, 400, 420, 580].some((v) => Math.abs(y - v) < 15);
+      if (!nearWall && !covered(x, y)) holes.push(`${x},${y}`);
+    }
+    expect(holes).toEqual([]);
+  });
+
+  it('ne déborde pas à l’extérieur', () => {
+    expect(covered(550, 650)).toBe(false);
+    expect(covered(-50, 300)).toBe(false);
+  });
+});
+
+/**
  * Plan réel fourni par l'utilisateur (non versionné) : définir PLAN_ARCHITECTE_DXF avec le chemin
  * du DXF converti (ODA File Converter) pour lancer ce contrôle.
  */

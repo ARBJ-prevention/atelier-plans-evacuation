@@ -1,5 +1,13 @@
 # Journal des versions
 
+## 2.0.12 — novembre 2026
+- **Plan redessiné plus propre** à l'import d'un DXF ou d'un DWG : murs continus au droit des portes et fenêtres, poteaux et petits morceaux supprimés, façade plus épaisse que les murs intérieurs et les cloisons, angles et raccords en T rejoints, portes et fenêtres calées dans leur mur, portes coupe-feu reconnues (« E.i. 30' » → EI 30), fenêtres parasites écartées.
+- **Tout l'intérieur du bâtiment reçoit une zone** : les pièces vont jusqu'aux murs, les couloirs et dégagements sans nom sont remplis, les petits locaux fermés (WC, casiers, gaines) rejoignent la pièce voisine, et les espaces fermés seulement par une menuiserie (sas, portail, rampe) ne restent plus vides.
+- Unité corrigée automatiquement d'après la largeur des portes (fichier déclaré en mm mais dessiné en cm), avec un message dans la fenêtre d'import. Fenêtres d'import et de reconnaissance agrandies.
+- Après un redessin, le calque « Plan de fond » est masqué.
+- **Murs aimantés** : en traçant ou en déplaçant un mur ou un sommet, il s'accroche aux murs voisins et les murs raccordés suivent (Alt pour un tracé libre).
+- Nouveaux pictogrammes « Volet roulant » et « Volets battants ».
+
 ## 2.0.11 — novembre 2026
 - La démonstration conserve le repère d’origine de « Couloir est ». Les exports PDF successifs réutilisent la fenêtre de rendu, sans délai fixe par fichier.
 - Création guidée des emplacements « Vous êtes ici », avec portée des objets visible et adaptation indépendante des itinéraires.
