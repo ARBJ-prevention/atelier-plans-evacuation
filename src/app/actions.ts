@@ -1,17 +1,22 @@
 import { COUNTRIES } from '../model/countries';
 import { makeElement, newProject, uid } from '../model/defaults';
 import { cloneProjectWithNewIds, parseProject, ProjectFormatError, serializeProject } from '../model/serialize';
-import type { Background, PageSetup } from '../model/types';
+import type { Draft } from 'immer';
+import type { Background, Element, PageSetup } from '../model/types';
 import { api, bytesToDataUrl, MIME } from '../services/api';
 import { buildPrintHtml, renderPagePng, safeFileName, type ExportJob } from '../services/exporter';
 import { imageFromFile, pdfPageCount, renderPdfPage } from '../services/imports';
+import { decodeDxfBytes, DxfError, flattenDxf, parseDxf } from '../services/dxf';
+import { askDxfImport, type DxfImportChoice } from '../dialogs/DxfImport';
+import { askRecognition } from '../dialogs/Recognize';
 import { currentBuilding, currentFloor, currentVariantId, useStore } from '../store/store';
 import { alertDialog, ask, confirmDialog, promptDialog } from '../ui/dialogs';
 
 const S = () => useStore.getState();
 
 function errMsg(e: unknown): string {
-  return e instanceof Error ? e.message : String(e);
+  // Les erreurs du processus principal arrivent préfixées par « Error invoking remote method '…': Error: ».
+  return (e instanceof Error ? e.message : String(e)).replace(/^Error invoking remote method '[^']+': (?:Error: )?/, '');
 }
 
 /** Si le projet a des modifications, propose d'enregistrer. Retourne false si l'utilisateur annule. */
@@ -99,6 +104,8 @@ export async function importBackgroundAction(): Promise<void> {
   if (floor.background && !(await confirmDialog('Remplacer le plan de fond', 'Cet étage possède déjà un plan de fond. Le remplacer ?', 'Remplacer'))) return;
   const file = await api().pickFile('plan');
   if (!file) return;
+  if (file.ext === 'dwg') { await importDwgBackground(file.name, file.data); return; }
+  if (file.ext === 'dxf') { await importDxfBackground(file.name, file.data); return; }
   try {
     let img;
     if (file.ext === 'pdf') {
@@ -119,6 +126,103 @@ export async function importBackgroundAction(): Promise<void> {
   } catch (e) {
     await alertDialog('Import impossible', `Le fichier n’a pas pu être importé : ${errMsg(e)}`);
   }
+}
+
+/**
+ * Import d'un plan DWG : conversion en DXF par ODA File Converter (outil gratuit installé à part),
+ * puis même traitement qu'un DXF. Si le convertisseur est absent, explique comment l'installer.
+ */
+export async function importDwgBackground(name: string, data: Uint8Array): Promise<void> {
+  try {
+    let status = await api().dwgStatus();
+    while (!status.found) {
+      const r = await ask({
+        title: 'Lire un fichier DWG',
+        message: 'Le format DWG est le format propriétaire d’AutoCAD. Pour le lire, le logiciel utilise « ODA File Converter », un outil gratuit de l’Open Design Alliance, à installer une seule fois sur ce poste.\n\n1. Cliquez sur « Page de téléchargement » et téléchargez la version Windows 64 bits.\n2. Installez-la (les conditions d’utilisation sont celles de l’ODA).\n3. Revenez ici et cliquez sur « C’est installé ».\n\nAutre solution : dans AutoCAD (ou BricsCAD, DraftSight…), « Enregistrer sous » › type DXF, puis importez le fichier DXF.',
+        buttons: [
+          { label: 'Annuler', value: 'cancel' },
+          { label: 'Indiquer son emplacement…', value: 'choose' },
+          { label: 'Page de téléchargement', value: 'download' },
+          { label: 'C’est installé', value: 'retry', primary: true },
+        ],
+      });
+      if (r.button === 'cancel') return;
+      if (r.button === 'download') { await api().dwgDownloadPage(); continue; }
+      if (r.button === 'choose') {
+        try {
+          if (!(await api().dwgChooseConverter())) continue;
+        } catch (e) { await alertDialog('Convertisseur non reconnu', errMsg(e)); continue; }
+      }
+      status = await api().dwgStatus();
+      if (!status.found && r.button === 'retry') {
+        await alertDialog('ODA File Converter introuvable', 'Il n’a pas été trouvé dans « Program Files\\ODA ». S’il est installé ailleurs, utilisez « Indiquer son emplacement… » et choisissez le fichier ODAFileConverter.exe.');
+      }
+    }
+    S().toast('Conversion du fichier DWG en cours…', 'info');
+    const { dxf, version } = await api().dwgConvert({ data });
+    await importDxfBackground(name, new Uint8Array(dxf), version);
+  } catch (e) {
+    await alertDialog('Import DWG impossible', errMsg(e));
+  }
+}
+
+/** Import d'un plan DXF : plan vectoriel net, échelle réelle reprise du fichier. */
+export async function importDxfBackground(name: string, data: Uint8Array, dwgVersion?: string): Promise<void> {
+  const kind = dwgVersion ? 'DWG' : 'DXF';
+  try {
+    if (!dwgVersion) S().toast('Lecture du fichier DXF…', 'info');
+    await new Promise((r) => setTimeout(r, 30)); // laisse le message s'afficher
+    const flat = flattenDxf(parseDxf(decodeDxfBytes(data)));
+    if (!flat.prims.length) throw new DxfError('Le fichier ne contient aucun objet dessinable dans l’espace objet.');
+    const floor = currentFloor(S());
+    if (!floor) return;
+    // Échelle de l'étage : on garde celle déjà étalonnée si des éléments existent, sinon 50 unités par mètre.
+    const upm = floor.unitsPerMeter > 0 && floor.elements.length > 0 ? floor.unitsPerMeter : 50;
+    const choice = await askDxfImport(flat, name, upm, dwgVersion);
+    if (!choice) return;
+    const { result } = choice;
+    const dims = `${result.widthM.toFixed(2).replace('.', ',')} m × ${result.heightM.toFixed(2).replace('.', ',')} m`;
+    if (choice.recognize) {
+      const bg = dxfBackground(name, choice);
+      const rec = await askRecognition(flat, choice.visibleLayers, result.origin, floor, bg, upm);
+      if (!rec) return;
+      applyDxfBackground(name, choice, upm, rec.elements);
+      if (rec.elements.length) {
+        const c = rec.counts;
+        S().toast(`Plan redessiné à l’échelle réelle (${dims}) : ${c.rooms} pièce(s), ${c.walls} mur(s), ${c.doors} porte(s), ${c.windows} fenêtre(s), ${c.stairs} escalier(s). Vérifiez-le, puis ajoutez les pictogrammes.`, 'success');
+        return;
+      }
+    } else {
+      applyDxfBackground(name, choice, upm);
+    }
+    S().toast(`Plan ${kind} importé à l’échelle réelle : ${dims}. Aucun étalonnage nécessaire.`, 'success');
+  } catch (e) {
+    await alertDialog(`Import ${kind} impossible`, e instanceof DxfError ? e.message : `Le fichier n’a pas pu être lu : ${errMsg(e)}`);
+  }
+}
+
+function dxfBackground(name: string, choice: DxfImportChoice): Background {
+  const { result } = choice;
+  return {
+    src: bytesToDataUrl(new TextEncoder().encode(result.svg), 'image/svg+xml'), sourceName: name,
+    naturalWidth: result.width, naturalHeight: result.height, x: 0, y: 0, scale: 1, opacity: 0.6, locked: true, grayscale: false,
+    vector: { format: /\.dwg$/i.test(name) ? 'dwg' : 'dxf', unit: choice.unit, unitDeclared: choice.unitDeclared, widthM: result.widthM, heightM: result.heightM, layers: choice.visibleLayers },
+  };
+}
+
+/**
+ * Applique un plan DXF converti comme fond de l'étage courant, étalonne l'étage et ajoute
+ * les éléments reconnus (le tout en une seule étape d'annulation).
+ */
+export function applyDxfBackground(name: string, choice: DxfImportChoice, upm: number, elements: Element[] = []): void {
+  const bg = dxfBackground(name, choice);
+  if (elements.length) { bg.opacity = 0.3; bg.grayscale = true; } // le plan redessiné passe au premier plan
+  S().mutateFloor((f) => {
+    f.background = bg;
+    f.unitsPerMeter = upm;
+    if (elements.length) f.elements.push(...(elements as Draft<Element>[]));
+  });
+  S().requestFit();
 }
 
 export function applyBackground(src: string, width: number, height: number, name: string) {
@@ -168,6 +272,16 @@ export async function pickLogoAction(): Promise<void> {
   if (!file) return;
   const img = await imageFromFile(file);
   S().mutateFloor((f) => { f.titleBlock.logo = img.src; });
+}
+
+export async function pickAerialAction(): Promise<void> {
+  const file = await api().pickFile('image');
+  if (!file) return;
+  const img = await imageFromFile(file);
+  S().mutateFloor((f) => {
+    f.titleBlock.aerialImage = img.src;
+    f.page.showAerial = true;
+  }, { keepValidation: true });
 }
 
 export async function calibrateAction(unitsDistance: number): Promise<void> {
@@ -259,8 +373,24 @@ export async function exportPngAction(job: ExportJob | null = currentExportJob('
 
 export async function printAction(job: ExportJob | null = currentExportJob('current')): Promise<void> {
   if (!job) return;
-  const r = await api().print({ html: buildPrintHtml(job), paper: job.page.paper, landscape: job.page.orientation === 'landscape' });
-  if (!r.success && r.reason && r.reason !== 'cancelled') S().toast(`Impression non effectuée : ${r.reason}`, 'warning');
+  let r: Awaited<ReturnType<ReturnType<typeof api>['print']>>;
+  try {
+    r = await api().print({ html: buildPrintHtml(job), paper: job.page.paper, landscape: job.page.orientation === 'landscape' });
+  } catch (e) {
+    await alertDialog('Impression impossible', errMsg(e));
+    return;
+  }
+  if (r.success || !r.reason || r.reason === 'cancelled' || r.reason === 'Print job canceled') return;
+  if (r.reason === 'no-printer') {
+    const cause = r.spooler === 'stopped'
+      ? 'Le service Windows « Spouleur d’impression » est arrêté : aucune imprimante n’est accessible. Pour le redémarrer : touche Windows → « Services » → « Spouleur d’impression » → Démarrer (type de démarrage : Automatique).'
+      : 'Aucune imprimante n’est installée ou accessible sur cet ordinateur.';
+    const ok = await confirmDialog('Aucune imprimante disponible',
+      `${cause} En attendant, vous pouvez exporter le plan en PDF et l’imprimer depuis un autre poste.`, 'Exporter en PDF');
+    if (ok) await exportPdfAction(job);
+    return;
+  }
+  S().toast(`Impression non effectuée : ${r.reason}`, 'warning');
 }
 
 // ——— Récupération ———

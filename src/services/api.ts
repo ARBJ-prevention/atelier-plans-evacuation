@@ -16,8 +16,14 @@ export interface EvacBridge {
   saveBinary(a: { data: Uint8Array; suggestedName: string; filterName: string; ext: string; path?: string }): Promise<string | null>;
   readBinary(p: string): Promise<Uint8Array>;
   showInFolder(p: string): Promise<void>;
+  /** Convertisseur DWG (ODA File Converter) trouvé ? */
+  dwgStatus(): Promise<{ found: boolean; path: string }>;
+  dwgChooseConverter(): Promise<string | null>;
+  dwgDownloadPage(): Promise<void>;
+  /** Convertit un DWG en DXF ; `converter` force un exécutable (tests). */
+  dwgConvert(a: { data: Uint8Array; converter?: string }): Promise<{ dxf: Uint8Array; version: string }>;
   exportPdf(a: { html: string; paper: string; landscape: boolean; suggestedName: string; path?: string }): Promise<string | null>;
-  print(a: { html: string; paper: string; landscape: boolean }): Promise<{ success: boolean; reason: string }>;
+  print(a: { html: string; paper: string; landscape: boolean }): Promise<{ success: boolean; reason: string; spooler?: 'running' | 'stopped' | 'unknown' }>;
   autosaveWrite(a: { id: string; name: string; filePath: string | null; content: string }): Promise<boolean>;
   autosaveClear(id: string): Promise<boolean>;
   autosaveList(): Promise<AutosaveEntry[]>;

@@ -1,5 +1,5 @@
 import { getBuiltinSymbol } from '../symbols/library';
-import type { Element, Floor, Pt } from './types';
+import type { Element, Floor, Pt, SymbolElement } from './types';
 
 export interface Rect { x: number; y: number; w: number; h: number }
 
@@ -61,7 +61,7 @@ export function legendSize(fontSize: number, count: number, columns = 1): { w: n
 /** Taille locale (non pivotée) d'un élément « boîte » et son centre. */
 export function boxOf(el: Element, legendCount = 6): { cx: number; cy: number; w: number; h: number } | null {
   switch (el.type) {
-    case 'symbol': return { cx: el.x, cy: el.y, w: el.size, h: el.size };
+    case 'symbol': return { cx: el.x, cy: el.y, w: el.size * (el.stretchX ?? 1), h: el.size * (el.stretchY ?? 1) };
     case 'door': return { cx: el.x, cy: el.y, w: el.width, h: el.doorType === 'double' ? el.width / 2 : el.width };
     case 'window': return { cx: el.x, cy: el.y, w: el.width, h: Math.max(el.depth, 8) };
     case 'shape': return { cx: el.x, cy: el.y, w: el.w, h: el.shape === 'line' ? Math.max(el.strokeWidth * 3, 6) : el.h };
@@ -152,6 +152,44 @@ export function snapToGrid(p: Pt, size: number): Pt {
   return [Math.round(p[0] / size) * size, Math.round(p[1] / size) * size];
 }
 
+export interface FuseSides { l: boolean; r: boolean; t: boolean; b: boolean }
+
+/** Panneau pouvant être fusionné (signal carré non tourné, hors symboles de plan). */
+function fusable(el: SymbolElement): boolean {
+  if (el.fuse === false || el.halo) return false;
+  if (((el.rotation || 0) % 360 + 360) % 360 !== 0) return false;
+  return !getBuiltinSymbol(el.symbolId)?.planSymbol && !el.symbolId.startsWith('you-are-here') && el.symbolId !== 'north';
+}
+
+/**
+ * Côtés d'un panneau collés à un autre panneau (écart ≤ 8 % de la taille, recouvrement ≥ 50 % sur l'autre axe).
+ * Sur ces côtés, le rendu supprime le liseré blanc pour que les deux panneaux paraissent n'en former qu'un.
+ */
+export function symbolFuseSides(el: SymbolElement, floor: Floor | null | undefined, variantId: string): FuseSides {
+  const out: FuseSides = { l: false, r: false, t: false, b: false };
+  if (!floor || !fusable(el)) return out;
+  const w = el.size * (el.stretchX ?? 1), h = el.size * (el.stretchY ?? 1);
+  const a = { x0: el.x - w / 2, x1: el.x + w / 2, y0: el.y - h / 2, y1: el.y + h / 2 };
+  for (const o of floor.elements) {
+    if (o.type !== 'symbol' || o.id === el.id || o.layer !== el.layer || !isVisibleInVariant(o, variantId) || !fusable(o)) continue;
+    const ow = o.size * (o.stretchX ?? 1), oh = o.size * (o.stretchY ?? 1);
+    const b = { x0: o.x - ow / 2, x1: o.x + ow / 2, y0: o.y - oh / 2, y1: o.y + oh / 2 };
+    const tol = 0.08 * Math.min(el.size, o.size);
+    const overlapY = Math.min(a.y1, b.y1) - Math.max(a.y0, b.y0);
+    const overlapX = Math.min(a.x1, b.x1) - Math.max(a.x0, b.x0);
+    const minH = Math.min(h, oh), minW = Math.min(w, ow);
+    if (overlapY >= 0.5 * minH) {
+      if (Math.abs(b.x0 - a.x1) <= tol) out.r = true;
+      if (Math.abs(a.x0 - b.x1) <= tol) out.l = true;
+    }
+    if (overlapX >= 0.5 * minW) {
+      if (Math.abs(b.y0 - a.y1) <= tol) out.b = true;
+      if (Math.abs(a.y0 - b.y1) <= tol) out.t = true;
+    }
+  }
+  return out;
+}
+
 export function isVisibleInVariant(el: Element, variantId: string): boolean {
   return !el.variantId || el.variantId === variantId;
 }
@@ -179,6 +217,10 @@ export function usedSymbolIds(floor: Floor, variantId: string): string[] {
   for (const el of floor.elements) {
     if (el.type === 'symbol' && visibleLayers.has(el.layer) && isVisibleInVariant(el, variantId) && !ids.includes(el.symbolId) && !getBuiltinSymbol(el.symbolId)?.planSymbol) {
       ids.push(el.symbolId);
+    }
+    // Les portes coupe-feu ont leur propre entrée de légende.
+    if (el.type === 'door' && el.fireRated && visibleLayers.has(el.layer) && isVisibleInVariant(el, variantId) && !ids.includes('door-fire')) {
+      ids.push('door-fire');
     }
   }
   return ids;

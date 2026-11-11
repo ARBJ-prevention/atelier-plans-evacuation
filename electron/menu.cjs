@@ -27,7 +27,7 @@ function buildMenu({ send, recent }) {
         item('Enregistrer sous…', 'save-as', 'Ctrl+Shift+S'),
         item('Dupliquer le projet…', 'duplicate-project'),
         { type: 'separator' },
-        item('Importer un plan de fond (PDF / image)…', 'import-background'),
+        item('Importer un plan de fond (DXF, PDF, image)…', 'import-background'),
         item('Importer un pictogramme…', 'import-symbol'),
         { type: 'separator' },
         item('Aperçu avant impression et export…', 'print-preview', 'Ctrl+P'),

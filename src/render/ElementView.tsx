@@ -1,5 +1,5 @@
 import React from 'react';
-import { boxOf, legendSize, polygonArea, textSize, usedSymbolIds } from '../model/geometry';
+import { boxOf, legendSize, polygonArea, symbolFuseSides, textSize, usedSymbolIds, type FuseSides } from '../model/geometry';
 import type {
   ArrowStyle, CustomSymbol, DashStyle, Element, FillPattern, Floor, Pt, RouteElement, ShapeElement, SymbolElement,
 } from '../model/types';
@@ -12,6 +12,8 @@ export interface RenderCtx {
 }
 
 export const FONT = "'Segoe UI Variable Text', 'Segoe UI', Arial, Helvetica, sans-serif";
+/** Rouge sécurité incendie (portes coupe-feu). */
+const FIRE_RED = '#e30613';
 const font = (f?: string) => (f ? `'${f}', ${FONT}` : FONT);
 
 export function symbolName(id: string, custom: CustomSymbol[]): string {
@@ -19,16 +21,29 @@ export function symbolName(id: string, custom: CustomSymbol[]): string {
 }
 
 /** Pictogramme dans une boîte de `size` centrée sur (0,0). */
-export function SymbolGraphic({ symbolId, size, custom }: { symbolId: string; size: number; custom: CustomSymbol[] }) {
+export function SymbolGraphic({ symbolId, size, custom, fuse, clipId }: {
+  symbolId: string; size: number; custom: CustomSymbol[];
+  /** Côtés collés à un autre panneau : le dessin y est prolongé de 4 % puis recadré, ce qui retire le liseré blanc et l'arrondi. */
+  fuse?: FuseSides; clipId?: string;
+}) {
   const def = getBuiltinSymbol(symbolId);
-  if (def?.kind === 'iso') {
-    return <image href={def.svg} x={-size / 2} y={-size / 2} width={size} height={size} preserveAspectRatio="xMidYMid meet" />;
+  const c = def ? null : custom.find((x) => x.id === symbolId);
+  if (def || c) {
+    const bl = size * 0.04;
+    const f = fuse && clipId && (fuse.l || fuse.r || fuse.t || fuse.b) ? fuse : null;
+    const x0 = -size / 2 - (f?.l ? bl : 0), y0 = -size / 2 - (f?.t ? bl : 0);
+    const w = size + (f?.l ? bl : 0) + (f?.r ? bl : 0), h = size + (f?.t ? bl : 0) + (f?.b ? bl : 0);
+    const art = def && def.kind === 'svg'
+      ? <g transform={`translate(${x0} ${y0}) scale(${w / 100} ${h / 100})`} dangerouslySetInnerHTML={{ __html: def.svg }} />
+      : <image href={def ? def.svg : c!.src} x={x0} y={y0} width={w} height={h} preserveAspectRatio={c && !f ? 'xMidYMid meet' : 'none'} />;
+    if (!f) return art;
+    return (
+      <g>
+        <defs><clipPath id={clipId}><rect x={-size / 2} y={-size / 2} width={size} height={size} /></clipPath></defs>
+        <g clipPath={`url(#${clipId})`}>{art}</g>
+      </g>
+    );
   }
-  if (def) {
-    return <g transform={`translate(${-size / 2} ${-size / 2}) scale(${size / 100})`} dangerouslySetInnerHTML={{ __html: def.svg }} />;
-  }
-  const c = custom.find((x) => x.id === symbolId);
-  if (c) return <image href={c.src} x={-size / 2} y={-size / 2} width={size} height={size} preserveAspectRatio="xMidYMid meet" />;
   return (
     <g>
       <rect x={-size / 2} y={-size / 2} width={size} height={size} fill="#eee" stroke="#c00" strokeDasharray="4 3" />
@@ -194,15 +209,20 @@ export function polygonCentroid(p: Pt[]): Pt {
 function SymbolView({ el, ctx }: { el: SymbolElement; ctx: RenderCtx }) {
   const ls = el.labelSize > 0 ? el.labelSize : Math.max(8, el.size * 0.26);
   const pos = el.labelPosition;
-  const off = el.size / 2 + ls * 0.4;
-  const lx = pos === 'right' ? off : pos === 'left' ? -off : 0;
-  const ly = pos === 'below' ? off + ls * 0.8 : pos === 'above' ? -off : ls * 0.35;
+  const sx = el.stretchX ?? 1, sy = el.stretchY ?? 1;
+  const offX = (el.size * sx) / 2 + ls * 0.4, offY = (el.size * sy) / 2 + ls * 0.4;
+  const lx = pos === 'right' ? offX : pos === 'left' ? -offX : 0;
+  const ly = pos === 'below' ? offY + ls * 0.8 : pos === 'above' ? -offY : ls * 0.35;
+  const stretch = sx !== 1 || sy !== 1 ? `scale(${sx} ${sy})` : '';
+  const near = symbolFuseSides(el, ctx.floor, ctx.variantId);
+  // Les côtés s'inversent avec le miroir horizontal / vertical.
+  const fuse = { l: el.flipX ? near.r : near.l, r: el.flipX ? near.l : near.r, t: el.flipY ? near.b : near.t, b: el.flipY ? near.t : near.b };
   const anchor = pos === 'right' ? 'start' : pos === 'left' ? 'end' : 'middle';
   return (
     <g transform={`translate(${el.x} ${el.y})`}>
-      <g transform={`${el.rotation ? `rotate(${el.rotation})` : ''} ${el.flipX || el.flipY ? `scale(${el.flipX ? -1 : 1} ${el.flipY ? -1 : 1})` : ''}`}>
+      <g transform={`${el.rotation ? `rotate(${el.rotation})` : ''} ${stretch} ${el.flipX || el.flipY ? `scale(${el.flipX ? -1 : 1} ${el.flipY ? -1 : 1})` : ''}`}>
         {el.halo && <rect x={-el.size * 0.62} y={-el.size * 0.62} width={el.size * 1.24} height={el.size * 1.24} rx={el.size * 0.18} fill="#ffffff" stroke="rgba(0,0,0,.12)" strokeWidth={el.size * 0.02} />}
-        <SymbolGraphic symbolId={el.symbolId} size={el.size} custom={ctx.customSymbols} />
+        <SymbolGraphic symbolId={el.symbolId} size={el.size} custom={ctx.customSymbols} fuse={fuse} clipId={`fuse-${el.id}`} />
       </g>
       {el.label && (
         <text x={lx} y={ly} textAnchor={anchor} fontFamily={FONT} fontWeight={700}
@@ -323,7 +343,20 @@ function Inner({ el, ctx }: { el: Element; ctx: RenderCtx }): React.ReactElement
         <g transform={`translate(${el.x} ${el.y}) rotate(${el.rotation}) ${el.flipY ? 'scale(1 -1)' : ''}`}>
           <rect x={-w / 2} y={-gap / 2} width={w} height={gap} fill={ctx.floor.page.planBackground || '#ffffff'} />
           {el.emergency && <rect x={-w / 2} y={gap / 2 - Math.max(2, gap * 0.25)} width={w} height={Math.max(2, gap * 0.25)} fill="#00843d" />}
+          {el.fireRated && <rect x={-w / 2} y={-gap / 2} width={w} height={Math.max(2, gap * (el.emergency ? 0.25 : 0.4))} fill={FIRE_RED} />}
           {parts}
+          {el.fireRated && el.fireRating?.trim() && (() => {
+            // Libellé du côté opposé au débattement, toujours lisible (ni en miroir ni à l'envers).
+            const fs = Math.max(9, Math.min(28, w * 0.2));
+            const r = ((el.rotation % 360) + 360) % 360;
+            const upside = r > 90 && r < 270;
+            return (
+              <g transform={`translate(0 ${gap / 2 + fs * 0.8}) ${el.flipY ? 'scale(1 -1)' : ''} ${upside ? 'rotate(180)' : ''}`}>
+                <text x={0} y={fs * 0.35} textAnchor="middle" fontFamily={FONT} fontSize={fs} fontWeight={700} fill={FIRE_RED}
+                  stroke={ctx.floor.page.planBackground || '#ffffff'} strokeWidth={fs * 0.25} paintOrder="stroke" strokeLinejoin="round">{el.fireRating.trim()}</text>
+              </g>
+            );
+          })()}
         </g>
       );
     }
@@ -370,9 +403,20 @@ function Inner({ el, ctx }: { el: Element; ctx: RenderCtx }): React.ReactElement
           nodes.push(<rect key="r1" x={-w / 2} y={-h / 2} width={w * 0.1} height={h} fill={el.color} opacity={0.35} />);
           nodes.push(<rect key="r2" x={w / 2 - w * 0.1} y={-h / 2} width={w * 0.1} height={h} fill={el.color} opacity={0.35} />);
         }
+        if (el.split) {
+          // Séparation centrale : deux côtés (montée / descente).
+          nodes.push(<line key="sp" x1={0} y1={-h / 2} x2={0} y2={h / 2} stroke={el.color} strokeWidth={sw * 2.5} />);
+        }
+        const arrowAt = (key: string, ax: number, up: boolean, hw: number) => {
+          const tip = up ? -h / 2 + h * 0.04 : h / 2 - h * 0.04;
+          const base = up ? -h / 2 + h * 0.14 : h / 2 - h * 0.14;
+          const tail = up ? h / 2 - h * 0.08 : -h / 2 + h * 0.08;
+          nodes.push(<line key={`${key}l`} x1={ax} y1={tail} x2={ax} y2={base} stroke={el.color} strokeWidth={sw * 2} />);
+          nodes.push(<polygon key={`${key}h`} points={`${ax},${tip} ${ax - hw},${base} ${ax + hw},${base}`} fill={el.color} />);
+        };
         if (el.arrow) {
-          nodes.push(<line key="al" x1={0} y1={h / 2 - h * 0.08} x2={0} y2={-h / 2 + h * 0.12} stroke={el.color} strokeWidth={sw * 2} />);
-          nodes.push(<polygon key="ah" points={`0,${-h / 2 + h * 0.04} ${-w * 0.12},${-h / 2 + h * 0.14} ${w * 0.12},${-h / 2 + h * 0.14}`} fill={el.color} />);
+          if (el.split) { arrowAt('au', -w / 4, true, w * 0.08); arrowAt('ad', w / 4, false, w * 0.08); }
+          else arrowAt('a', 0, true, w * 0.12);
         }
       }
       if (el.label) nodes.push(<text key="t" x={0} y={h / 2 + Math.min(w, h) * 0.22} textAnchor="middle" fontFamily={FONT} fontSize={Math.min(w, h) * 0.16} fill={el.color} fontWeight={600}>{el.label}</text>);

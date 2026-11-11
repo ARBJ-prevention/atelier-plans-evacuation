@@ -1,10 +1,10 @@
-import { useState } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import * as A from '../app/actions';
 import { floorContentBounds } from '../model/geometry';
 import type { PageSetup, PageTheme } from '../model/types';
 import { ThemeThumb } from '../panels/Ribbon';
 import { PrintPage } from '../render/PrintPage';
-import { computeLayout, THEMES } from '../render/layout';
+import { computeLayout, FRAME_ZONES, frameOn, THEMES, themePatch } from '../render/layout';
 import { currentBuilding, currentFloor, currentVariantId, useStore } from '../store/store';
 import { Icon } from '../ui/icons';
 
@@ -40,6 +40,22 @@ export function PrintDialog({ onClose }: { onClose(): void }) {
   };
 
   const L = computeLayout(floor, previewVariant, page);
+
+  // Taille de la page d'aperçu : la plus grande possible dans la zone, en gardant les proportions du papier.
+  const areaRef = useRef<HTMLDivElement>(null);
+  const [area, setArea] = useState({ w: 0, h: 0 });
+  useLayoutEffect(() => {
+    const el = areaRef.current;
+    if (!el) return;
+    const measure = () => setArea({ w: el.clientWidth, h: el.clientHeight });
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  const ratio = L.w / L.h;
+  const pw = area.w && area.h ? Math.floor(Math.min(area.w, area.h * ratio)) : 0;
+  const ph = pw ? Math.floor(pw / ratio) : 0;
   const calibrated = floor.unitsPerMeter > 0;
   const ca = page.customArea;
 
@@ -47,11 +63,15 @@ export function PrintDialog({ onClose }: { onClose(): void }) {
     <div className="modal-backdrop" onKeyDown={(e) => { if (e.key === 'Escape') onClose(); }}>
       <div className="print-dialog" role="dialog" aria-modal="true" aria-label="Aperçu avant impression">
         <div className="print-preview">
-          <div className={`preview-page ${page.orientation}`}>
-            <PrintPage building={building} floor={floor} variantId={previewVariant} customSymbols={project.customSymbols} uniqueKey="preview" />
+          <div className="preview-area" ref={areaRef}>
+            {pw > 0 && (
+              <div className="preview-page" style={{ width: pw, height: ph }}>
+                <PrintPage building={building} floor={floor} variantId={previewVariant} customSymbols={project.customSymbols} uniqueKey="preview" />
+              </div>
+            )}
           </div>
           <div className="preview-caption muted small">
-            {page.paper} {page.orientation === 'landscape' ? 'paysage' : 'portrait'} · {L.w}×{L.h} mm
+            {page.paper} {page.orientation === 'landscape' ? 'paysage' : 'portrait'} · {L.paperW}×{L.paperH} mm
             {L.scaleDenominator ? ` · échelle ${page.scaleMode === 'fixed' ? '' : '≈ '}1:${Math.round(L.scaleDenominator)}` : ' · échelle : ajustée à la page'}
           </div>
         </div>
@@ -74,7 +94,7 @@ export function PrintDialog({ onClose }: { onClose(): void }) {
 
           <h3>Thème</h3>
           <div className="theme-grid">
-            {(Object.keys(THEMES) as PageTheme[]).map((t) => <ThemeThumb key={t} theme={t} accent={page.accentColor} active={page.theme === t} onClick={() => set({ theme: t })} />)}
+            {(Object.keys(THEMES) as PageTheme[]).map((t) => <ThemeThumb key={t} theme={t} accent={page.accentColor} active={page.theme === t} onClick={() => set(themePatch(t))} />)}
           </div>
 
           <h3>Papier</h3>
@@ -128,6 +148,14 @@ export function PrintDialog({ onClose }: { onClose(): void }) {
             ['showEmergencyNumbers', 'Numéros d’urgence'], ['showScaleBar', 'Barre d’échelle'], ['showNorth', 'Flèche du nord'], ['showWatermark', 'Filigrane « Brouillon / À valider »']] as const).map(([k, label]) => (
             <label key={k} className="check"><input type="checkbox" checked={page[k]} onChange={(e) => set({ [k]: e.target.checked } as any)} /> {label}</label>
           ))}
+
+          <h3>Cadres</h3>
+          {FRAME_ZONES.map(([k, label]) => (
+            <label key={k} className="check"><input type="checkbox" checked={frameOn(page, k)} onChange={(e) => set({ frames: { ...page.frames, [k]: e.target.checked } })} /> {label}</label>
+          ))}
+          {page.frames && Object.keys(page.frames).length > 0 && (
+            <button className="btn small" onClick={() => set({ frames: undefined })}>Revenir aux cadres du thème</button>
+          )}
 
           <div className="print-actions">
             <button className="btn primary" disabled={!!busy} onClick={() => run('print', () => A.printAction(job()))}><Icon name="print" size={16} /> {busy === 'print' ? 'Préparation…' : 'Imprimer…'}</button>

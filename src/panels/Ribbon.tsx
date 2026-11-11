@@ -5,7 +5,7 @@ import { makeElement } from '../model/defaults';
 import { ElementView } from '../render/ElementView';
 import type { PageSetup, PageTheme } from '../model/types';
 import { STATUS_LABEL } from '../render/PrintPage';
-import { THEMES } from '../render/layout';
+import { horizonNight, THEMES, themePatch, themeColor } from '../render/layout';
 import { currentFloor, useStore, type Tool, type ToolPresets } from '../store/store';
 import { Icon } from '../ui/icons';
 
@@ -85,7 +85,7 @@ export function Ribbon({ onPrintPreview }: { onPrintPreview(): void }) {
         </div>
       </div>
 
-      <div className="rb-panel">
+      <div className="rb-panel" key={tab}>
         {tab === 'home' && (
           <>
             <Group title="Fichier">
@@ -130,11 +130,11 @@ export function Ribbon({ onPrintPreview }: { onPrintPreview(): void }) {
         {tab === 'insert' && (
           <>
             <Group title="Plan de fond">
-              <Big icon="import" label="PDF / image" onClick={() => A.importBackgroundAction()} title="Importer un plan existant" />
+              <Big icon="import" label="Plan DXF / PDF" onClick={() => A.importBackgroundAction()} title="Importer un plan existant : DXF (AutoCAD, à l’échelle réelle), PDF ou image" />
             </Group>
             <Group title="Évacuation">
               <Big icon="route" label="Itinéraire" active={tool === 'route' && presets.routeKind === 'principal'} onClick={() => use('route', { routeKind: 'principal' })} />
-              <Big icon="stroke" label="Secondaire" active={tool === 'route' && presets.routeKind === 'secondaire'} onClick={() => use('route', { routeKind: 'secondaire' })} />
+              <Big icon="routeDashed" label="Secondaire" active={tool === 'route' && presets.routeKind === 'secondaire'} onClick={() => use('route', { routeKind: 'secondaire' })} />
               <Big icon="symbol" label="Pictogramme" onClick={() => window.dispatchEvent(new CustomEvent('evac:show-library'))} />
             </Group>
             <Group title="Flèches d’évacuation">
@@ -162,27 +162,41 @@ export function Ribbon({ onPrintPreview }: { onPrintPreview(): void }) {
 
         {tab === 'building' && (
           <>
-            <Group title="Structure">
-              <Big icon="wall" label="Mur" active={tool === 'wall' && presets.wallThickness >= 18} onClick={() => use('wall', { wallThickness: 22 })} title="Mur porteur (M)" />
-              <Big icon="partition" label="Cloison" active={tool === 'wall' && presets.wallThickness < 18} onClick={() => use('wall', { wallThickness: 10 })} />
-              <Big icon="window" label="Fenêtre" active={tool === 'window'} onClick={() => use('window')} title="Fenêtre (F)" />
+            <Group title="Murs et ouvertures">
+              <Big icon="wall" label="Mur" active={tool === 'wall' && presets.wallThickness >= 18} onClick={() => use('wall', { wallThickness: 22 })}
+                title="Mur porteur épais (M) — cliquez point par point, double-clic pour terminer" />
+              <Big icon="partition" label="Cloison" active={tool === 'wall' && presets.wallThickness < 18} onClick={() => use('wall', { wallThickness: 10 })}
+                title="Cloison fine — cliquez point par point, double-clic pour terminer" />
+              <Big icon="window" label="Fenêtre" active={tool === 'window'} onClick={() => use('window')} title="Fenêtre (F) — cliquez sur un mur" />
             </Group>
             <Group title="Portes" cols>
-              {([['single', 'Battante'], ['double', 'Double'], ['sliding', 'Coulissante'], ['revolving', 'Tambour'], ['opening', 'Baie libre']] as const).map(([k, l]) => (
-                <Small key={k} icon="door" label={l} active={tool === 'door' && presets.doorType === k} onClick={() => use('door', { doorType: k })} />
+              {([['single', 'Battante', 'door', 'Porte à un vantail qui pivote'], ['double', 'Double', 'doorDouble', 'Porte à deux vantaux'],
+                ['sliding', 'Coulissante', 'doorSliding', 'Porte qui glisse le long du mur'], ['revolving', 'Tambour', 'doorRevolving', 'Porte tournante'],
+                ['opening', 'Baie libre', 'doorOpening', 'Ouverture sans porte']] as const).map(([k, l, icon, tip]) => (
+                <Small key={k} icon={icon} label={l} title={`${tip} — cliquez sur un mur`} active={tool === 'door' && presets.doorType === k} onClick={() => use('door', { doorType: k })} />
               ))}
+              <Small icon="door" label={presets.doorFire ? 'Coupe-feu : oui' : 'Coupe-feu : non'} active={!!presets.doorFire}
+                title="Poser les nouvelles portes comme portes coupe-feu (seuil rouge et libellé « CF »)"
+                onClick={() => use('door', { doorFire: !presets.doorFire })} />
             </Group>
             <Group title="Escaliers" cols>
-              {([['straight', 'Droit'], ['landing', 'Avec palier'], ['escalator', 'Escalator']] as const).map(([k, l]) => (
-                <Small key={k} icon="stairs" label={l} active={tool === 'stairs' && presets.stairType === k} onClick={() => use('stairs', { stairType: k })} />
+              {([['straight', 'Droit', 'stairs', 'Escalier droit'], ['landing', 'Avec palier', 'stairsLanding', 'Escalier en U avec palier'],
+                ['escalator', 'Escalator', 'escalator', 'Escalier mécanique']] as const).map(([k, l, icon, tip]) => (
+                <Small key={k} icon={icon} label={l} title={`${tip} — tracez un rectangle sur le plan`} active={tool === 'stairs' && presets.stairType === k} onClick={() => use('stairs', { stairType: k })} />
               ))}
+              <Small icon="stairArrow" label={presets.stairArrow !== false ? 'Flèche : oui' : 'Flèche : non'} active={presets.stairArrow !== false}
+                title="Dessiner la flèche de sens sur les nouveaux escaliers"
+                onClick={() => { const on = presets.stairArrow === false; use('stairs', on ? { stairArrow: true } : { stairArrow: false, stairSplit: true }); }} />
+              <Small icon="stairSplit" label={presets.stairSplit ? 'Séparé : oui' : 'Séparé : non'} active={!!presets.stairSplit}
+                title="Séparation au milieu (deux côtés : montée / descente) sur les nouveaux escaliers droits"
+                onClick={() => use('stairs', { stairSplit: !presets.stairSplit })} />
             </Group>
             <Group title="Espaces">
-              <Big icon="room" label="Pièce" active={tool === 'room'} onClick={() => use('room')} title="Pièce (R)" />
+              <Big icon="room" label="Pièce" active={tool === 'room'} onClick={() => use('room')} title="Pièce (R) — tracez un rectangle, puis nommez-la" />
               <Big icon="zone" label="Zone" active={tool === 'zone'} onClick={() => use('zone')} title="Zone de danger, refuge… (Z)" />
             </Group>
             <Group title="Mesure">
-              <Big icon="calibrate" label="Étalonner" active={tool === 'calibrate'} onClick={() => use('calibrate')} title="Étalonner l’échelle (K)" />
+              <Big icon="calibrate" label="Étalonner" active={tool === 'calibrate'} onClick={() => use('calibrate')} title="Étalonner l’échelle (K) — tracez une cote connue sur le plan et indiquez sa longueur réelle" />
             </Group>
           </>
         )}
@@ -212,21 +226,69 @@ const ACCENTS = ['#00843d', '#0f6e5a', '#1f4e8c', '#5b3fa0', '#b3261e', '#c27400
 
 export function ThemeThumb({ theme, accent, active, onClick }: { theme: PageTheme; accent: string; active?: boolean; onClick?(): void }) {
   const T = THEMES[theme];
-  const head = T.headerBg === 'accent' ? accent : T.headerBg;
+  const gid = `thumb-grad-${React.useId().replace(/:/g, '')}`;
+  const grad = T.headerBg === 'gradient';
+  const head = grad ? `url(#${gid})` : T.headerBg === 'accent' ? accent : T.headerBg;
+  const ed = theme === 'editorial';
+  const cardFill = themeColor(T.cardBg, accent);
   return (
     <button className={active ? 'theme-card on' : 'theme-card'} onClick={onClick} title={T.description}>
       <svg viewBox="0 0 60 42" width={60} height={42} aria-hidden="true">
+        {grad && (
+          <defs>
+            <linearGradient id={gid} x1="0" y1="0" x2="1" y2="0.6">
+              <stop offset="0" stopColor={horizonNight(accent)} />
+              <stop offset="1" stopColor={accent} />
+            </linearGradient>
+          </defs>
+        )}
         <rect width="60" height="42" fill="#fff" />
-        {T.frame === 'double' && <rect x="1.5" y="1.5" width="57" height="39" fill="none" stroke="#222" strokeWidth="0.6" />}
-        {head ? <rect width="60" height="8" fill={head} /> : <rect x="4" y="3.5" width="22" height="2.4" fill={T.headerFg} />}
-        {head && <rect x="4" y="2.6" width="20" height="2.4" fill="#fff" opacity="0.9" />}
+        {T.frame !== 'none' && <rect x="1.5" y="1.5" width="57" height="39" fill="none" stroke={T.ink} strokeWidth="0.6" />}
+        {ed ? (
+          <g>
+            <rect x="4" y="2" width="52" height="0.3" fill={T.ink} />
+            <rect x="4" y="2" width="7" height="1.1" fill={accent} />
+            <rect x="4" y="4.4" width="27" height="3.4" fill={T.ink} />
+            <rect x="4" y="8.6" width="1" height="1" fill={accent} />
+            <rect x="6" y="8.6" width="16" height="1" fill={T.muted} />
+            <rect x="44" y="4.6" width="12" height="1.6" fill="#d52b1e" />
+            <rect x="4" y="10.4" width="52" height="0.7" fill={T.ink} />
+          </g>
+        ) : (
+          <>
+            {head ? <rect width="60" height="8" fill={head} /> : <rect x="4" y="3.5" width="22" height="2.4" fill={T.headerFg} />}
+            {head && <rect x="4" y="2.6" width="20" height="2.4" fill="#fff" opacity="0.9" />}
+            {grad && <circle cx="52" cy="0" r="8.5" fill="#fff" opacity="0.1" />}
+            {grad && <rect x="45" y="2.8" width="11" height="2.4" rx="1.2" fill="#fff" />}
+          </>
+        )}
         {theme === 'moderne' && <rect y="8" width="60" height="0.8" fill={accent} />}
-        <rect x="4" y="11" width="36" height="24" rx={T.planRadius ? 1.4 : 0} fill={T.cardBg === '#ffffff' ? '#f7f8f9' : T.cardBg} stroke={T.cardBorder || '#eceff2'} strokeWidth="0.4" />
+        <rect x="4" y={ed ? 13 : 11} width="36" height={ed ? 22 : 24} rx={T.planRadius ? Math.min(2.2, T.planRadius * 0.6) : 0}
+          fill={cardFill === '#ffffff' ? '#f7f8f9' : cardFill} stroke={themeColor(T.planStroke || T.cardBorder, accent) || (ed ? T.ink : '#eceff2')} strokeWidth={ed ? 0.3 : 0.4} />
         <path d="M9 30 L18 22 L26 26 L34 16" fill="none" stroke="#00843d" strokeWidth="1.6" />
-        <rect x="43" y="11" width="13" height="11" rx={T.cardRadius ? 1 : 0} fill={T.cardBg} stroke={T.cardBorder || '#eceff2'} strokeWidth="0.4" />
-        <rect x="43" y="24" width="13" height="11" rx={T.cardRadius ? 1 : 0} fill={T.cardBg} stroke={T.cardBorder || '#eceff2'} strokeWidth="0.4" />
-        <rect x="45" y="26" width="7" height="1.6" fill="#d52b1e" />
-        <rect x="4" y="37" width="52" height={T.footer === 'band' ? 3 : 1.4} fill={T.footer === 'band' ? '#0f1b2a' : '#c8d0d8'} />
+        {(T.extras ? [[11, 5.5], [17.8, 5.5], [24.6, 4.6], [30.4, 4.6]] : ed ? [[13, 10], [25, 10]] : [[11, 11], [24, 11]]).map(([y, h], i) => (
+          <g key={i}>
+            <rect x="43" y={y} width="13" height={h} rx={T.cardRadius ? Math.min(1.6, T.cardRadius * 0.45) : 0} fill={cardFill}
+              stroke={themeColor(T.cardBorder, accent) || (cardFill === '#ffffff' && !ed ? '#eceff2' : 'none')} strokeWidth={T.cardStyle === 'tab' ? 0.7 : 0.4} />
+            {T.cardStyle === 'header' && <rect x="43" y={y} width="13" height="1.6" fill={themeColor(T.cardHead, accent)} />}
+            {T.cardStyle === 'tab' && <rect x="44" y={y - 0.6} width="6" height="1.4" fill={themeColor(T.cardBorder, accent)} />}
+            {T.cardStyle === 'pill' && <rect x="44" y={y + 1} width="6.5" height="1.8" rx="0.9" fill={accent} />}
+            {T.cardStyle === 'index' && (
+              <g>
+                <rect x="43" y={y} width="13" height="0.6" fill={T.ink} />
+                <rect x="43" y={y + 1.5} width="2" height="1.3" fill={accent} />
+                <rect x="45.8" y={y + 1.7} width="6" height="0.9" fill={T.ink} />
+              </g>
+            )}
+          </g>
+        ))}
+        {!T.extras && !ed && !grad && <rect x="45" y="26" width="7" height="1.6" fill="#d52b1e" />}
+        {T.extras && <path d="M45 26 h5 v3 h4" fill="none" stroke={T.ink} strokeWidth="0.5" />}
+        {T.footer === 'capsule'
+          ? <rect x="4" y="36.6" width="52" height="2.6" rx="1.3" fill={themeColor('tint', accent)} />
+          : T.footer === 'rule'
+            ? <g><rect x="4" y="36.6" width="52" height="0.5" fill={T.ink} /><rect x="4" y="38" width="30" height="0.8" fill={accent} opacity="0.7" /></g>
+            : <rect x="4" y="37" width="52" height={T.footer === 'band' ? 3 : 1.4} fill={T.footer === 'band' ? '#0f1b2a' : '#c8d0d8'} />}
       </svg>
       <span>{T.name}</span>
     </button>
@@ -238,13 +300,14 @@ function PageTab({ page, onPreview }: { page: PageSetup; onPreview(): void }) {
     useStore.getState().mutateFloor((f) => { Object.assign(f.page, patch); }, { keepValidation: true, coalesce: `page:${Object.keys(patch).join(',')}` });
   const toggles: [keyof PageSetup, string, string][] = [
     ['showTitleBlock', 'Cartouche', 'layout'], ['showLegend', 'Légende', 'legendIcon'], ['showInstructions', 'Consignes', 'textIcon'],
-    ['showEmergencyNumbers', 'N° d’urgence', 'phone'], ['showScaleBar', 'Échelle', 'ruler'], ['showNorth', 'Nord', 'north'], ['showWatermark', 'Filigrane', 'watermark'],
+    ['showEmergencyNumbers', 'N° d’urgence', 'phone'], ['showAerial', 'Vue aérienne', 'image'], ['showSketch', 'Croquis', 'floor'],
+    ['showScaleBar', 'Échelle', 'ruler'], ['showNorth', 'Nord', 'north'], ['showWatermark', 'Filigrane', 'watermark'],
   ];
   return (
     <>
       <Group title="Thème">
         <div className="theme-row">
-          {(Object.keys(THEMES) as PageTheme[]).map((t) => <ThemeThumb key={t} theme={t} accent={page.accentColor} active={page.theme === t} onClick={() => set({ theme: t })} />)}
+          {(Object.keys(THEMES) as PageTheme[]).map((t) => <ThemeThumb key={t} theme={t} accent={page.accentColor} active={page.theme === t} onClick={() => set(themePatch(t))} />)}
         </div>
       </Group>
       <Group title="Couleur d’accent">
@@ -263,7 +326,7 @@ function PageTab({ page, onPreview }: { page: PageSetup; onPreview(): void }) {
         </div>
       </Group>
       <Group title="Disposition" cols>
-        <label className="rb-field">Légende
+        <label className="rb-field" title={page.orientation === 'portrait' ? 'En portrait, « à droite » et « à gauche » ne s’appliquent que si le plan est en hauteur ; sinon la légende passe en bas.' : undefined}>Légende
           <select value={page.sidePosition} onChange={(e) => set({ sidePosition: e.target.value as any })}>
             <option value="right">à droite</option><option value="left">à gauche</option><option value="bottom">en bas</option>
           </select>

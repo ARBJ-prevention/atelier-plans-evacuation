@@ -45,16 +45,18 @@ Ouvrez un exemple puis enregistrez-le sous un autre nom pour vous en servir de m
 
 ## 4. Importer un plan existant
 
-1. **Insérer › PDF / image** : PDF, PNG, JPEG… (numéro de page demandé pour un PDF multipage).
+1. **Insérer › Plan DXF / PDF** : DXF (AutoCAD), PDF, PNG, JPEG… (numéro de page demandé pour un PDF multipage).
+   - **DXF** : le plan est importé en **vectoriel**, net à tous les zooms, **à l'échelle réelle** : l'unité du dessin (mm, cm, m…) est lue dans le fichier, l'étage est étalonné automatiquement, aucun étalonnage n'est nécessaire. Une fenêtre permet de choisir les calques à garder (décochez cotes, mobilier, points topographiques, cartouche…) avec un aperçu et les dimensions réelles. Si le fichier n'indique pas d'unité, choisissez-la en vérifiant les dimensions affichées.
+   - **DWG** : lu grâce à **ODA File Converter**, outil gratuit de l'Open Design Alliance à installer une fois sur le poste (le logiciel le trouve tout seul dans *Program Files\ODA*). S'il manque, une fenêtre guide l'installation : bouton vers la page de téléchargement, puis « C'est installé », ou « Indiquer son emplacement… » s'il est installé ailleurs. Le DWG est converti en DXF dans un dossier temporaire (supprimé ensuite), puis importé comme un DXF. Sans ODA, il reste possible de faire *Enregistrer sous › DXF* dans AutoCAD.
 2. Onglet *Fond* des propriétés : opacité, **niveaux de gris**, largeur, verrouillage (déverrouillez pour déplacer le fond à la souris).
-3. **Étalonner** (`K`) : cliquez deux points d'une cote connue, saisissez la distance réelle. Les règles, les longueurs, les surfaces et l'impression à l'échelle 1:N deviennent disponibles.
+3. **Étalonner** (`K`, inutile pour un DXF) : cliquez deux points d'une cote connue, saisissez la distance réelle. Les règles, les longueurs, les surfaces et l'impression à l'échelle 1:N deviennent disponibles.
 
 ## 5. Dessiner le bâtiment
 
 | Outil | Touche | Utilisation |
 |---|---|---|
 | Mur / cloison | `M` | Clics successifs ; double-clic ou `Entrée` pour terminer. `Maj` = angles à 45°. Rendu plein, hachuré ou contour. |
-| Porte | `P` | Battante, double, coulissante, tambour, baie libre ; option « issue de secours ». |
+| Porte | `P` | Battante, double, coulissante, tambour, baie libre ; options « issue de secours » (seuil vert) et « porte coupe-feu » (seuil rouge, libellé « CF » ou « EI 30 »…, entrée de légende automatique). |
 | Fenêtre | `F` | Un clic sur le mur ; largeur, épaisseur et nombre de vantaux réglables. |
 | Escalier | `E` | Tracez un rectangle ; droit, avec palier ou escalator. |
 | Pièce / zone | `R` / `Z` | Cliquez les angles ; nom, surface automatique, couleur, motif (hachures pour les zones de danger). |

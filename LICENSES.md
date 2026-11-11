@@ -36,3 +36,6 @@ La présence de signaux ISO 7010 ne rend pas un plan conforme : les exigences (s
 | pdf.js (`pdfjs-dist`) | Apache 2.0 |
 
 Outils de construction (non redistribués) : Vite, TypeScript, Vitest, electron-builder (MIT / Apache 2.0).
+
+## ODA File Converter (facultatif, non fourni)
+Pour lire les fichiers DWG, le logiciel peut appeler « ODA File Converter » de l'Open Design Alliance (https://www.opendesign.com/guestfiles/oda_file_converter). Cet outil gratuit n'est **pas inclus** : l'utilisateur le télécharge et l'installe lui-même, en acceptant les conditions d'utilisation de l'ODA. Le logiciel se contente de l'exécuter pour convertir un DWG en DXF.

@@ -250,6 +250,7 @@ label.check { display: flex; align-items: center; gap: 8px; padding: 3px 0; curs
 .ruler-tick { stroke: #8795a3; stroke-width: 1; }
 .ruler-txt { font: 600 9.5px 'Segoe UI', sans-serif; fill: #5b6978; }
 .ruler-cursor { stroke: var(--sel); stroke-width: 1.5; }
+.inline-edit { position: absolute; transform: translate(-50%, -50%); z-index: 5; min-width: 80px; max-width: 70%; resize: none; overflow: hidden; text-align: center; font-family: inherit; font-weight: 600; line-height: 1.2; color: #0f1b2a; background: #fff; border: 2px solid var(--sel); border-radius: 6px; padding: 4px 8px; box-shadow: var(--shadow-2); outline: none; }
 .canvas-hint { position: absolute; left: 34px; bottom: 14px; max-width: 70%; background: rgba(15, 27, 42, .88); color: #fff; padding: 7px 12px; border-radius: 8px; font-size: 12px; pointer-events: none; box-shadow: var(--shadow-2); }
 .coords { position: absolute; right: 12px; bottom: 14px; background: rgba(255,255,255,.95); border: 1px solid var(--line); padding: 4px 9px; border-radius: 7px; font-variant-numeric: tabular-nums; font-size: 12px; pointer-events: none; box-shadow: var(--shadow-1); }
 .overlay .sel-box { fill: none; stroke: var(--sel); stroke-width: 1.5; stroke-dasharray: 5 3; vector-effect: non-scaling-stroke; pointer-events: none; }
@@ -257,6 +258,8 @@ label.check { display: flex; align-items: center; gap: 8px; padding: 3px 0; curs
 .overlay .sel-line { stroke: var(--sel); stroke-width: 1.2; vector-effect: non-scaling-stroke; pointer-events: none; }
 .overlay .handle { fill: #fff; stroke: var(--sel); stroke-width: 1.5; vector-effect: non-scaling-stroke; cursor: pointer; }
 .overlay .handle:hover { fill: var(--sel); }
+.overlay .handle-side, .overlay .handle-box { fill: var(--sel); stroke: #fff; stroke-width: 1.2; vector-effect: non-scaling-stroke; cursor: ew-resize; }
+.overlay .handle-side:hover, .overlay .handle-box:hover { fill: #fff; stroke: var(--sel); }
 .overlay .handle-mid { fill: var(--sel); fill-opacity: .35; stroke: var(--sel); stroke-width: 1; vector-effect: non-scaling-stroke; cursor: copy; }
 .overlay .handle-rot { fill: #fff; stroke: var(--accent); stroke-width: 2; vector-effect: non-scaling-stroke; cursor: grab; }
 .overlay .marquee { fill: rgba(31, 111, 209, .08); stroke: var(--sel); stroke-width: 1; stroke-dasharray: 4 3; vector-effect: non-scaling-stroke; }
@@ -357,13 +360,12 @@ table.shortcuts td { padding: 6px; border-bottom: 1px solid var(--line); }
 kbd { background: var(--panel-2); border: 1px solid var(--line-2); border-bottom-width: 2px; border-radius: 5px; padding: 1px 6px; font-family: inherit; font-size: 12px; }
 
 /* ——— Aperçu impression ——— */
-.print-dialog { background: #fff; border-radius: 12px; width: calc(100vw - 56px); height: calc(100vh - 56px); display: grid; grid-template-columns: 1fr 340px; overflow: hidden; box-shadow: 0 24px 70px rgba(0,0,0,.35); }
-.print-preview { background: radial-gradient(circle at 50% 40%, #4a5866, #2c3744); display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 28px; min-width: 0; min-height: 0; }
-.preview-page { background: #fff; box-shadow: 0 14px 44px rgba(0,0,0,.45); max-width: 100%; max-height: calc(100% - 30px); display: flex; }
-.preview-page.landscape { aspect-ratio: 1.4142; width: 100%; }
-.preview-page.portrait { aspect-ratio: 0.7071; height: calc(100% - 30px); }
-.preview-page svg { width: 100%; height: 100%; }
-.preview-caption { color: #e6ebf0; margin-top: 12px; }
+.print-dialog { background: #fff; border-radius: 12px; width: calc(100vw - 24px); height: calc(100vh - 24px); display: grid; grid-template-columns: 1fr 340px; overflow: hidden; box-shadow: 0 24px 70px rgba(0,0,0,.35); }
+.print-preview { background: radial-gradient(circle at 50% 40%, #4a5866, #2c3744); display: flex; flex-direction: column; align-items: stretch; padding: 14px 14px 10px; min-width: 0; min-height: 0; }
+.preview-area { flex: 1; min-height: 0; min-width: 0; display: flex; align-items: center; justify-content: center; }
+.preview-page { background: #fff; box-shadow: 0 10px 36px rgba(0,0,0,.45); display: flex; flex: none; }
+.preview-page svg { width: 100%; height: 100%; display: block; }
+.preview-caption { color: #e6ebf0; margin-top: 8px; text-align: center; }
 .print-settings { padding: 18px; overflow-y: auto; border-left: 1px solid var(--line); }
 .print-settings h2 { font-size: 17px; }
 .print-settings select { width: 100%; padding: 5px 7px; border: 1px solid var(--line-2); border-radius: 6px; }
@@ -428,3 +430,70 @@ kbd { background: var(--panel-2); border: 1px solid var(--line-2); border-bottom
 .arrow-presets { display: grid; grid-template-columns: repeat(4, 40px); grid-auto-rows: 38px; gap: 2px; }
 .arrow-preset { display: flex; align-items: center; justify-content: center; background: none; border: 1px solid transparent; border-radius: 7px; cursor: pointer; }
 .arrow-preset:hover { background: var(--accent-soft); border-color: #a6dbbb; }
+
+/* Import DXF */
+.dxf-import { display: grid; grid-template-columns: 1fr 220px; gap: 12px 16px; margin: 4px 0 8px; }
+.dxf-preview { grid-row: span 1; height: 250px; border: 1px solid var(--line-2); border-radius: var(--radius); background: #fff; display: flex; align-items: center; justify-content: center; padding: 8px; overflow: hidden; }
+.dxf-preview img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.dxf-side .field { margin-top: 0; }
+.dxf-dims { display: flex; flex-direction: column; gap: 2px; margin: 6px 0 4px; font-size: 15px; }
+.dxf-layers { grid-column: 1 / -1; }
+.dxf-layers .row { align-items: center; flex-wrap: wrap; }
+.dxf-filter { flex: 1; min-width: 120px; padding: 4px 8px; border: 1px solid var(--line-2); border-radius: var(--radius); }
+.dxf-layers ul { list-style: none; margin: 8px 0 6px; padding: 4px; max-height: 190px; overflow-y: auto; border: 1px solid var(--line-2); border-radius: var(--radius); columns: 2; column-gap: 12px; }
+.dxf-layers li { break-inside: avoid; }
+.dxf-layers li label { display: flex; align-items: center; gap: 6px; padding: 2px 4px; cursor: pointer; border-radius: 4px; }
+.dxf-layers li label:hover { background: var(--hover, #f1f4f8); }
+.dxf-layers .swatch { width: 10px; height: 10px; border-radius: 2px; flex: none; border: 1px solid rgba(0,0,0,.15); }
+.dxf-layers .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 700px) { .dxf-import { grid-template-columns: 1fr; } .dxf-layers ul { columns: 1; } }
+
+/* Reconnaissance du plan */
+.recog { display: grid; grid-template-columns: 1fr 210px; gap: 12px 16px; margin: 4px 0 8px; }
+.recog-preview { height: 300px; border: 1px solid var(--line-2); border-radius: var(--radius); background: #fff; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+.recog-preview svg { width: 100%; height: 100%; }
+.recog-side .field { margin: 4px 0; }
+.recog-roles { grid-column: 1 / -1; }
+.recog-roles ul { list-style: none; margin: 6px 0; padding: 4px; max-height: 170px; overflow-y: auto; border: 1px solid var(--line-2); border-radius: var(--radius); display: grid; grid-template-columns: 1fr 1fr; gap: 2px 14px; }
+.recog-roles li { display: flex; align-items: center; gap: 6px; padding: 2px 4px; min-width: 0; }
+.recog-roles .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.recog-roles select { padding: 2px 4px; border: 1px solid var(--line-2); border-radius: var(--radius); background: #fff; max-width: 150px; }
+@media (max-width: 700px) { .recog { grid-template-columns: 1fr; } .recog-roles ul { grid-template-columns: 1fr; } }
+
+/* ——— Délimitation renforcée des menus et sections ——— */
+@keyframes section-in { from { opacity: 0; transform: translateY(-3px); } to { opacity: 1; transform: none; } }
+
+/* Panneaux latéraux : séparation nette avec la zone de dessin */
+.left { border-right: 1px solid var(--line-2); box-shadow: 2px 0 6px rgba(15, 27, 42, .07); position: relative; z-index: 2; }
+.props { border-left: 1px solid var(--line-2); box-shadow: -2px 0 6px rgba(15, 27, 42, .07); position: relative; z-index: 2; }
+.left > .panel-body, .props > .panel-body { animation: section-in .18s ease-out; }
+
+/* Ruban : onglet actif marqué d'une barre verte, contenu sur fond teinté */
+.rb-tabs button { position: relative; }
+.rb-tabs button.on { background: var(--panel-2); color: var(--accent-2); font-weight: 700; box-shadow: inset 0 3px 0 var(--accent); }
+.rb-tabs button.on::after { content: ''; position: absolute; left: 0; right: 0; bottom: -1px; height: 2px; background: var(--panel-2); }
+.ribbon { border-bottom: 1px solid var(--line-2); box-shadow: 0 2px 6px rgba(15, 27, 42, .08); }
+.rb-panel { background: var(--panel-2); animation: section-in .18s ease-out; }
+.rb-group { border-right: 1px solid var(--line-2); }
+.rb-title { color: var(--text-2); font-weight: 600; border-top: 1px solid var(--line); margin-top: 2px; }
+
+/* Onglets du panneau gauche : onglet actif en « carte » blanche reliée au contenu */
+.tabs { background: var(--panel-3); border-bottom: 1px solid var(--line-2); padding: 6px 6px 0; gap: 4px; }
+.tabs button { border: 1px solid transparent; border-bottom: 0; border-radius: 8px 8px 0 0; margin-bottom: -1px; position: relative; }
+.tabs button:hover:not(.on) { background: rgba(255, 255, 255, .55); }
+.tabs button.on { background: var(--panel); border-color: var(--line-2); color: var(--accent-2); box-shadow: inset 0 3px 0 var(--accent); }
+.tabs button.on::after { content: ''; position: absolute; left: 0; right: 0; bottom: -1px; height: 2px; background: var(--panel); }
+
+/* Onglets du panneau Propriétés */
+.ptabs { border: 1px solid var(--line); }
+.ptabs button:hover:not(.on) { color: var(--text); background: rgba(255, 255, 255, .5); }
+.ptabs button.on { color: var(--accent-2); box-shadow: var(--shadow-1), inset 0 -2px 0 var(--accent); }
+
+/* Sections repliables : en-tête mieux détaché */
+.psec-head { border-left: 3px solid transparent; padding-left: 6px; }
+.psec-head:hover { background: var(--panel-2); border-left-color: var(--line-2); }
+.psec-head[aria-expanded="true"] { border-left-color: var(--accent); }
+
+@media (prefers-reduced-motion: reduce) {
+  .rb-panel, .left > .panel-body, .props > .panel-body { animation: none; }
+}

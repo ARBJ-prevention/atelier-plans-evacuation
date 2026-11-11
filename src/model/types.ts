@@ -90,8 +90,12 @@ export interface DoorElement extends BaseElement {
   width: number;
   swing: 'left' | 'right';
   doorType: 'single' | 'double' | 'sliding' | 'revolving' | 'opening';
-  /** Porte coupe-feu / issue de secours : marquage spécifique. */
+  /** Issue de secours : marquage vert sur le seuil. */
   emergency: boolean;
+  /** Porte coupe-feu : marquage rouge sur le seuil et libellé. */
+  fireRated: boolean;
+  /** Libellé affiché à côté d'une porte coupe-feu (« CF », « EI 30 »…) ; vide = aucun libellé. */
+  fireRating: string;
   color: string;
 }
 
@@ -115,6 +119,8 @@ export interface StairsElement extends BaseElement {
   color: string;
   fill: string;
   arrow: boolean;
+  /** Séparation centrale dans le sens de la longueur (escalier à deux côtés). */
+  split?: boolean;
   stairType: 'straight' | 'landing' | 'escalator';
   label: string;
 }
@@ -131,6 +137,11 @@ export interface SymbolElement extends BaseElement {
   labelColor: string;
   /** Pastille blanche derrière le pictogramme (lisibilité sur fond chargé). */
   halo: boolean;
+  /** Étirement horizontal / vertical (1 = proportions d'origine). */
+  stretchX?: number;
+  stretchY?: number;
+  /** Fusion avec les panneaux collés (pas de liseré ni de coin arrondi du côté commun). Par défaut : oui. */
+  fuse?: boolean;
 }
 
 export interface RouteElement extends BaseElement {
@@ -246,6 +257,22 @@ export interface Background {
   locked: boolean;
   /** Niveaux de gris (atténue les couleurs du plan source). */
   grayscale: boolean;
+  /** Plan vectoriel importé d'un fichier DAO (DXF ou DWG) à l'échelle réelle ; absent pour une image / un PDF. */
+  vector?: VectorSource;
+}
+
+export interface VectorSource {
+  /** Format du fichier importé (un DWG est converti en DXF à l'import). */
+  format: 'dxf' | 'dwg';
+  /** Unité du dessin source : mm, cm, dm, m, in, ft. */
+  unit: string;
+  /** L'unité était indiquée dans le fichier (sinon choisie par l'utilisateur). */
+  unitDeclared: boolean;
+  /** Dimensions réelles en mètres. */
+  widthM: number;
+  heightM: number;
+  /** Calques importés. */
+  layers: string[];
 }
 
 export interface Variant {
@@ -268,10 +295,15 @@ export interface TitleBlock {
   instructions: string; // consignes (texte multi-lignes)
   emergencyNumbers: string; // ex. « Pompiers 112 · Police 101 »
   logo: string; // data URL ou ''
+  /** Vue aérienne (photo satellite / vue du ciel) du site : data URL ou ''. */
+  aerialImage: string;
 }
 
 export type PaperSize = 'A4' | 'A3' | 'A2';
-export type PageTheme = 'moderne' | 'epure' | 'institutionnel' | 'signaletique';
+/** Zones de la page qui peuvent être entourées d'un cadre. */
+export type FrameKey = 'plan' | 'legend' | 'instructions' | 'aerial' | 'sketch' | 'footer';
+
+export type PageTheme = 'moderne' | 'epure' | 'institutionnel' | 'signaletique' | 'encadre' | 'bandeaux' | 'technique' | 'horizon' | 'editorial';
 
 export interface PageSetup {
   paper: PaperSize;
@@ -295,6 +327,12 @@ export interface PageSetup {
   showNorth: boolean;
   northAngle: number;
   showFrame: boolean;
+  /** Zones entourées d'un cadre, cochées par l'utilisateur (zone absente = choix du thème). */
+  frames?: Partial<Record<FrameKey, boolean>>;
+  /** Cadre « Vue aérienne du site » dans le panneau latéral. */
+  showAerial: boolean;
+  /** Croquis de situation : miniature simplifiée de l'étage avec « Vous êtes ici ». */
+  showSketch: boolean;
 }
 
 export interface Floor {

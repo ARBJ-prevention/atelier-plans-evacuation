@@ -5,6 +5,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const { pathToFileURL } = require('node:url');
 const { buildMenu } = require('./menu.cjs');
+const { ODA_DOWNLOAD_URL, convertDwgToDxf, findOdaConverter, isOdaConverter } = require('./dwg.cjs');
 
 const APP_NAME = "Atelier Plans d'Évacuation";
 const PROJECT_EXT = 'planevac';
@@ -191,15 +192,46 @@ ipcMain.handle('render:pdf', async (_e, { html, paper, landscape, suggestedName,
   return file;
 });
 
+/** État du service Windows « Spouleur d'impression » : 'running' | 'stopped' | 'unknown'. */
+function spoolerState() {
+  if (process.platform !== 'win32') return Promise.resolve('unknown');
+  return new Promise((resolve) => {
+    // Les libellés (STATE / ÉTAT) dépendent de la langue, mais pas les codes « 4 RUNNING » / « 1 STOPPED ».
+    require('node:child_process').execFile('sc', ['query', 'Spooler'], { windowsHide: true, timeout: 4000 }, (_err, out) => {
+      const s = String(out || '');
+      if (/\b4\s+RUNNING\b/.test(s)) resolve('running');
+      else if (/\b[1-3]\s+(STOPPED|START_PENDING|STOP_PENDING)\b/.test(s)) resolve('stopped');
+      else resolve('unknown');
+    });
+  });
+}
+
+/**
+ * Impression : Chromium échoue avec « Failed to enumerate printers » quand le
+ * spouleur Windows est arrêté ou qu'aucune imprimante n'est installée. On vérifie
+ * donc d'abord la liste des imprimantes et on renvoie un code exploitable par
+ * l'interface (no-printer) au lieu du message technique.
+ */
 ipcMain.handle('render:print', async (_e, { html, paper, landscape }) => {
+  let printers = [];
+  try { printers = await (win || BrowserWindow.getAllWindows()[0]).webContents.getPrintersAsync(); } catch { printers = []; }
+  if (!printers.length) {
+    return { success: false, reason: 'no-printer', spooler: await spoolerState() };
+  }
+  const device = printers.find((p) => p.isDefault) || printers[0];
   return withHtmlWindow(html, (w) => new Promise((resolve) => {
     w.webContents.print({
       silent: false,
+      deviceName: device.name,
       printBackground: true,
       landscape,
       pageSize: paper,
       margins: { marginType: 'none' },
-    }, (success, reason) => resolve({ success, reason: reason || '' }));
+    }, async (success, reason) => {
+      if (!success && /enumerate printers|no printer|invalid printer/i.test(reason || '')) {
+        resolve({ success: false, reason: 'no-printer', spooler: await spoolerState() });
+      } else resolve({ success, reason: reason || '' });
+    });
   }));
 });
 
@@ -243,7 +275,12 @@ ipcMain.handle('project:save', async (_e, { path: target, content, suggestedName
 
 ipcMain.handle('file:pick', async (_e, kind) => {
   const filters = {
-    plan: [{ name: 'Plans (PDF, images)', extensions: ['pdf', 'png', 'jpg', 'jpeg', 'bmp', 'webp', 'gif'] }],
+    plan: [
+      { name: 'Plans (DXF, DWG, PDF, images)', extensions: ['dxf', 'dwg', 'pdf', 'png', 'jpg', 'jpeg', 'bmp', 'webp', 'gif'] },
+      { name: 'Plans AutoCAD (DXF, DWG)', extensions: ['dxf', 'dwg'] },
+      { name: 'Documents PDF', extensions: ['pdf'] },
+      { name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'bmp', 'webp', 'gif'] },
+    ],
     image: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'svg', 'webp', 'gif', 'bmp'] }],
     symbol: [{ name: 'Pictogrammes (SVG, PNG, JPEG)', extensions: ['svg', 'png', 'jpg', 'jpeg'] }],
   }[kind] || [];
@@ -270,6 +307,38 @@ ipcMain.handle('file:save-binary', async (_e, { data, suggestedName, filterName,
 
 ipcMain.handle('file:read-binary', async (_e, p) => fs.readFileSync(p));
 ipcMain.handle('file:show', async (_e, p) => shell.showItemInFolder(p));
+
+// ——— Plans DWG : conversion par ODA File Converter ———
+function dwgConverterPath() {
+  const saved = readSettings().dwgConverter;
+  if (isOdaConverter(saved)) return saved;
+  return findOdaConverter();
+}
+ipcMain.handle('dwg:status', async () => {
+  const p = dwgConverterPath();
+  return { found: !!p, path: p || '' };
+});
+ipcMain.handle('dwg:choose-converter', async () => {
+  const r = await dialog.showOpenDialog(win, {
+    title: 'Emplacement de ODA File Converter',
+    defaultPath: process.env.ProgramFiles || undefined,
+    properties: ['openFile'],
+    filters: [{ name: 'ODA File Converter', extensions: ['exe'] }],
+  });
+  if (r.canceled || !r.filePaths[0]) return null;
+  const p = r.filePaths[0];
+  if (!isOdaConverter(p)) throw new Error('Le fichier choisi n’est pas ODAFileConverter.exe.');
+  writeSettings({ dwgConverter: p });
+  return p;
+});
+ipcMain.handle('dwg:download-page', async () => shell.openExternal(ODA_DOWNLOAD_URL));
+ipcMain.handle('dwg:convert', async (_e, { data, converter }) => {
+  // Un convertisseur imposé par l'interface n'est accepté qu'en autotest (convertisseur simulé).
+  const exe = (isSelfTest && converter) || dwgConverterPath();
+  if (!exe) throw new Error('ODA File Converter est introuvable.');
+  const { dxf, version } = await convertDwgToDxf(exe, Buffer.from(data));
+  return { dxf: new Uint8Array(dxf), version };
+});
 
 // ——— Sauvegarde automatique / récupération ———
 ipcMain.handle('autosave:write', async (_e, { id, name, filePath, content }) => {
@@ -401,7 +470,8 @@ ipcMain.handle('update:install', async () => {
     if (hash.toLowerCase() !== String(res.sha256).toLowerCase()) throw new Error('L’installateur ne correspond pas à l’empreinte attendue (fichier incomplet ou modifié). Mise à jour annulée.');
   }
   const { spawn } = require('node:child_process');
-  spawn(res.installer, [], { detached: true, stdio: 'ignore' }).unref();
+  // Mise à jour rapide : sans assistant (le contrôle UAC reste demandé si besoin), puis relance du programme.
+  spawn(res.installer, ['/S', '--updated', '--force-run'], { detached: true, stdio: 'ignore' }).unref();
   forceClosing = true;
   setTimeout(() => app.quit(), 300);
   return true;

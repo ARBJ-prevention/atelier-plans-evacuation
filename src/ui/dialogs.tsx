@@ -19,6 +19,13 @@ interface DialogReq {
   message?: React.ReactNode;
   fields?: Field[];
   buttons: DialogButton[];
+  /** Contenu personnalisé (affiché après les champs) ; peut lire et modifier les valeurs. */
+  render?: (values: Record<string, any>, set: (patch: Record<string, any>) => void) => React.ReactNode;
+  /** Valeurs initiales supplémentaires (utilisées par `render`). */
+  initial?: Record<string, any>;
+  /** Désactive le bouton principal tant que la fonction renvoie un message. */
+  invalid?: (values: Record<string, any>) => string | null;
+  wide?: boolean;
   resolve(r: { button: string; values: Record<string, any> }): void;
 }
 
@@ -57,7 +64,7 @@ export function DialogHost() {
 }
 
 function DialogView({ req }: { req: DialogReq }) {
-  const [values, setValues] = useState<Record<string, any>>(() => Object.fromEntries((req.fields ?? []).map((f) => [f.key, f.value])));
+  const [values, setValues] = useState<Record<string, any>>(() => ({ ...req.initial, ...Object.fromEntries((req.fields ?? []).map((f) => [f.key, f.value])) }));
   const firstRef = useRef<HTMLElement | null>(null);
   useEffect(() => { setTimeout(() => (firstRef.current as any)?.focus?.(), 30); }, []);
 
@@ -66,7 +73,7 @@ function DialogView({ req }: { req: DialogReq }) {
     req.resolve({ button, values });
   };
   const primary = req.buttons.find((b) => b.primary) ?? req.buttons[req.buttons.length - 1];
-  const missing = (req.fields ?? []).some((f) => f.required && String(values[f.key] ?? '').trim() === '');
+  const missing = (req.fields ?? []).some((f) => f.required && String(values[f.key] ?? '').trim() === '') || !!req.invalid?.(values);
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -75,7 +82,7 @@ function DialogView({ req }: { req: DialogReq }) {
 
   return (
     <div className="modal-backdrop" onKeyDown={(e) => { if (e.key === 'Escape') { e.stopPropagation(); close('cancel'); } }}>
-      <form className="modal" onSubmit={submit} role="dialog" aria-modal="true" aria-label={req.title}>
+      <form className={req.wide ? 'modal wide' : 'modal'} onSubmit={submit} role="dialog" aria-modal="true" aria-label={req.title}>
         <h2>{req.title}</h2>
         {req.message && <div className="modal-msg">{req.message}</div>}
         {(req.fields ?? []).map((f, i) => (
@@ -98,6 +105,7 @@ function DialogView({ req }: { req: DialogReq }) {
             {f.help && <small>{f.help}</small>}
           </label>
         ))}
+        {req.render?.(values, (patch) => setValues((v) => ({ ...v, ...patch })))}
         <div className="modal-actions">
           {req.buttons.map((b) => (
             <button key={b.value} type={b === primary ? 'submit' : 'button'} disabled={b === primary && missing}

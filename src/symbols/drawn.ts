@@ -171,7 +171,7 @@ export const DRAWN_SYMBOLS: SymbolDef[] = [
 
   // ── Structure du bâtiment ──────────────────────────────────────────────────
   plan('door', 'Porte simple', CAT.structure, doorLeaf()),
-  plan('door-fire', 'Porte coupe-feu', CAT.structure, doorLeaf(planText('CF', 58, 58, 20, RED))),
+  plan('door-fire', 'Porte coupe-feu', CAT.structure, doorLeaf(`<rect x="15" y="80" width="70" height="6" fill="${RED}" stroke="none"/>${planText('CF', 58, 58, 20, RED)}`)),
   plan('door-double', 'Porte double', CAT.structure, `
     <path d="M2 85 H10 M90 85 H98" stroke-width="7"/>
     <path d="M10 85 V45 M90 85 V45" stroke-width="5"/>

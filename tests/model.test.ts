@@ -100,8 +100,18 @@ describe('mise en page d’impression', () => {
     const f = newProject().buildings[0].floors[0];
     f.page.paper = 'A3'; f.page.orientation = 'portrait';
     const L = computeLayout(f, f.variants[0].id);
-    expect([L.w, L.h]).toEqual([297, 420]);
+    expect([L.paperW, L.paperH]).toEqual([297, 420]);
+    expect(L.w * L.s).toBeCloseTo(297); expect(L.h * L.s).toBeCloseTo(420);
     expect(L.side!.y).toBeGreaterThan(L.drawing.y + L.drawing.h);
+  });
+  it('A3 : mise en page agrandie, échelle réelle conservée', () => {
+    const f = newProject().buildings[0].floors[0];
+    f.unitsPerMeter = 50;
+    f.page.paper = 'A3'; f.page.scaleMode = 'fixed'; f.page.scale = 100;
+    const L = computeLayout(f, f.variants[0].id);
+    expect(L.s).toBeGreaterThan(1);
+    expect(L.k * L.s * f.unitsPerMeter).toBeCloseTo(10);   // 1 m = 10 mm sur le papier
+    expect(L.scaleDenominator).toBe(100);
   });
   it('barre d’échelle « ronde » et coupure du texte', () => {
     expect(niceScaleBarMeters(10)).toBe(2);
@@ -109,5 +119,25 @@ describe('mise en page d’impression', () => {
     const lines = wrapText('un deux trois quatre cinq six sept huit neuf dix', 20, 3);
     expect(lines.length).toBeGreaterThan(1);
     expect(lines.join(' ')).toBe('un deux trois quatre cinq six sept huit neuf dix');
+  });
+});
+
+describe('fusion des panneaux collés', () => {
+  it('détecte les côtés collés et ignore les panneaux éloignés ou tournés', async () => {
+    const { symbolFuseSides } = await import('../src/model/geometry');
+    const p = newProject('Test');
+    const f = p.buildings[0].floors[0];
+    const v = f.variants[0].id;
+    const a = makeElement('symbol', { x: 0, y: 0, size: 40, symbolId: 'iso-E001' }) as any;
+    const b = makeElement('symbol', { x: 41, y: 2, size: 40, symbolId: 'iso-E002' }) as any;
+    const c = makeElement('symbol', { x: 0, y: 120, size: 40, symbolId: 'iso-E002' }) as any;
+    f.elements.push(a, b, c);
+    expect(symbolFuseSides(a, f, v)).toEqual({ l: false, r: true, t: false, b: false });
+    expect(symbolFuseSides(b, f, v)).toEqual({ l: true, r: false, t: false, b: false });
+    expect(symbolFuseSides(c, f, v)).toEqual({ l: false, r: false, t: false, b: false });
+    b.rotation = 45;
+    expect(symbolFuseSides(a, f, v).r).toBe(false);
+    b.rotation = 0; a.fuse = false;
+    expect(symbolFuseSides(b, f, v).l).toBe(false);
   });
 });

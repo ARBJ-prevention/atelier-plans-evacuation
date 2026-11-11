@@ -5,10 +5,10 @@ import { defaultShadow, EMERGENCY_NUMBERS, FONTS, LAYER_NAMES } from '../model/d
 import { boxOf, polygonArea, polylineLength } from '../model/geometry';
 import type { DashStyle, Element, FillPattern, Floor, LayerId, PageSetup, PageTheme } from '../model/types';
 import { symbolName } from '../render/ElementView';
-import { THEMES } from '../render/layout';
+import { FRAME_ZONES, frameOn, THEMES, themePatch } from '../render/layout';
 import { STATUS_LABEL } from '../render/PrintPage';
 import { SYMBOLS_BY_CATEGORY } from '../symbols/library';
-import { currentFloor, currentVariantId, useStore } from '../store/store';
+import { currentBuilding, currentFloor, currentVariantId, useStore } from '../store/store';
 import { confirmDialog } from '../ui/dialogs';
 import { Icon } from '../ui/icons';
 import { ThemeThumb } from './Ribbon';
@@ -291,6 +291,8 @@ function ElementProps({ el, floor }: { el: Element; floor: Floor }) {
                 <Row label="Largeur"><Num value={e.width} min={20} max={800} onChange={(v) => upd({ width: v })} suffix={u > 0 ? `${((e.width / u) * 100).toFixed(0)} cm` : 'u'} /></Row>
                 <Row label="Côté du débattement"><Seg value={e.flipY ? 'b' : 'a'} options={[['a', 'Côté A'], ['b', 'Côté B']]} onChange={(v) => upd({ flipY: v === 'b' })} /></Row>
                 <Row label="Issue de secours" hint="Marquage vert sur le seuil"><Toggle checked={e.emergency} onChange={(v) => upd({ emergency: v })} /></Row>
+                <Row label="Porte coupe-feu" hint="Marquage rouge sur le seuil, ajoutée à la légende"><Toggle checked={!!e.fireRated} onChange={(v) => upd({ fireRated: v })} /></Row>
+                {e.fireRated && <Row label="Libellé" hint="Ex. CF, EI 30, EI 60 — vide : aucun libellé"><input type="text" value={e.fireRating ?? ''} maxLength={12} onChange={(ev) => upd({ fireRating: ev.target.value })} /></Row>}
               </Section>
             )}
             {el.type === 'window' && (
@@ -306,7 +308,11 @@ function ElementProps({ el, floor }: { el: Element; floor: Floor }) {
                   <Seg value={e.stairType} options={[['straight', 'Droit'], ['landing', 'Palier'], ['escalator', 'Escalator']]} onChange={(v) => upd({ stairType: v })} />
                 </Row>
                 <Row label="Marches"><Num value={e.steps} min={2} max={80} onChange={(v) => upd({ steps: Math.round(v) })} /></Row>
-                <Row label="Flèche de montée"><Toggle checked={e.arrow} onChange={(v) => upd({ arrow: v })} /></Row>
+                {e.stairType !== 'landing' && (
+                  <Row label="Séparé au milieu"><Toggle checked={!!e.split} onChange={(v) => upd({ split: v })} /></Row>
+                )}
+                <Row label="Flèche de sens"><Toggle checked={e.arrow} onChange={(v) => upd({ arrow: v })} /></Row>
+                {e.stairType !== 'landing' && e.split && <p className="muted small">Avec la séparation, la flèche indique la montée à gauche et la descente à droite. Désactivez-la pour placer vos propres flèches.</p>}
               </Section>
             )}
             {el.type === 'wall' && (
@@ -479,13 +485,23 @@ function TextTab({ el, upd, textRef, floor }: { el: Element; upd(p: Record<strin
     );
   }
   if (el.type === 'symbol') {
+    const sx = e.stretchX ?? 1, sy = e.stretchY ?? 1;
     return (
+      <>
+      <Section title="Étirement" icon="layout">
+        <Row label="Largeur"><Num value={Math.round(sx * 100)} min={15} max={1200} onChange={(v) => upd({ stretchX: Math.max(0.15, v / 100) })} suffix="%" /></Row>
+        <Row label="Hauteur"><Num value={Math.round(sy * 100)} min={15} max={1200} onChange={(v) => upd({ stretchY: Math.max(0.15, v / 100) })} suffix="%" /></Row>
+        {(sx !== 1 || sy !== 1) && <button className="btn small" onClick={() => upd({ stretchX: 1, stretchY: 1 })}>Proportions d’origine</button>}
+        <Row label="Fusionner" hint="Collé à un autre panneau, la séparation (liseré blanc) disparaît"><Toggle checked={e.fuse !== false} onChange={(v) => upd({ fuse: v })} /></Row>
+        <p className="muted tiny">Glissez les poignées des côtés sur le plan pour étirer ; les coins gardent les proportions.</p>
+      </Section>
       <Section title="Libellé" icon="textIcon">
         <Row label="Texte"><input type="text" value={e.label} placeholder="(aucun)" onChange={(ev) => upd({ label: ev.target.value })} /></Row>
         <Row label="Position"><Seg value={e.labelPosition} options={[['below', 'Dessous'], ['above', 'Dessus'], ['right', 'Droite'], ['left', 'Gauche']]} onChange={(v) => upd({ labelPosition: v })} /></Row>
         <Row label="Taille"><Num value={e.labelSize} min={0} max={200} onChange={(v) => upd({ labelSize: v })} suffix={e.labelSize ? '' : 'auto'} /></Row>
         <Row label="Couleur"><Color value={e.labelColor} onChange={(v) => upd({ labelColor: v })} /></Row>
       </Section>
+      </>
     );
   }
   if (el.type === 'area') {
@@ -546,6 +562,7 @@ function FloorProps({ floor }: { floor: Floor }) {
 
 function PlanTab({ floor }: { floor: Floor }) {
   const project = useStore((s) => s.project)!;
+  const building = useStore((s) => currentBuilding(s));
   const tb = floor.titleBlock;
   const S = useStore.getState;
   const setTb = (patch: Partial<typeof tb>, key = Object.keys(patch).join(',')) =>
@@ -566,6 +583,20 @@ function PlanTab({ floor }: { floor: Floor }) {
           </div>
         )}
       </section>
+      <Section title="Bâtiment et étage" icon="building">
+        <Row label="Bâtiment">
+          <input type="text" value={building?.name ?? ''} placeholder="Ex. Bâtiment A"
+            onChange={(e) => { const v = e.target.value; S().mutate((d) => { const b = d.buildings.find((x) => x.id === building?.id); if (b) b.name = v; }, { coalesce: 'bld:name' }); }} />
+        </Row>
+        <Row label="Étage">
+          <input type="text" value={floor.name} placeholder="Ex. Niveau 0" list="floor-name-suggestions"
+            onChange={(e) => { const v = e.target.value; S().mutateFloor((f) => { f.name = v; }, { keepValidation: true, coalesce: 'floor:name' }); }} />
+          <datalist id="floor-name-suggestions">
+            {['Niveau -1', 'Niveau 0', 'Niveau 1', 'Niveau 2', 'Niveau 3', 'Rez-de-chaussée', 'Sous-sol', '1er étage', '2e étage'].map((n) => <option key={n} value={n} />)}
+          </datalist>
+        </Row>
+        <p className="muted small">Ces noms apparaissent dans l’en-tête du plan (si le sous-titre est vide) et dans le cartouche.</p>
+      </Section>
       <Section title="Cartouche" icon="layout">
         <Row label="Titre"><input type="text" value={tb.title} onChange={(e) => setTb({ title: e.target.value })} /></Row>
         <Row label="Sous-titre"><input type="text" value={tb.subtitle} placeholder="Adresse, zone…" onChange={(e) => setTb({ subtitle: e.target.value })} /></Row>
@@ -578,6 +609,13 @@ function PlanTab({ floor }: { floor: Floor }) {
             {tb.logo && <img src={tb.logo} alt="" className="logo-thumb" />}
             <button className="btn small" onClick={() => A.pickLogoAction()}>{tb.logo ? 'Changer' : 'Choisir…'}</button>
             {tb.logo && <button className="btn small" onClick={() => setTb({ logo: '' })}>Retirer</button>}
+          </span>
+        </Row>
+        <Row label="Vue aérienne">
+          <span className="row gap">
+            {tb.aerialImage && <img src={tb.aerialImage} alt="" className="logo-thumb" />}
+            <button className="btn small" onClick={() => A.pickAerialAction()} title="Photo vue du ciel du site (capture satellite, plan masse…)">{tb.aerialImage ? 'Changer' : 'Choisir…'}</button>
+            {tb.aerialImage && <button className="btn small" onClick={() => setTb({ aerialImage: '' })}>Retirer</button>}
           </span>
         </Row>
       </Section>
@@ -611,7 +649,7 @@ export function PageSettings({ page }: { page: PageSetup }) {
     <>
       <Section title="Thème graphique" icon="theme">
         <div className="theme-grid">
-          {(Object.keys(THEMES) as PageTheme[]).map((t) => <ThemeThumb key={t} theme={t} accent={page.accentColor} active={page.theme === t} onClick={() => set({ theme: t })} />)}
+          {(Object.keys(THEMES) as PageTheme[]).map((t) => <ThemeThumb key={t} theme={t} accent={page.accentColor} active={page.theme === t} onClick={() => set(themePatch(t))} />)}
         </div>
         <Row label="Accent"><Color value={page.accentColor} onChange={(v) => set({ accentColor: v })} /></Row>
         <Row label="Fond du plan"><Color value={page.planBackground} onChange={(v) => set({ planBackground: v })} /></Row>
@@ -621,13 +659,28 @@ export function PageSettings({ page }: { page: PageSetup }) {
         <Row label="Orientation"><Seg value={page.orientation} options={[['portrait', 'Portrait'], ['landscape', 'Paysage']]} onChange={(v) => set({ orientation: v })} /></Row>
         <Row label="Marges"><Num value={page.marginMm} min={0} max={40} onChange={(v) => set({ marginMm: v })} suffix="mm" /></Row>
         <Row label="Légende"><Seg value={page.sidePosition} options={[['left', 'Gauche'], ['right', 'Droite'], ['bottom', 'Bas']]} onChange={(v) => set({ sidePosition: v })} /></Row>
+        <p className="muted tiny">
+          {page.orientation === 'portrait'
+            ? 'En portrait, « Gauche » et « Droite » placent la légende à côté du plan seulement s’il est en hauteur ; sinon elle passe en bas. Les tailles s’ajustent à la forme du plan.'
+            : 'Les tailles de la légende et du plan s’ajustent automatiquement à la forme du plan.'}
+        </p>
       </Section>
       <Section title="Contenu" icon="legendIcon">
         {([['showTitleBlock', 'En-tête et cartouche'], ['showLegend', 'Légende'], ['showInstructions', 'Consignes'], ['showEmergencyNumbers', 'Numéros d’urgence'],
-          ['showScaleBar', 'Barre d’échelle'], ['showNorth', 'Flèche du nord'], ['showWatermark', 'Filigrane Brouillon / À valider'], ['showFrame', 'Cadre (thème Institutionnel)']] as const).map(([k, l]) => (
+          ['showAerial', 'Vue aérienne du site'], ['showSketch', 'Croquis de situation (miniature du plan)'],
+          ['showScaleBar', 'Barre d’échelle'], ['showNorth', 'Flèche du nord'], ['showWatermark', 'Filigrane Brouillon / À valider'], ['showFrame', 'Cadre de page (thèmes encadrés)']] as const).map(([k, l]) => (
           <div key={k} className="toggle-line"><Toggle checked={!!page[k]} onChange={(v) => set({ [k]: v } as any)} label={l} /></div>
         ))}
         {page.showNorth && <Row label="Angle du nord"><Num value={page.northAngle} min={-360} max={360} onChange={(v) => set({ northAngle: v })} suffix="°" /></Row>}
+      </Section>
+      <Section title="Cadres" icon="layout">
+        <p className="muted tiny">Cochez les zones à entourer d’un cadre. Sans choix de votre part, chaque thème applique le sien.</p>
+        {FRAME_ZONES.map(([k, l]) => (
+          <div key={k} className="toggle-line"><Toggle checked={frameOn(page, k)} onChange={(v) => set({ frames: { ...page.frames, [k]: v } })} label={l} /></div>
+        ))}
+        {page.frames && Object.keys(page.frames).length > 0 && (
+          <button className="btn small" onClick={() => set({ frames: undefined })}>Revenir aux cadres du thème</button>
+        )}
       </Section>
     </>
   );
@@ -643,10 +696,13 @@ function BackgroundTab({ floor }: { floor: Floor }) {
       <Section title="Plan de fond" icon="image">
         {bg ? (
           <>
-            <p className="muted small" title={bg.sourceName}>{bg.sourceName} · {bg.naturalWidth}×{bg.naturalHeight} px</p>
+            {bg.vector
+              ? <p className="muted small" title={bg.sourceName}>{bg.sourceName} · plan {bg.vector.format.toUpperCase()} vectoriel<br />
+                  {bg.vector.widthM.toFixed(2).replace('.', ',')} m × {bg.vector.heightM.toFixed(2).replace('.', ',')} m · unité : {bg.vector.unit} · {bg.vector.layers.length} calque(s)</p>
+              : <p className="muted small" title={bg.sourceName}>{bg.sourceName} · {bg.naturalWidth}×{bg.naturalHeight} px</p>}
             <Row label="Opacité"><Slider value={bg.opacity} onChange={(v) => setBg({ opacity: Math.max(0.05, v) })} /></Row>
             <Row label="Niveaux de gris"><Toggle checked={bg.grayscale} onChange={(v) => setBg({ grayscale: v })} /></Row>
-            <Row label="Largeur"><Num value={bg.naturalWidth * bg.scale} min={10} onChange={(v) => setBg({ scale: v / bg.naturalWidth })} suffix="u" /></Row>
+            {!bg.vector && <Row label="Largeur"><Num value={bg.naturalWidth * bg.scale} min={10} onChange={(v) => setBg({ scale: v / bg.naturalWidth })} suffix="u" /></Row>}
             <Row label="Verrouillé"><Toggle checked={bg.locked} onChange={(v) => setBg({ locked: v })} /></Row>
             <p className="muted tiny">Déverrouillez le fond pour le déplacer à la souris.</p>
             <div className="row gap">
@@ -655,7 +711,7 @@ function BackgroundTab({ floor }: { floor: Floor }) {
             </div>
           </>
         ) : (
-          <button className="btn small full" onClick={() => A.importBackgroundAction()}><Icon name="import" size={15} /> Importer un PDF ou une image</button>
+          <button className="btn small full" onClick={() => A.importBackgroundAction()}><Icon name="import" size={15} /> Importer un plan (DXF, PDF, image)</button>
         )}
       </Section>
       <Section title="Échelle" icon="ruler">

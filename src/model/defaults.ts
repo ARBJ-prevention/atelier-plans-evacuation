@@ -52,6 +52,7 @@ export function defaultTitleBlock(country: string): TitleBlock {
     instructions: getCountry(country).instructions,
     emergencyNumbers: EMERGENCY_NUMBERS[country] ?? EMERGENCY_NUMBERS.INT,
     logo: '',
+    aerialImage: '',
   };
 }
 
@@ -77,6 +78,8 @@ export function defaultPage(): PageSetup {
     showNorth: false,
     northAngle: 0,
     showFrame: true,
+    showAerial: false,
+    showSketch: false,
   };
 }
 
@@ -104,7 +107,7 @@ export function newFloor(name: string, level: number, country: string): Floor {
 }
 
 export function newBuilding(name: string, country: string): Building {
-  return { id: uid('bld'), name, address: '', floors: [newFloor('Rez-de-chaussée', 0, country)] };
+  return { id: uid('bld'), name, address: '', floors: [newFloor('Niveau 0', 0, country)] };
 }
 
 export function newProject(name = 'Nouveau projet', country = 'BE'): Project {
@@ -138,11 +141,11 @@ export function elementDefaults(type: Element['type'], routeColor = '#00843d'): 
         stroke: '#8795a3', strokeWidth: 1.5, dash: 'solid', label: '', labelSize: 16, labelColor: '#3b4754', labelBold: false, showArea: false, labelDx: 0, labelDy: 0,
       };
     case 'door':
-      return { ...common, layer: 'building', x: 0, y: 0, width: 90, swing: 'left', doorType: 'single', emergency: false, color: '#1d2630' };
+      return { ...common, layer: 'building', x: 0, y: 0, width: 90, swing: 'left', doorType: 'single', emergency: false, fireRated: false, fireRating: 'CF', color: '#1d2630' };
     case 'window':
       return { ...common, layer: 'building', x: 0, y: 0, width: 120, depth: 12, panes: 2, color: '#1d2630' };
     case 'stairs':
-      return { ...common, layer: 'building', x: 0, y: 0, w: 120, h: 240, steps: 10, color: '#3b4754', fill: '#ffffff', arrow: true, stairType: 'straight', label: '' };
+      return { ...common, layer: 'building', x: 0, y: 0, w: 120, h: 240, steps: 10, color: '#3b4754', fill: '#ffffff', arrow: true, split: false, stairType: 'straight', label: '' };
     case 'symbol':
       return { ...common, layer: 'symbols', x: 0, y: 0, size: 44, symbolId: 'iso-E002', label: '', labelPosition: 'below', labelSize: 0, labelColor: '#111111', halo: false };
     case 'route':

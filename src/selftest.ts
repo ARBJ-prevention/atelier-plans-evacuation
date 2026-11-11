@@ -14,6 +14,9 @@ import { makeElement, uid } from './model/defaults';
 import { canonicalJson, parseProject, serializeProject } from './model/serialize';
 import { api } from './services/api';
 import { renderPdfPage } from './services/imports';
+import { decodeDxfBytes, flattenDxf, parseDxf, renderDxfSvg, unitMeters } from './services/dxf';
+import { buildSampleDxf } from './app/sampleDxf';
+import { guessLayerRole, recognizedElements, recognizePlan } from './services/recognize';
 import { renderPagePng } from './services/exporter';
 import { currentFloor, useStore } from './store/store';
 
@@ -293,6 +296,92 @@ export async function runSelfTest(outDir: string): Promise<void> {
     try { parseProject('{tronqué'); } catch (e) { msg = (e as Error).message; }
     assert(msg.includes('JSON'), 'JSON invalide non détecté');
     return 'messages d’erreur explicites';
+  });
+
+  // 12. Import d'un plan AutoCAD (DXF) à l'échelle réelle
+  await check('Import DXF à l’échelle réelle (vectoriel, calques, unités)', async () => {
+    const text = buildSampleDxf();
+    const bytes = new TextEncoder().encode(text);
+    await api().saveBinary({ data: bytes, suggestedName: 'exemple-geometre.dxf', filterName: 'DXF', ext: 'dxf', path: out('exemple-geometre.dxf') });
+    const flat = flattenDxf(parseDxf(decodeDxfBytes(new Uint8Array(await api().readBinary(out('exemple-geometre.dxf'))))));
+    const carto = flat.layers.find((l) => l.name === 'CARTOUCHE');
+    assert(carto && !carto.defaultVisible, 'le calque gelé devrait être décoché');
+    const visible = flat.layers.filter((l) => l.defaultVisible && l.name !== 'TOPO' && l.name !== 'COTES').map((l) => l.name);
+    const result = renderDxfSvg(flat, { visibleLayers: new Set(visible), metersPerUnit: unitMeters('mm'), unitsPerMeter: 50, monochrome: true });
+    assert(Math.abs(result.widthM - 24) < 1e-6 && Math.abs(result.heightM - 14) < 1e-6, `dimensions ${result.widthM} × ${result.heightM} m au lieu de 24 × 14 m`);
+    const p = buildSampleProject();
+    const f0 = p.buildings[0].floors[0];
+    f0.elements = [];
+    f0.background = null;
+    f0.unitsPerMeter = 0;
+    S().loadProject(p, null);
+    A.applyDxfBackground('exemple-geometre.dxf', { result, unit: 'mm', unitDeclared: true, visibleLayers: visible, monochrome: true, recognize: false }, 50);
+    S().addElements([
+      makeElement('symbol', { x: 600, y: 715, symbolId: 'iso-E002', size: 44 }),
+      makeElement('symbol', { x: 250, y: 200, symbolId: 'iso-F001', size: 40 }),
+    ]);
+    S().mutateFloor((f) => { f.page = { ...f.page, paper: 'A3', orientation: 'landscape', scaleMode: 'fixed', scale: 100 }; });
+    const f = currentFloor(S())!;
+    assert(f.unitsPerMeter === 50 && f.background?.vector?.unit === 'mm', 'étage non étalonné');
+    assert(Math.abs(f.background!.naturalWidth - 1200) < 1e-6, `largeur ${f.background!.naturalWidth} u au lieu de 1200`);
+    const job = A.currentExportJob('current')!;
+    const png = await renderPagePng(job, f.variants[0].id, 150);
+    await api().saveBinary({ data: png.data, suggestedName: 'import-dxf.png', filterName: 'PNG', ext: 'png', path: out('import-dxf.png') });
+    const reopened = parseProject(serializeProject(S().project!));
+    assert(reopened.buildings[0].floors[0].background?.vector?.widthM === result.widthM, 'métadonnées DXF perdues à l’enregistrement');
+    return `24 × 14 m, ${result.count} objets, ${flat.layers.length} calques, ${result.outliers} isolé(s) écarté(s), ${(result.svg.length / 1024).toFixed(0)} Ko`;
+  });
+
+  // 13. Import DWG : conversion par ODA File Converter (simulé ici par un script aux mêmes arguments)
+  await check('Import DWG (conversion ODA File Converter simulée)', async () => {
+    const enc = new TextEncoder();
+    const dxfPath = out('exemple-geometre.dxf');
+    const sim = out('ODAFileConverter-simule.cmd');
+    const script = ['@echo off', 'if not exist "%~1\\plan.dwg" exit /b 2', 'if /i not "%~4"=="DXF" exit /b 3', `copy /y "${dxfPath}" "%~2\\plan.dxf" >nul`, 'exit /b 0'].join('\r\n');
+    await api().saveBinary({ data: enc.encode(script), suggestedName: 'ODAFileConverter-simule.cmd', filterName: 'cmd', ext: 'cmd', path: sim });
+    const dwgBytes = new Uint8Array([...enc.encode('AC1027'), 0, 0, 0, 0]);
+    const { dxf, version } = await api().dwgConvert({ data: dwgBytes, converter: sim });
+    assert(version === 'AutoCAD 2013', `version lue : ${version}`);
+    const flat = flattenDxf(parseDxf(decodeDxfBytes(new Uint8Array(dxf))));
+    assert(flat.layers.some((l) => l.name === 'MURS'), 'DXF converti illisible');
+    let msg = '';
+    try { await api().dwgConvert({ data: enc.encode('pas un dwg'), converter: sim }); } catch (e) { msg = (e as Error).message; }
+    assert(/pas un fichier DWG/.test(msg), `fichier non DWG accepté (${msg})`);
+    const status = await api().dwgStatus();
+    return `DWG ${version} → DXF (${flat.prims.length} objets) ; ODA File Converter sur ce poste : ${status.found ? status.path : 'non installé'}`;
+  });
+
+  // 14. Reconnaissance : le plan DXF est redessiné en éléments modifiables
+  await check('Reconnaissance du plan DXF (murs, portes, fenêtres, escaliers, pièces)', async () => {
+    const flat = flattenDxf(parseDxf(buildSampleDxf()));
+    const roles = Object.fromEntries(flat.layers.map((l) => [l.name, l.defaultVisible ? guessLayerRole(l.name) : 'ignore' as const]));
+    const visible = flat.layers.filter((l) => roles[l.name] !== 'ignore').map((l) => l.name);
+    const result = renderDxfSvg(flat, { visibleLayers: new Set(visible), metersPerUnit: unitMeters('mm'), unitsPerMeter: 50, monochrome: true });
+    const rec = recognizePlan(flat, { roles, origin: result.origin, unitsPerMeter: 50 });
+    const els = recognizedElements(rec, new Set(['rooms', 'walls', 'doors', 'windows', 'stairs']));
+    const p = buildSampleProject();
+    const f0 = p.buildings[0].floors[0];
+    f0.elements = []; f0.background = null; f0.unitsPerMeter = 0;
+    S().loadProject(p, null);
+    A.applyDxfBackground('exemple-geometre.dxf', { result, unit: 'mm', unitDeclared: true, visibleLayers: visible, monochrome: true, recognize: true }, 50, els);
+    S().addElements([
+      makeElement('symbol', { x: 595, y: 735, symbolId: 'iso-E002', size: 40 }),
+      makeElement('symbol', { x: 60, y: 60, symbolId: 'iso-F001', size: 34 }),
+      makeElement('symbol', { x: 60, y: 450, symbolId: 'iso-F005', size: 34 }),
+      makeElement('route', { points: [[220, 300], [440, 300], [440, 740]] }),
+    ]);
+    S().mutateFloor((f) => {
+      f.page = { ...f.page, paper: 'A3', orientation: 'landscape', scaleMode: 'fixed', scale: 100 };
+      const bgL = f.layers.find((l) => l.id === 'background');
+      if (bgL) bgL.visible = false; // le plan redessiné seul
+    });
+    const f = currentFloor(S())!;
+    const n = (t: string) => f.elements.filter((e) => e.type === t).length;
+    assert(n('area') === 5 && n('door') === 5 && n('window') === 4 && n('stairs') === 1 && n('wall') >= 10, `reconnus : ${n('area')} pièces, ${n('wall')} murs, ${n('door')} portes, ${n('window')} fenêtres, ${n('stairs')} escaliers`);
+    const job = A.currentExportJob('current')!;
+    const png = await renderPagePng(job, f.variants[0].id, 150);
+    await api().saveBinary({ data: png.data, suggestedName: 'plan-redessine.png', filterName: 'PNG', ext: 'png', path: out('plan-redessine.png') });
+    return `${n('area')} pièces nommées, ${n('wall')} murs, ${n('door')} portes, ${n('window')} fenêtres, ${n('stairs')} escalier`;
   });
 
   const report = {

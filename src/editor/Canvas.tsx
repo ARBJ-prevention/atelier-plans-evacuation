@@ -7,7 +7,7 @@ import {
   unionRects, type Rect,
 } from '../model/geometry';
 import type { Element, Floor, Pt } from '../model/types';
-import { ElementView, legendCount } from '../render/ElementView';
+import { ElementView, legendCount, polygonCentroid } from '../render/ElementView';
 import { FloorDrawing } from '../render/FloorDrawing';
 import { getBuiltinSymbol } from '../symbols/library';
 import { currentFloor, currentVariantId, useStore, type Tool } from '../store/store';
@@ -18,6 +18,8 @@ type Drag =
   | { kind: 'marquee'; start: Pt; additive: boolean }
   | { kind: 'vertex'; id: string; index: number; began: boolean }
   | { kind: 'resize'; id: string; orig: Element; startDist: number }
+  | { kind: 'side'; id: string; orig: Element; side: number }
+  | { kind: 'pscale'; id: string; orig: Element; box: Rect; handle: number }
   | { kind: 'rotate'; id: string; center: Pt }
   | { kind: 'bgmove'; start: Pt; ox: number; oy: number; began: boolean }
   | { kind: 'rect'; start: Pt };
@@ -28,6 +30,21 @@ const ZONE_STYLE = (points: Pt[]) => ({
   strokeWidth: 2.5, dash: 'dashed', label: 'Zone', labelColor: '#d52b1e', labelBold: true,
 });
 const RULER = 22;
+
+/** Champ texte éditable directement sur le plan (double-clic / F2 / Entrée), selon le type d'élément. */
+type InlineField = { key: 'label' | 'text' | 'title'; multiline: boolean; size: number };
+function inlineFieldOf(el: Element): InlineField | null {
+  switch (el.type) {
+    case 'area': return { key: 'label', multiline: true, size: el.labelSize };
+    case 'symbol': return { key: 'label', multiline: false, size: el.labelSize > 0 ? el.labelSize : Math.max(8, el.size * 0.26) };
+    case 'stairs': return { key: 'label', multiline: false, size: Math.min(el.w, el.h) * 0.16 };
+    case 'shape': return el.shape === 'line' || el.shape === 'arrow' ? null : { key: 'text', multiline: true, size: el.textSize };
+    case 'text': return { key: 'text', multiline: true, size: el.fontSize };
+    case 'legend': return { key: 'title', multiline: false, size: el.fontSize * 1.2 };
+    default: return null;
+  }
+}
+type Editing = { id: string; field: InlineField; anchor: Pt; value: string };
 const CURSORS: Partial<Record<Tool, string>> = {
   select: 'default', pan: 'grab', wall: 'crosshair', route: 'crosshair', room: 'crosshair', zone: 'crosshair',
   door: 'copy', window: 'copy', shape: 'crosshair', stairs: 'crosshair', text: 'text', symbol: 'copy', calibrate: 'crosshair', legend: 'copy',
@@ -59,6 +76,9 @@ export function Canvas({ onCalibrate }: CanvasProps) {
   const [rectDraft, setRectDraft] = useState<Rect | null>(null);
   const [guideLines, setGuideLines] = useState<{ x?: number; y?: number }>({});
   const [calib, setCalib] = useState<Pt[]>([]);
+  const [editing, setEditing] = useState<Editing | null>(null);
+  /** Élément sous le dernier appui (pour le double-clic natif, la capture du pointeur redirigeant sa cible vers le SVG). */
+  const lastDownId = useRef<string | null>(null);
 
   // ——— Taille de la zone ———
   useLayoutEffect(() => {
@@ -81,7 +101,43 @@ export function Canvas({ onCalibrate }: CanvasProps) {
   }, [fitRequest]);
 
   // Abandon des tracés en cours lors d'un changement d'outil / d'étage
-  useEffect(() => { setDraft([]); setCalib([]); setRectDraft(null); }, [tool, floor?.id]);
+  useEffect(() => { setDraft([]); setCalib([]); setRectDraft(null); setEditing(null); }, [tool, floor?.id]);
+
+  // ——— Édition du nom directement sur le plan ———
+  const startInlineEdit = useCallback((id: string) => {
+    const s = useStore.getState();
+    const f = currentFloor(s);
+    const el = f?.elements.find((x) => x.id === id);
+    if (!f || !el || el.locked) return false;
+    const field = inlineFieldOf(el);
+    if (!field) return false;
+    let anchor: Pt;
+    if (el.type === 'area') { const c = polygonCentroid(el.points); anchor = [c[0] + (el.labelDx || 0), c[1] + (el.labelDy || 0)]; }
+    else if (el.type === 'text') anchor = [el.x, el.y];
+    else { const r = elementBounds(el, legendCount(f, currentVariantId(s))); anchor = [r.x + r.w / 2, r.y + r.h / 2]; }
+    s.select([id]);
+    setEditing({ id, field, anchor, value: String((el as any)[field.key] ?? '') });
+    return true;
+  }, []);
+  const commitInlineEdit = useCallback((ed: Editing | null, value: string) => {
+    setEditing(null);
+    if (!ed) return;
+    const s = useStore.getState();
+    const cur = currentFloor(s)?.elements.find((x) => x.id === ed.id) as any;
+    if (!cur || cur[ed.field.key] === value) return;
+    s.mutateFloor((f) => { const d = f.elements.find((x) => x.id === ed.id) as any; if (d) d[ed.field.key] = value; });
+  }, []);
+  useEffect(() => {
+    const h = (ev: Event) => {
+      const id = (ev as CustomEvent<string | undefined>).detail ?? useStore.getState().selection[0];
+      if (id && !startInlineEdit(id)) {
+        const el = currentFloor(useStore.getState())?.elements.find((x) => x.id === id);
+        if (el?.type === 'text') window.dispatchEvent(new CustomEvent('evac:focus-text'));
+      }
+    };
+    window.addEventListener('evac:inline-edit', h);
+    return () => window.removeEventListener('evac:inline-edit', h);
+  }, [startInlineEdit]);
 
   const toWorld = useCallback((clientX: number, clientY: number): Pt => {
     const r = svgRef.current!.getBoundingClientRect();
@@ -111,6 +167,14 @@ export function Canvas({ onCalibrate }: CanvasProps) {
     return () => el.removeEventListener('wheel', onWheel);
   }, []);
 
+  /** Ajoute un élément posé sur le plan : retour à l'outil Sélection (élément sélectionné), sauf Maj enfoncée. */
+  const placeOne = useCallback((el: Element, keepTool = false) => {
+    const s = useStore.getState();
+    if (keepTool) { s.addElements([el], false); return; }
+    s.setTool('select');
+    s.addElements([el]);
+  }, []);
+
   // ——— Finalisation des tracés polylignes ———
   const finishPoly = useCallback((pts: Pt[]) => {
     const s = useStore.getState();
@@ -128,8 +192,8 @@ export function Canvas({ onCalibrate }: CanvasProps) {
       : { points: clean, outline: '#ffffff', arrowStyle: 'stealth' }, routeColor);
     else if (t === 'room') el = makeElement('area', { points: clean, kind: 'room', label: 'Local' });
     else el = makeElement('area', ZONE_STYLE(clean));
-    s.addElements([el], false);
-  }, []);
+    placeOne(el);
+  }, [placeOne]);
 
   // ——— Clavier propre au dessin ———
   useEffect(() => {
@@ -141,7 +205,7 @@ export function Canvas({ onCalibrate }: CanvasProps) {
       const s = useStore.getState();
       if (POLY_TOOLS.includes(s.tool) && draft.length) {
         if (e.key === 'Enter') { e.preventDefault(); finishPoly(draft); }
-        else if (e.key === 'Escape') { e.preventDefault(); setDraft([]); }
+        else if (e.key === 'Escape') { e.preventDefault(); finishPoly(draft); } // Échap termine le tracé (les points posés sont conservés)
         else if (e.key === 'Backspace') { e.preventDefault(); setDraft(draft.slice(0, -1)); }
         return;
       }
@@ -166,6 +230,11 @@ export function Canvas({ onCalibrate }: CanvasProps) {
     const p = toWorld(e.clientX, e.clientY);
     svgRef.current!.setPointerCapture(e.pointerId);
 
+    // Clic droit pendant un tracé : terminer (les points posés sont conservés).
+    if (e.button === 2) {
+      if (POLY_TOOLS.includes(s.tool) && draft.length) finishPoly(draft);
+      return;
+    }
     if (e.button === 1 || s.tool === 'pan' || spaceDown.current) {
       drag.current = { kind: 'pan', sx: e.clientX, sy: e.clientY, vx: s.view.x, vy: s.view.y };
       return;
@@ -198,6 +267,12 @@ export function Canvas({ onCalibrate }: CanvasProps) {
             const b = boxOf(el, lc)!;
             s.beginLive();
             drag.current = { kind: 'resize', id: el.id, orig: el, startDist: Math.max(1, distance(p, [b.cx, b.cy])) };
+          } else if (kind === 's') {
+            s.beginLive();
+            drag.current = { kind: 'side', id: el.id, orig: el, side: Number(arg) };
+          } else if (kind === 'pb' && 'points' in el) {
+            s.beginLive();
+            drag.current = { kind: 'pscale', id: el.id, orig: el, box: rectFromPoints(el.points), handle: Number(arg) };
           } else if (kind === 'rot') {
             const b = boxOf(el, lc)!;
             const center: Pt = el.type === 'text' ? [el.x, el.y] : [b.cx, b.cy];
@@ -207,9 +282,13 @@ export function Canvas({ onCalibrate }: CanvasProps) {
           return;
         }
         const id = target.closest('[data-id]')?.getAttribute('data-id');
+        lastDownId.current = id ?? null;
         if (id) {
           const el = elById(id);
-          if (e.detail === 2 && el?.type === 'text') { window.dispatchEvent(new CustomEvent('evac:focus-text')); return; }
+          if (e.detail === 2 && el) {
+            if (startInlineEdit(id)) return;
+            if (el.type === 'text') { window.dispatchEvent(new CustomEvent('evac:focus-text')); return; }
+          }
           if (e.shiftKey || e.ctrlKey) { s.select([id], true); return; }
           if (!s.selection.includes(id)) s.select([id]);
           const selIds = new Set(useStore.getState().selection);
@@ -234,30 +313,36 @@ export function Canvas({ onCalibrate }: CanvasProps) {
         return;
       }
       case 'wall': case 'route': case 'room': case 'zone': {
-        if (e.detail >= 2) { finishPoly(draft); return; }
+        // (un 2e clic rapide sur un mur à un seul point doit poser la fin du mur, pas l'annuler)
+        if (e.detail >= 2 && !(s.tool === 'wall' && draft.length === 1)) { finishPoly(draft); return; }
         const last = draft[draft.length - 1];
         const pt = last && e.shiftKey ? constrain45(last, sp) : sp;
         // Fermeture d'une pièce en cliquant sur le premier point
         if ((s.tool === 'room' || s.tool === 'zone') && draft.length >= 3 && distance(pt, draft[0]) < 10 / s.view.zoom) {
           finishPoly(draft); return;
         }
+        // Mur : deux clics (début, fin) puis retour à la sélection. Ctrl + clic : continuer le mur (plusieurs segments).
+        if (s.tool === 'wall' && draft.length >= 1 && !e.ctrlKey) {
+          if (distance(pt, last) < 0.5) return;
+          finishPoly([...draft, pt]); return;
+        }
         setDraft([...draft, pt]);
         return;
       }
       case 'door': {
         const dt = s.presets.doorType;
-        s.addElements([makeElement('door', { x: sp[0], y: sp[1], doorType: dt, width: dt === 'double' || dt === 'opening' ? 160 : dt === 'revolving' ? 140 : 90 })], false);
+        placeOne(makeElement('door', { x: sp[0], y: sp[1], doorType: dt, fireRated: !!s.presets.doorFire, width: dt === 'double' || dt === 'opening' ? 160 : dt === 'revolving' ? 140 : 90 }), e.shiftKey);
         return;
       }
       case 'window':
-        s.addElements([makeElement('window', { x: sp[0], y: sp[1], depth: s.presets.wallThickness })], false);
+        placeOne(makeElement('window', { x: sp[0], y: sp[1], depth: s.presets.wallThickness }), e.shiftKey);
         return;
       case 'shape':
       case 'stairs':
         drag.current = { kind: 'rect', start: sp };
         setRectDraft({ x: sp[0], y: sp[1], w: 0, h: 0 });
         return;
-      case 'symbol': placeSymbol(s.pendingSymbol, sp); return;
+      case 'symbol': placeSymbol(s.pendingSymbol, sp, e.shiftKey); return;
       case 'text': {
         const el = makeElement('text', { x: sp[0], y: sp[1], text: 'Nouveau texte' });
         s.addElements([el]);
@@ -284,7 +369,8 @@ export function Canvas({ onCalibrate }: CanvasProps) {
     }
   };
 
-  const placeSymbol = (symbolId: string, at: Pt) => {
+  /** Pose un pictogramme ; sauf Maj enfoncée, on revient ensuite à l'outil Sélection avec le pictogramme sélectionné. */
+  const placeSymbol = (symbolId: string, at: Pt, keepTool = false) => {
     const s = useStore.getState();
     if (!symbolId) { s.toast('Choisissez d’abord un pictogramme dans la bibliothèque.', 'info'); return; }
     const def = getBuiltinSymbol(symbolId);
@@ -294,7 +380,8 @@ export function Canvas({ onCalibrate }: CanvasProps) {
       size: isYah ? 56 : 48,
       ...(isYah ? { variantId: currentVariantId(s) } : {}),
     });
-    s.addElements([el], false);
+    if (keepTool) s.addElements([el], false);
+    else { s.setTool('select'); s.addElements([el]); }
     if (isYah && floor.variants.length > 1) {
       s.toast('« Vous êtes ici » ajouté uniquement à la version active du plan.', 'info');
     }
@@ -362,7 +449,7 @@ export function Canvas({ onCalibrate }: CanvasProps) {
         const ratio = distance(p, [b.cx, b.cy]) / d.startDist;
         let patch: Record<string, number> = {};
         switch (d.orig.type) {
-          case 'symbol': patch = { size: Math.max(8, Math.round(2 * Math.max(lx, ly))) }; break;
+          case 'symbol': patch = { size: Math.max(8, Math.round(2 * Math.max(lx / (o.stretchX ?? 1), ly / (o.stretchY ?? 1)))) }; break;
           case 'stairs': patch = { w: Math.max(20, Math.round(2 * lx)), h: Math.max(20, Math.round(2 * ly)) }; break;
           case 'door': patch = { width: Math.max(30, Math.round(2 * lx)) }; break;
           case 'window': patch = { width: Math.max(30, Math.round(2 * lx)) }; break;
@@ -377,6 +464,43 @@ export function Canvas({ onCalibrate }: CanvasProps) {
           case 'text': case 'legend': patch = { fontSize: Math.max(4, Math.round(o.fontSize * ratio * 10) / 10) }; break;
         }
         s.mutateFloor((f) => { const x = f.elements.find((q) => q.id === d.id); if (x) Object.assign(x, patch); }, { history: false, keepValidation: true });
+        return;
+      }
+      case 'side': {
+        // Étirement par un côté : une seule dimension change (symétrique autour du centre).
+        const o = d.orig as any;
+        const b = boxOf(d.orig, lc)!;
+        const local = rotatePoint(sp, [b.cx, b.cy], -(o.rotation || 0));
+        const horiz = d.side === 1 || d.side === 3;
+        const half = Math.abs(horiz ? local[0] - b.cx : local[1] - b.cy);
+        let patch: Record<string, number> = {};
+        switch (d.orig.type) {
+          case 'symbol': {
+            const v = Math.max(0.15, Math.min(12, Math.round((2 * half / o.size) * 100) / 100));
+            patch = horiz ? { stretchX: v } : { stretchY: v };
+            break;
+          }
+          case 'shape': case 'image': case 'stairs': {
+            const v = Math.max(d.orig.type === 'stairs' ? 20 : 6, Math.round(2 * half));
+            patch = horiz ? { w: v } : { h: v };
+            break;
+          }
+        }
+        s.mutateFloor((f) => { const x = f.elements.find((q) => q.id === d.id); if (x) Object.assign(x, patch); }, { history: false, keepValidation: true });
+        return;
+      }
+      case 'pscale': {
+        // Étirement d'un tracé (flèche, itinéraire, mur, pièce) par son cadre : le côté opposé reste fixe.
+        const r = d.box;
+        const hi = d.handle;
+        const xs = hi === 0 || hi === 3 || hi === 7 ? -1 : hi === 1 || hi === 2 || hi === 5 ? 1 : 0;
+        const ys = hi === 0 || hi === 1 || hi === 4 ? -1 : hi === 2 || hi === 3 || hi === 6 ? 1 : 0;
+        const ax = xs < 0 ? r.x + r.w : r.x, ay = ys < 0 ? r.y + r.h : r.y;
+        let kx = xs && r.w > 0.5 ? Math.max(0.05, (xs > 0 ? sp[0] - ax : ax - sp[0]) / r.w) : 1;
+        let ky = ys && r.h > 0.5 ? Math.max(0.05, (ys > 0 ? sp[1] - ay : ay - sp[1]) / r.h) : 1;
+        if (e.shiftKey && xs && ys) { const k = Math.max(kx, ky); kx = k; ky = k; }
+        const pts = ((d.orig as any).points as Pt[]).map((q) => [ax + (q[0] - ax) * kx, ay + (q[1] - ay) * ky] as Pt);
+        s.mutateFloor((f) => { const x = f.elements.find((q) => q.id === d.id) as any; if (x) x.points = pts; }, { history: false, keepValidation: true });
         return;
       }
       case 'rotate': {
@@ -426,11 +550,9 @@ export function Canvas({ onCalibrate }: CanvasProps) {
         const sh = s.presets.shape;
         const el = makeElement('shape', { x: cx, y: cy, w: r && r.w > 10 ? w : 160, h: sh === 'line' ? 0 : r && r.h > 10 ? h : 100, shape: sh,
           ...(sh === 'line' ? { fill: 'none', stroke: '#1d2630', strokeWidth: 3 } : {}) });
-        s.addElements([el]);
-        s.setTool('select');
-        useStore.setState({ selection: [el.id] });
+        placeOne(el, e.shiftKey);
       } else {
-        s.addElements([makeElement('stairs', { x: cx, y: cy, w, h, steps: Math.max(3, Math.round(Math.max(w, h) / 25)), stairType: s.presets.stairType })], false);
+        placeOne(makeElement('stairs', { x: cx, y: cy, w, h, steps: Math.max(3, Math.round(Math.max(w, h) / 25)), stairType: s.presets.stairType, arrow: s.presets.stairArrow !== false, split: !!s.presets.stairSplit }), e.shiftKey);
       }
     }
   };
@@ -469,6 +591,23 @@ export function Canvas({ onCalibrate }: CanvasProps) {
       el.points.forEach((pt, i) => handles.push(
         <rect key={`v${i}`} data-handle={`v:${i}`} className="handle" x={pt[0] - hs / 2} y={pt[1] - hs / 2} width={hs} height={hs} />,
       ));
+      // Cadre d'étirement : 4 coins + 4 côtés (le côté opposé reste fixe).
+      const r = rectFromPoints(el.points);
+      const pad = 10 / z;
+      const x0 = r.x - pad, y0 = r.y - pad, x1 = r.x + r.w + pad, y1 = r.y + r.h + pad;
+      const mxp = (x0 + x1) / 2, myp = (y0 + y1) / 2;
+      handles.push(<rect key="pbox" className="sel-box" x={x0} y={y0} width={x1 - x0} height={y1 - y0} />);
+      const bh: [number, number, number, string][] = [
+        [0, x0, y0, 'nwse-resize'], [1, x1, y0, 'nesw-resize'], [2, x1, y1, 'nwse-resize'], [3, x0, y1, 'nesw-resize'],
+        [4, mxp, y0, 'ns-resize'], [5, x1, myp, 'ew-resize'], [6, mxp, y1, 'ns-resize'], [7, x0, myp, 'ew-resize'],
+      ];
+      bh.forEach(([i, hx, hy, cur]) => {
+        if ((i === 5 || i === 7) && r.w < 0.5) return;
+        if ((i === 4 || i === 6) && r.h < 0.5) return;
+        if (i < 4 && (r.w < 0.5 || r.h < 0.5)) return;
+        handles.push(<rect key={`pb${i}`} data-handle={`pb:${i}`} className="handle-box" style={{ cursor: cur }}
+          x={hx - hs * 0.4} y={hy - hs * 0.4} width={hs * 0.8} height={hs * 0.8} />);
+      });
     } else {
       const b = boxOf(el, lc)!;
       const pivot: Pt = el.type === 'text' ? [el.x, el.y] : [b.cx, b.cy];
@@ -478,6 +617,14 @@ export function Canvas({ onCalibrate }: CanvasProps) {
       corners.forEach((c, i) => handles.push(
         <rect key={`r${i}`} data-handle={`r:${i}`} className="handle" x={c[0] - hs / 2} y={c[1] - hs / 2} width={hs} height={hs} />,
       ));
+      // Poignées de côté : étirement horizontal ou vertical seul.
+      if (el.type === 'symbol' || el.type === 'image' || el.type === 'stairs' || el.type === 'shape') {
+        const sides: Pt[] = [[b.cx, b.cy - b.h / 2], [b.cx + b.w / 2, b.cy], [b.cx, b.cy + b.h / 2], [b.cx - b.w / 2, b.cy]].map((q) => rot(q as Pt));
+        sides.forEach((c, i) => {
+          if (el.type === 'shape' && el.shape === 'line' && (i === 0 || i === 2)) return;
+          handles.push(<rect key={`s${i}`} data-handle={`s:${i}`} className="handle-side" x={c[0] - hs * 0.4} y={c[1] - hs * 0.4} width={hs * 0.8} height={hs * 0.8} />);
+        });
+      }
       if (el.type !== 'legend') {
         const top = rot([b.cx, b.cy - b.h / 2]);
         const knob = rot([b.cx, b.cy - b.h / 2 - 26 / z]);
@@ -551,6 +698,13 @@ export function Canvas({ onCalibrate }: CanvasProps) {
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
         onPointerLeave={() => setCursor(null)}
+        onDoubleClick={() => {
+          const id = lastDownId.current;
+          if (!id || editing || useStore.getState().tool !== 'select') return;
+          const el = elById(id);
+          if (startInlineEdit(id)) { drag.current = null; return; }
+          if (el?.type === 'text') window.dispatchEvent(new CustomEvent('evac:focus-text'));
+        }}
         onContextMenu={(e) => e.preventDefault()}
       >
         <defs>
@@ -588,10 +742,61 @@ export function Canvas({ onCalibrate }: CanvasProps) {
           </g>
         </g>
       </svg>
-      {hint && <div className="canvas-hint">{hint}</div>}
+      {editing && (
+        <InlineEditor
+          key={editing.id}
+          editing={editing}
+          left={editing.anchor[0] * z + view.x}
+          top={editing.anchor[1] * z + view.y}
+          fontSize={Math.min(40, Math.max(13, editing.field.size * z))}
+          onCommit={(v) => commitInlineEdit(editing, v)}
+          onCancel={() => setEditing(null)}
+        />
+      )}
+      {hint && !editing && <div className="canvas-hint">{hint}</div>}
+      {editing && <div className="canvas-hint">Entrée : valider{editing.field.multiline ? ' • Maj+Entrée : nouvelle ligne' : ''} • Échap : annuler</div>}
       <CoordReadout floor={floor} cursor={cursor} />
       {useStore.getState().rulers && <Rulers w={size.w} h={size.h} view={view} upm={floor.unitsPerMeter} cursor={cursor} />}
     </div>
+  );
+}
+
+/** Zone de saisie posée sur le plan pour renommer un élément sans passer par le panneau latéral. */
+function InlineEditor({ editing, left, top, fontSize, onCommit, onCancel }: {
+  editing: Editing; left: number; top: number; fontSize: number; onCommit(v: string): void; onCancel(): void;
+}) {
+  const ref = useRef<HTMLTextAreaElement>(null);
+  const [value, setValue] = useState(editing.value);
+  const done = useRef(false);
+  // Focus différé : le mousedown du double-clic redonne sinon le focus au plan juste après (blur → fermeture immédiate).
+  useEffect(() => {
+    const h = window.setTimeout(() => { const t = ref.current; if (t) { t.focus(); t.select(); } }, 0);
+    return () => window.clearTimeout(h);
+  }, []);
+  const lines = Math.max(1, value.split('\n').length);
+  const longest = Math.max(4, ...value.split('\n').map((l) => l.length));
+  const finish = (commit: boolean) => {
+    if (done.current) return;
+    done.current = true;
+    if (commit) onCommit(value); else onCancel();
+  };
+  return (
+    <textarea
+      ref={ref}
+      className="inline-edit"
+      value={value}
+      rows={lines}
+      spellCheck={false}
+      style={{ left, top, fontSize, width: `calc(${longest + 2}ch + 16px)` }}
+      onChange={(e) => setValue(e.target.value)}
+      onPointerDown={(e) => e.stopPropagation()}
+      onKeyDown={(e) => {
+        e.stopPropagation();
+        if (e.key === 'Escape') { e.preventDefault(); finish(false); }
+        else if (e.key === 'Enter' && !(e.shiftKey && editing.field.multiline)) { e.preventDefault(); finish(true); }
+      }}
+      onBlur={() => finish(true)}
+    />
   );
 }
 
@@ -637,15 +842,15 @@ function Rulers({ w, h, view, upm, cursor }: { w: number; h: number; view: { x: 
 }
 
 const HINTS: Partial<Record<Tool, string>> = {
-  wall: 'Cliquez pour poser les points du mur • Maj : angles à 45° • Double-clic ou Entrée : terminer • Retour arrière : annuler le dernier point • Échap : abandonner',
-  route: 'Cliquez pour poser les points de passage • Maj : angles à 45° • Double-clic ou Entrée : terminer • Échap : abandonner',
-  room: 'Cliquez les angles de la pièce • Cliquez sur le premier point, double-cliquez ou Entrée pour fermer',
-  zone: 'Cliquez les angles de la zone • Cliquez sur le premier point, double-cliquez ou Entrée pour fermer',
-  door: 'Cliquez pour placer une porte (type choisi dans le ruban Bâtiment), puis ajustez rotation et largeur • Échap : terminer',
-  window: 'Cliquez sur un mur pour placer une fenêtre, puis ajustez rotation et largeur • Échap : terminer',
+  wall: 'Clic : début du mur • 2e clic : fin du mur (retour à la sélection) • Maj : angles à 45° • Ctrl + clic : continuer le mur en plusieurs segments',
+  route: 'Cliquez pour poser les points de passage • Maj : angles à 45° • Double-clic, Entrée, Échap ou clic droit : terminer',
+  room: 'Cliquez les angles de la pièce • Cliquez sur le premier point, double-clic, Entrée, Échap ou clic droit pour fermer',
+  zone: 'Cliquez les angles de la zone • Cliquez sur le premier point, double-clic, Entrée, Échap ou clic droit pour fermer',
+  door: 'Cliquez pour placer une porte (type choisi dans le ruban Bâtiment) • retour automatique à la sélection • Maj + clic : en placer plusieurs',
+  window: 'Cliquez sur un mur pour placer une fenêtre • retour automatique à la sélection • Maj + clic : en placer plusieurs',
   shape: 'Tracez un rectangle pour dessiner la forme choisie dans le ruban Insérer',
-  stairs: 'Tracez un rectangle (ou cliquez) pour placer un escalier',
-  symbol: 'Cliquez sur le plan pour placer le pictogramme choisi (ou glissez-le depuis la bibliothèque) • Échap : terminer',
+  stairs: 'Tracez un rectangle (ou cliquez) pour placer un escalier • Maj : en placer plusieurs',
+  symbol: 'Cliquez sur le plan pour placer le pictogramme choisi (retour automatique à la sélection) • Maj + clic : en placer plusieurs • Échap : annuler',
   text: 'Cliquez pour placer un texte',
   legend: 'Cliquez pour placer une légende automatique',
   calibrate: 'Étalonnage : cliquez deux points dont vous connaissez la distance réelle (ex. une cote du plan)',

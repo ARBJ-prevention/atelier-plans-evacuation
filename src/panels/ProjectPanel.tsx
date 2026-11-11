@@ -35,7 +35,7 @@ export function ProjectPanel() {
   };
   const addFloor = async (bid: string) => {
     const b = project.buildings.find((x) => x.id === bid)!;
-    const n = await promptDialog('Nouvel étage', 'Nom de l’étage', `Étage ${b.floors.length}`);
+    const n = await promptDialog('Nouvel étage', 'Nom de l’étage', `Niveau ${b.floors.length}`);
     if (!n) return;
     const f = newFloor(n, b.floors.length, project.country);
     f.titleBlock.author = b.floors[0]?.titleBlock.author ?? '';

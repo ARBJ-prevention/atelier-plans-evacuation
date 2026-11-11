@@ -79,7 +79,7 @@ export function sampleOffices(): Project {
 
   [[200, 0], [550, 0], [850, 0], [1125, 0], [1375, 0]].forEach(([x]) => P.door(x, 400, 0));
   P.door(175, 500, 180, 200, { doorType: 'opening' });
-  P.door(550, 500, 180, 100); P.door(850, 500, 180); P.door(1050, 500, 180);
+  P.door(550, 500, 180, 100, { fireRated: true }); P.door(850, 500, 180); P.door(1050, 500, 180);
   P.door(1325, 500, 180, 100, { emergency: true });
   P.door(175, 900, 180, 170, { doorType: 'double', emergency: true });
   P.door(1500, 450, 90, 100, { emergency: true, swing: 'right' });

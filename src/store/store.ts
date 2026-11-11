@@ -15,7 +15,13 @@ export interface GridSettings { show: boolean; snap: boolean; size: number; styl
 /** Préréglages des outils (choisis dans le ruban). */
 export interface ToolPresets {
   doorType: 'single' | 'double' | 'sliding' | 'revolving' | 'opening';
+  /** Nouvelles portes coupe-feu. */
+  doorFire: boolean;
   stairType: 'straight' | 'landing' | 'escalator';
+  /** Flèche de montée sur les nouveaux escaliers. */
+  stairArrow: boolean;
+  /** Séparation centrale sur les nouveaux escaliers. */
+  stairSplit: boolean;
   shape: 'rect' | 'ellipse' | 'triangle' | 'diamond' | 'hexagon' | 'line' | 'arrow' | 'star';
   routeKind: 'principal' | 'secondaire';
   wallThickness: number;
@@ -122,7 +128,7 @@ export const useStore = create<EditorState>((set, get) => ({
   grid: prefs.grid,
   guides: prefs.guides,
   rulers: prefs.rulers,
-  presets: { doorType: 'single', stairType: 'straight', shape: 'rect', routeKind: 'principal', wallThickness: 12 },
+  presets: { doorType: 'single', doorFire: false, stairType: 'straight', stairArrow: true, stairSplit: false, shape: 'rect', routeKind: 'principal', wallThickness: 12 },
   clipboard: [],
   toasts: [],
   fitRequest: 0,

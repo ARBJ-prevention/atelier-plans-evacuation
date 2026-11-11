@@ -140,11 +140,26 @@ export function App() {
         };
         if (map[k]) { e.preventDefault(); runCommand(map[k]); return; }
         if (editMap[k] && !typing) { e.preventDefault(); runCommand(editMap[k]); return; }
+        const st = useStore.getState();
+        if (!typing && st.project && st.selection.length) {
+          if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') { e.preventDefault(); st.rotateSelection(e.key === 'ArrowLeft' ? -90 : 90); return; }
+          if (k === 'l') { e.preventDefault(); st.toggleLockSelection(); return; }
+        }
         return;
       }
       if (typing || !useStore.getState().project) return;
       const s = useStore.getState();
       if (e.key === 'Delete' || (e.key === 'Backspace' && s.tool === 'select')) { e.preventDefault(); s.deleteSelection(); return; }
+      if ((e.key === 'F2' || (e.key === 'Enter' && s.tool === 'select')) && s.selection.length === 1) {
+        e.preventDefault();
+        window.dispatchEvent(new CustomEvent('evac:inline-edit', { detail: s.selection[0] }));
+        return;
+      }
+      if ((e.key === 'PageUp' || e.key === 'PageDown') && s.selection.length) {
+        e.preventDefault();
+        s.reorderSelection(e.key === 'PageUp' ? 'front' : 'back');
+        return;
+      }
       if (e.key.startsWith('Arrow') && s.selection.length) {
         e.preventDefault();
         const step = e.shiftKey ? s.grid.size * 5 : s.grid.size / (e.altKey ? 10 : 1);
@@ -351,7 +366,7 @@ function HelpDialog({ kind, onClose, version }: { kind: 'guide' | 'shortcuts' | 
             <h2>Guide d’utilisation rapide</h2>
             <ol>
               <li><b>Créer un projet</b> (Accueil › Nouveau) ou partir d’un <b>plan d’exemple</b>, puis organiser bâtiments et étages dans l’onglet <i>Projet</i>.</li>
-              <li><b>Importer un plan de fond</b> : ruban <i>Insérer › PDF / image</i>. Opacité, niveaux de gris et taille dans l’onglet <i>Fond</i> des propriétés.</li>
+              <li><b>Importer un plan de fond</b> : ruban <i>Insérer › Plan DXF / PDF</i>. Un fichier DXF (AutoCAD) est importé en vectoriel à l’échelle réelle, sans étalonnage. Opacité, niveaux de gris et taille dans l’onglet <i>Fond</i> des propriétés.</li>
               <li><b>Étalonner l’échelle</b> (K) : cliquez deux points d’une cote connue et saisissez la distance réelle.</li>
               <li><b>Dessiner</b> depuis le ruban <i>Bâtiment</i> : murs (M), portes (P), fenêtres (F), escaliers (E), pièces (R), zones (Z).</li>
               <li><b>Placer les pictogrammes ISO 7010</b> depuis l’onglet <i>Symboles</i> (recherche par nom ou code, clic puis clic, ou glisser-déposer).</li>
@@ -370,7 +385,8 @@ function HelpDialog({ kind, onClose, version }: { kind: 'guide' | 'shortcuts' | 
               {[
                 ['V / H', 'Sélection / déplacer la vue'], ['M, P, F, E', 'Mur, porte, fenêtre, escalier'], ['R, Z, S', 'Pièce, zone, forme'], ['I, T, L, K', 'Itinéraire, texte, légende, étalonnage'],
                 ['Molette', 'Zoom'], ['Espace + glisser, clic milieu', 'Déplacer la vue'], ['Ctrl+Z / Ctrl+Y', 'Annuler / rétablir'],
-                ['Ctrl+C / X / V / D', 'Copier / couper / coller / dupliquer'], ['Suppr', 'Supprimer'], ['Ctrl+G / Ctrl+Maj+G', 'Grouper / dégrouper'],
+                ['Ctrl+C / X / V / D', 'Copier / couper / coller / dupliquer'], ['Suppr', 'Supprimer'], ['Double-clic, F2 ou Entrée', 'Renommer sur le plan (pièce, pictogramme, texte, forme…)'],
+                ['Ctrl+← / Ctrl+→', 'Pivoter de −90° / +90°'], ['Page préc. / Page suiv.', 'Mettre devant / derrière'], ['Ctrl+L', 'Verrouiller / déverrouiller'], ['Ctrl+G / Ctrl+Maj+G', 'Grouper / dégrouper'],
                 ['Flèches (Maj : ×5, Alt : fin)', 'Déplacer la sélection'], ['Maj pendant le tracé', 'Angles à 45°'], ['Alt pendant un déplacement', 'Sans magnétisme'],
                 ['Entrée / Échap / Retour arrière', 'Terminer / abandonner / retirer le dernier point'], ['Ctrl+S / Ctrl+Maj+S', 'Enregistrer / enregistrer sous'],
                 ['Ctrl+P / Ctrl+E', 'Aperçu et impression / export PDF'], ['Ctrl+0', 'Ajuster à la fenêtre'],

@@ -31,7 +31,7 @@ Enregistrement : écriture dans un fichier temporaire, synchronisation disque, c
 |---|---|
 | `id`, `name`, `level` | Identité de l'étage. |
 | `unitsPerMeter` | Nombre d'unités plan par mètre (0 = non étalonné). |
-| `background` | `null` ou `{ src, sourceName, naturalWidth, naturalHeight, x, y, scale, opacity, locked, grayscale }` — `scale` = unités plan par pixel. |
+| `background` | `null` ou `{ src, sourceName, naturalWidth, naturalHeight, x, y, scale, opacity, locked, grayscale, vector? }` — `scale` = unités plan par pixel. Pour un plan DXF, `src` est un SVG vectoriel dont `naturalWidth` × `naturalHeight` sont déjà en unités plan (`scale` = 1) et `vector` = `{ format: "dxf" | "dwg", unit, unitDeclared, widthM, heightM, layers }` (unité source, dimensions réelles en mètres, calques importés). |
 | `layers` | 5 calques `{ id, name, visible, locked }` : `background`, `building`, `routes`, `symbols`, `annotations`. |
 | `elements` | Éléments dessinés (ordre = ordre de dessin dans un calque). |
 | `variants` | Versions du plan `{ id, name }` (au moins une). |
@@ -45,11 +45,12 @@ Enregistrement : écriture dans un fichier temporaire, synchronisation disque, c
 | `marginMm` | marge en mm |
 | `scaleMode`, `scale` | `fit` (ajusté) ou `fixed` avec `scale` = N de l'échelle 1:N |
 | `area`, `customArea` | `auto` (tout le plan) ou `custom` avec `{ x, y, w, h }` en unités plan |
-| `theme` | `moderne` `epure` `institutionnel` `signaletique` |
+| `theme` | `moderne` `epure` `institutionnel` `signaletique` `encadre` `bandeaux` `technique` `horizon` `editorial` |
 | `accentColor`, `planBackground` | couleurs `#rrggbb` |
 | `sidePosition` | position de la légende et des consignes : `right` `left` `bottom` |
 | `showTitleBlock`, `showLegend`, `showInstructions`, `showEmergencyNumbers`, `showWatermark`, `showScaleBar`, `showNorth`, `showFrame` | booléens |
 | `northAngle` | angle de la flèche du nord (°) |
+| `frames` | facultatif : zones encadrées choisies par l'utilisateur, `{ plan, legend, instructions, aerial, sketch, footer }` (booléens) ; une zone absente suit le thème |
 
 ## Éléments
 
@@ -61,7 +62,7 @@ Valeurs partagées : `dash` ∈ `solid` `dashed` `dotted` `dashdot` `longdash` ;
 |---|---|---|
 | `wall` | `points`, `thickness`, `color`, `wallStyle: solid|hatch|outline`, `closed` | polyligne |
 | `area` | `kind: room|zone`, `points`, `fill`, `fillOpacity`, `pattern`, `patternColor`, `stroke`, `strokeWidth`, `dash`, `label`, `labelSize`, `labelColor`, `labelBold`, `showArea`, `labelDx`, `labelDy` | polygone |
-| `door` | `x`, `y`, `width`, `swing: left|right`, `doorType: single|double|sliding|revolving|opening`, `emergency`, `color` | milieu de l'ouverture |
+| `door` | `x`, `y`, `width`, `swing: left|right`, `doorType: single|double|sliding|revolving|opening`, `emergency` (issue de secours), `fireRated` (porte coupe-feu), `fireRating` (libellé affiché, ex. « CF », « EI 30 »), `color` | milieu de l'ouverture |
 | `window` | `x`, `y`, `width`, `depth`, `panes`, `color` | centre |
 | `stairs` | `x`, `y`, `w`, `h`, `steps`, `color`, `fill`, `arrow`, `stairType: straight|landing|escalator`, `label` | centre |
 | `symbol` | `x`, `y`, `size`, `symbolId`, `label`, `labelPosition: below|above|right|left`, `labelSize` (0 = auto), `labelColor`, `halo` | centre |
