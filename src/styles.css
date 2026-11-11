@@ -230,7 +230,7 @@ h3 { font-size: 10.5px; text-transform: uppercase; letter-spacing: .08em; color:
 .layer-name:disabled { cursor: default; }
 .layer-count { font-size: 11px; color: var(--muted); background: var(--panel-3); border-radius: 10px; padding: 0 7px; }
 .toggle-list { display: flex; flex-direction: column; }
-label.check { display: flex; align-items: center; gap: 8px; padding: 3px 0; cursor: pointer; }
+label.check { display: flex; flex-direction: row; align-items: center; gap: 8px; padding: 3px 0; cursor: pointer; }
 .field { display: flex; flex-direction: column; gap: 4px; margin: 8px 0; }
 .field.inline { flex-direction: row; align-items: center; justify-content: space-between; gap: 8px; }
 .field input, .field select, .field textarea { padding: 6px 8px; border: 1px solid var(--line-2); border-radius: var(--radius); background: #fff; }
@@ -269,6 +269,7 @@ label.check { display: flex; align-items: center; gap: 8px; padding: 3px 0; curs
 .overlay .handle-rot { fill: #fff; stroke: var(--accent); stroke-width: 2; vector-effect: non-scaling-stroke; cursor: grab; }
 .overlay .marquee { fill: rgba(31, 111, 209, .08); stroke: var(--sel); stroke-width: 1; stroke-dasharray: 4 3; vector-effect: non-scaling-stroke; }
 .overlay .guide { stroke: #e0258f; stroke-width: 1; vector-effect: non-scaling-stroke; pointer-events: none; }
+.overlay .wall-snap { fill: none; stroke: #e0258f; stroke-width: 2; vector-effect: non-scaling-stroke; pointer-events: none; }
 .draft-line { fill: none; stroke: var(--sel); stroke-width: 1; stroke-dasharray: 4 3; vector-effect: non-scaling-stroke; }
 .draft-pt { fill: var(--sel); }
 .draft-rect { fill: rgba(31,111,209,.1); stroke: var(--sel); stroke-dasharray: 4 3; vector-effect: non-scaling-stroke; }
@@ -442,6 +443,7 @@ kbd { background: var(--panel-2); border: 1px solid var(--line-2); border-bottom
 .dxf-preview img { max-width: 100%; max-height: 100%; object-fit: contain; }
 .dxf-side .field { margin-top: 0; }
 .dxf-dims { display: flex; flex-direction: column; gap: 2px; margin: 6px 0 4px; font-size: 15px; }
+.field small.dxf-unit-fix { color: var(--warn); font-weight: 600; }
 .dxf-layers { grid-column: 1 / -1; }
 .dxf-layers .row { align-items: center; flex-wrap: wrap; }
 .dxf-filter { flex: 1; min-width: 120px; padding: 4px 8px; border: 1px solid var(--line-2); border-radius: var(--radius); }
@@ -452,6 +454,21 @@ kbd { background: var(--panel-2); border: 1px solid var(--line-2); border-bottom
 .dxf-layers .swatch { width: 10px; height: 10px; border-radius: 2px; flex: none; border: 1px solid rgba(0,0,0,.15); }
 .dxf-layers .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 @media (max-width: 700px) { .dxf-import { grid-template-columns: 1fr; } .dxf-layers ul { columns: 1; } }
+
+/* Fenêtres d'aperçu de plan presque plein écran : grand aperçu à gauche, réglages et calques à droite */
+.modal.large { width: min(1600px, calc(100vw - 32px)); height: calc(100vh - 40px); display: flex; flex-direction: column; overflow: hidden; }
+.modal.large > .dxf-import, .modal.large > .recog { flex: 1; min-height: 0; grid-template-columns: minmax(0, 1fr) 360px; grid-template-rows: auto minmax(0, 1fr); }
+.modal.large .dxf-preview, .modal.large .recog-preview { grid-row: 1 / span 2; height: auto; min-height: 0; }
+.modal.large .dxf-preview img { width: 100%; height: 100%; }
+.modal.large .dxf-layers, .modal.large .recog-roles { grid-column: 2; display: flex; flex-direction: column; min-height: 0; }
+.modal.large .dxf-layers ul, .modal.large .recog-roles ul { flex: 1; min-height: 0; max-height: none; columns: 1; grid-template-columns: 1fr; align-content: start; }
+.modal.large .modal-actions { margin-top: 12px; }
+@media (max-width: 900px) {
+  .modal.large { height: auto; max-height: calc(100vh - 40px); overflow-y: auto; }
+  .modal.large > .dxf-import, .modal.large > .recog { grid-template-columns: 1fr; grid-template-rows: none; }
+  .modal.large .dxf-preview, .modal.large .recog-preview { grid-row: auto; height: 55vh; }
+  .modal.large .dxf-layers, .modal.large .recog-roles { grid-column: auto; }
+}
 
 /* Reconnaissance du plan */
 .recog { display: grid; grid-template-columns: 1fr 210px; gap: 12px 16px; margin: 4px 0 8px; }

@@ -78,6 +78,26 @@ export function guessUnit(maxDim: number): string {
   return 'm';
 }
 
+/**
+ * Contrôle de vraisemblance de l'unité d'après les battants de porte (arcs de 30° à 120°) :
+ * on retient l'unité pour laquelle le plus d'arcs ont une taille de porte (rayon de 55 cm à 1,25 m).
+ * Renvoie l'unité proposée et la largeur de porte typique obtenue avec l'unité actuelle,
+ * ou null si l'unité actuelle est plausible ou si le dessin ne permet pas de trancher.
+ */
+export function checkUnitByDoors(flat: FlatDxf, visible: Set<string>, current: string): { unit: string; doorM: number } | null {
+  const radii = flat.prims
+    .filter((p): p is Extract<DxfPrim, { kind: 'line' }> => p.kind === 'line' && !!p.arc && p.chain.every((l) => visible.has(l)))
+    .filter((p) => Math.abs(p.arc!.sweep) >= 30 && Math.abs(p.arc!.sweep) <= 120)
+    .map((p) => p.arc!.r);
+  const doorSized = (key: string) => radii.filter((r) => r * unitMeters(key) >= 0.55 && r * unitMeters(key) <= 1.25);
+  const counts = ['mm', 'cm', 'm', 'dm', 'in', 'ft'].map((key) => ({ key, doors: doorSized(key) }));
+  const best = counts.reduce((a, b) => (b.doors.length > a.doors.length ? b : a));
+  const here = counts.find((c) => c.key === current)?.doors.length ?? 0;
+  if (best.key === current || best.doors.length < 5 || best.doors.length < 2 * here) return null;
+  const sorted = [...best.doors].sort((a, b) => a - b);
+  return { unit: best.key, doorM: sorted[Math.floor(sorted.length / 2)] * unitMeters(current) };
+}
+
 export function unitMeters(key: string): number {
   return DXF_UNITS.find((u) => u.key === key)?.meters ?? 1;
 }

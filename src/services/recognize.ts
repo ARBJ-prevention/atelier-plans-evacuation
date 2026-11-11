@@ -30,15 +30,28 @@ const norm = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCa
 export function guessLayerRole(name: string): LayerRole {
   const n = norm(name);
   const has = (re: RegExp) => re.test(n);
+  // un calque de textes (« TEXTES COTES ») porte souvent les surfaces des pièces ; les cotes chiffrées seules sont écartées ensuite
+  if (has(/TEXT|TXT/) && !has(/\bDIM|DIMENS|COTATION|CARTOUCHE|TITLE|TITRE/)) return 'labels';
   if (has(/DEFPOINTS|VIEWPORT|COTE|COTATION|\bDIM|DIMENS|HACH|HATCH|MOBIL|FURN|MEUBL|TOPO|ALTI|NIVEL|POINTS?\b|CARTOUCHE|TITLE|TITRE|\bAXE|AXIS|GRID|TRAME|SANIT|PLOMB|ELEC|ECLAIR|HVAC|CVC|CHAUFF|VENTIL|VEGET|ARBRE|TREE|PARKING|VOIRIE|CADASTRE|PARCEL|LIMITE|CLOTURE|FENCE/)) return 'ignore';
+  // conventions numérotées (« 401_SAN_… », « 912_AR_RE_Mur caché ») : sanitaires, seuils et traits cachés
+  // (éléments situés au-dessus ou au-dessous du plan de coupe) ne décrivent pas les locaux de l'étage
+  if (has(/(^|[^A-Z])SAN([^A-Z]|$)|DIFFUS|SEUIL|THRESH|DREMPEL|SCHWELLE|CACHE|HIDDEN|VERBORGEN|VERDECKT/)) return 'ignore';
   if (has(/CLOIS|PARTITION|DOUBLAGE|PLACO|SCHEIDINGS|ZWISCHENW/)) return 'partitions';
   if (has(/ESCAL|STAIR|TRAP|TREPP|MARCHE|EMMARCH|RAMPE|STEP/)) return 'stairs';
   if (has(/FENET|WINDOW|WIND|GLAZ|VITR|RAAM|FENST|CHASSIS|\bBAIE/)) return 'windows';
+  // menuiseries : intérieures = portes ; extérieures = surtout des fenêtres (les portes sont reconnues par leur battant)
+  if (has(/MENUIS|JOINER|SCHRIJNW|TISCHLER/)) return has(/EXT/) ? 'windows' : 'doors';
   if (has(/(^|[^A-Z])PORTE|DOOR|DEUR|TUER|TUR\b|TUREN/)) return 'doors';
   if (has(/MUR|WALL|MAUER|MUUR|WAND|VOILE|MACONN|BETON|PAROI|FACADE|GEVEL|STRUCT|POTEAU|COLUMN|PILIER|PORTEUR/)) return 'walls';
   if (has(/LOCAU|ROOM|PIECE|SURFACE|AREA|ESPACE|RUIMTE|RAUM|LOKAAL/)) return 'rooms';
-  if (has(/TEXT|TXT|\bNOM|LABEL|ANNO|IDEN|DESIGN|LIBELLE|NAAM|BESCHRIFT/)) return 'labels';
+  if (has(/TEXT|TXT|\bNOM|LABEL|ANNO|IDEN|DESIGN|LIBELLE|NAAM|BESCHRIFT|\bLOCAL\b|N°/)) return 'labels';
   return 'other';
+}
+
+/** Ouverture d'un arc de battant de porte (en degrés) : de 30° à 120°. */
+export function isDoorSweep(sweep: number): boolean {
+  const s = Math.abs(sweep);
+  return s >= 30 && s <= 120;
 }
 
 export interface RecognizeOptions {
@@ -84,7 +97,8 @@ const deg = (rad: number) => (rad * 180) / Math.PI;
 const round = (v: number) => Math.round(v * 100) / 100;
 const rp = (p: P): Pt => [round(p[0]), round(p[1])];
 
-interface Seg { a: P; b: P; u: P; L: number; layer: string; role: LayerRole; group?: number; free: [number, number][]; id: number }
+/** Trait du dessin ; `small` : côté d'un petit contour fermé (poteau). */
+interface Seg { a: P; b: P; u: P; L: number; layer: string; role: LayerRole; group?: number; free: [number, number][]; id: number; small?: boolean }
 
 /** Angle de direction ramené à [0, 180[ degrés. */
 function dirAngle(u: P): number {
@@ -186,13 +200,13 @@ export function recognizePlan(flat: FlatDxf, opt: RecognizeOptions): Recognized 
     const ka = `${Math.round(a[0] * 10)},${Math.round(a[1] * 10)}`, kb = `${Math.round(b[0] * 10)},${Math.round(b[1] * 10)}`;
     return ka < kb ? `${ka}|${kb}` : `${kb}|${ka}`;
   };
-  const pushSeg = (a: P, b: P, prim: DxfPrim, role: LayerRole) => {
+  const pushSeg = (a: P, b: P, prim: DxfPrim, role: LayerRole, small = false) => {
     const L = dist(a, b);
     if (L < 0.02 * m) return;
     const key = keyOf(a, b);
     if (seen.has(key)) return;
     seen.add(key);
-    segs.push({ a, b, u: unit(sub(b, a)), L, layer: prim.layer, role, group: prim.group, free: [[0, L]], id: segs.length });
+    segs.push({ a, b, u: unit(sub(b, a)), L, layer: prim.layer, role, group: prim.group, free: [[0, L]], id: segs.length, ...(small ? { small } : {}) });
   };
   for (const p of flat.prims) {
     const role = roleOf(p);
@@ -208,8 +222,10 @@ export function recognizePlan(flat: FlatDxf, opt: RecognizeOptions): Recognized 
       }
       if (role === 'rooms' && p.closed && pts.length >= 3) closedPolys.push(pts);
       if (p.arc && role !== 'walls' && role !== 'partitions') continue; // battants de porte : pas des murs
-      for (let i = 0; i + 1 < pts.length; i++) pushSeg(pts[i], pts[i + 1], p, role);
-      if (p.closed && pts.length > 2) pushSeg(pts[pts.length - 1], pts[0], p, role);
+      const xs = pts.map((q) => q[0]), ys = pts.map((q) => q[1]);
+      const small = p.closed && Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)) < 0.6 * m;
+      for (let i = 0; i + 1 < pts.length; i++) pushSeg(pts[i], pts[i + 1], p, role, small);
+      if (p.closed && pts.length > 2) pushSeg(pts[pts.length - 1], pts[0], p, role, small);
     } else if (p.kind === 'fill' && (role === 'walls' || role === 'partitions')) {
       for (const ring of p.rings) {
         const pts = ring.map(T);
@@ -324,11 +340,17 @@ export function recognizePlan(flat: FlatDxf, opt: RecognizeOptions): Recognized 
         }
       }
     }
-    // Cloisons en simple trait
+    // Cloisons et murs dessinés en simple trait (gaines, cages d'escalier, annexes…) ;
+    // un trait resté seul le long d'un mur déjà reconnu en est une face, pas un mur de plus
+    const paired = walls.slice();
+    const nearPaired = (p: P) => paired.some((w) => distToSeg(p, w.a, w.b) <= w.t / 2 + 0.08 * m);
     for (const s of wallSegs) {
-      if (s.role !== 'partitions') continue;
+      if (s.role !== 'partitions' && s.role !== 'walls') continue;
       for (const [x, y] of s.free) {
-        if (y - x >= 0.5 * m) walls.push({ a: add(s.a, mulv(s.u, x)), b: add(s.a, mulv(s.u, y)), t: 0.07 * m });
+        if (y - x < 0.5 * m) continue;
+        const a = add(s.a, mulv(s.u, x)), b = add(s.a, mulv(s.u, y));
+        if (s.role === 'walls' && nearPaired(mulv(add(a, b), 0.5))) continue;
+        walls.push({ a, b, t: (s.role === 'walls' ? 0.1 : 0.07) * m });
       }
     }
     // Fusion des murs colinéaires qui se touchent
@@ -354,42 +376,16 @@ export function recognizePlan(flat: FlatDxf, opt: RecognizeOptions): Recognized 
         }
       }
     }
-    // Raccord des angles et des jonctions en T
-    for (let i = 0; i < walls.length; i++) {
-      for (const end of ['a', 'b'] as const) {
-        const W = walls[i];
-        const E = W[end];
-        const u = unit(sub(W.b, W.a));
-        let best: { X: P; d: number } | null = null;
-        for (let j = 0; j < walls.length; j++) {
-          if (j === i) continue;
-          const V = walls[j];
-          const v = unit(sub(V.b, V.a));
-          if (angleDiff(dirAngle(u), dirAngle(v)) < 20) continue;
-          const X = lineIntersection(E, u, V.a, v);
-          if (!X) continue;
-          const reach = Math.max(W.t, V.t) * 1.05 + 0.02 * m;
-          const dE = dist(X, E);
-          if (dE > reach) continue;
-          const LV = dist(V.a, V.b), sV = dot(sub(X, V.a), v);
-          if (sV < -reach || sV > LV + reach) continue;
-          // ne pas raccourcir un mur au-delà de son autre extrémité
-          const other = end === 'a' ? W.b : W.a;
-          if (dot(sub(X, other), sub(E, other)) <= 0) continue;
-          if (!best || dE < best.d) best = { X, d: dE };
-        }
-        if (best) walls[i] = { ...W, [end]: best.X };
-      }
-    }
+    joinCorners(walls, m);
   }
-  const wallEls: WallElement[] = walls
-    .filter((w) => dist(w.a, w.b) >= 0.1 * m)
-    .map((w) => makeElement('wall', { points: [rp(w.a), rp(w.b)], thickness: round(w.t), wallStyle: 'solid' }) as WallElement);
 
   // 4. Portes
   const doors: DoorElement[] = [];
+  const doorGroups = new Set<number>();
   {
-    const cand = arcs.filter((a) => a.role !== 'stairs' && a.sweep >= 70 && a.sweep <= 110 && a.r >= 0.5 * m && a.r <= 1.6 * m);
+    // battants dessinés ouverts de 30° (souvent 45°) jusqu'à 120°
+    const cand = arcs.filter((a) => a.role !== 'stairs' && isDoorSweep(a.sweep) && a.r >= 0.5 * m && a.r <= 1.6 * m);
+    for (const a of cand) if (a.group != null) doorGroups.add(a.group);
     const leaves: { H: P; C: P; O: P; r: number }[] = [];
     const tol = 0.06 * m;
     const lineSegs = segs.filter((s) => s.role !== 'ignore');
@@ -446,7 +442,8 @@ export function recognizePlan(flat: FlatDxf, opt: RecognizeOptions): Recognized 
   // 5. Fenêtres
   const windows: WindowElement[] = [];
   {
-    const ws = segs.filter((s) => s.role === 'windows');
+    // un bloc qui contient un battant de porte (porte extérieure sur le calque des menuiseries) n'est pas une fenêtre
+    const ws = segs.filter((s) => s.role === 'windows' && (s.group == null || !doorGroups.has(s.group)));
     const parent = ws.map((_, i) => i);
     const find = (i: number): number => (parent[i] === i ? i : (parent[i] = find(parent[i])));
     const join = (i: number, j: number) => { parent[find(i)] = find(j); };
@@ -497,14 +494,47 @@ export function recognizePlan(flat: FlatDxf, opt: RecognizeOptions): Recognized 
     }
   }
 
+  // 5 bis. Mise au propre pour un plan d'évacuation : murs continus au droit des portes et fenêtres,
+  // poteaux et petits retours supprimés, murs extérieurs plus épais que les murs intérieurs,
+  // ouvertures calées dans leur mur (comme si elles avaient été posées à la main).
+  pruneWindows(windows, doors, m);
+  const openings: Opening[] = [...doors, ...windows];
+  const obstacleSegs = segs.filter((s) => isWallRole(s.role) || s.role === 'windows' || s.role === 'doors');
+  wallsUnderWindowRuns(walls, windows, m);
+  // chaque porte ou fenêtre compte comme un morceau de mur : les murs de part et d'autre se rejoignent à travers elle
+  walls.push(...openingWalls(openings, walls, m));
+  mergeAcrossOpenings(walls, openings, m);
+  for (let i = walls.length - 1; i >= 0; i--) if (dist(walls[i].a, walls[i].b) < 0.5 * m) walls.splice(i, 1);
+  extendToOpenings(walls, openings, m);
+  joinCorners(walls, m);
+  normalizeThickness(walls, openings, obstacleSegs, m);
+  mergeAcrossOpenings(walls, openings, m); // les morceaux d'une même façade ont maintenant la même épaisseur
+  // raccord final : chaque extrémité rejoint l'axe du mur voisin (jusqu'à 60 cm), comme un mur tracé à l'aimant
+  joinCorners(walls, m, 0.6 * m, openings);
+  touchCollinear(walls, openings, m);
+  dropLooseOpeningWalls(walls, m);
+  const hosted = snapOpenings(openings, walls, m);
+  // une fenêtre qui ne repose sur aucun mur (battant ou appui mal interprété) n'est pas gardée
+  for (let i = windows.length - 1; i >= 0; i--) if (!hosted.has(windows[i])) windows.splice(i, 1);
+  markFireDoors(doors, texts, m);
+  const finalWalls = walls.filter((w) => dist(w.a, w.b) >= 0.5 * m); // pas de petits morceaux dans le plan final
+  const wallEls: WallElement[] = finalWalls
+    .map((w) => makeElement('wall', { points: [rp(w.a), rp(w.b)], thickness: round(w.t), wallStyle: 'solid' }) as WallElement);
+
   // 6. Pièces
   const rooms: AreaElement[] = [];
   const labelOf = (lines: string[]) => {
     const isArea = (l: string) => /^\s*(s\s*[:=]\s*)?[\d\s.,]+\s*(m²|m2)?\s*$/i.test(l) || /\d\s*(m²|m2)\s*$/i.test(l);
-    const keep = lines.filter((l) => l.trim() && !isArea(l));
+    // niveaux, degrés coupe-feu, hauteurs : annotations techniques, pas des noms de pièces
+    const isTechnical = (l: string) => /^\s*(NIV\b|N\.?G\.?F|R?E\.?I\.?\s*\d|[CP]F\s*\d|H\s*=|HSP\b|Ø)/i.test(l);
+    const keep = lines.filter((l) => l.trim() && !isArea(l) && !isTechnical(l));
     return { label: keep.join('\n').trim(), hadArea: lines.some((l) => /m²|m2/i.test(l)) };
   };
-  const labelSize = (h: number) => Math.max(0.18 * m, Math.min(0.6 * m, h * 1.1));
+  // taille des noms : celle du dessin, mais lisible à l'échelle de l'affiche (au moins 35 cm, ~1 % de la taille du bâtiment)
+  const xs = segs.flatMap((s) => [s.a[0], s.b[0]]), ys = segs.flatMap((s) => [s.a[1], s.b[1]]);
+  const span = xs.length ? Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)) : 0;
+  const minLabel = Math.min(1 * m, Math.max(0.35 * m, span / 110));
+  const labelSize = (h: number) => Math.max(minLabel, Math.min(1 * m, h * 1.1));
   const makeRoom = (poly: P[], txt: { lines: string[]; height: number } | null) => {
     const { label, hadArea } = txt ? labelOf(txt.lines) : { label: '', hadArea: false };
     rooms.push(makeElement('area', {
@@ -518,33 +548,358 @@ export function recognizePlan(flat: FlatDxf, opt: RecognizeOptions): Recognized 
     return Math.abs(dot(d, u)) <= s.w / 2 + 0.1 * m && Math.abs(dot(d, perp(u))) <= s.h / 2 + 0.1 * m;
   });
   const named = texts.filter((t) => labelOf(t.lines).label.length > 0 && !inStairs(t.at));
+  // surfaces seules (« 62,30 m² ») : souvent au centre de la pièce, alors que le numéro peut être posé sur la porte
+  const surfaces = texts.filter((t) => !labelOf(t.lines).label && labelOf(t.lines).hadArea && !inStairs(t.at));
   if (closedPolys.length) {
     for (const poly of closedPolys) {
       if (polygonAreaAbs(poly) < 1 * m * m) continue;
       const inside = named.filter((t) => pointInPolygon(t.at, poly)).sort((a, b) => b.height - a.height);
       makeRoom(poly, inside[0] ?? null);
     }
-  } else if (named.length && (wallEls.length || segs.some((s) => isWallRole(s.role)))) {
-    rooms.push(...floodRooms(named, walls, doors, segs.filter((s) => isWallRole(s.role)), m, labelOf, labelSize));
+  } else if ((named.length || surfaces.length) && (wallEls.length || segs.some((s) => isWallRole(s.role)))) {
+    // les traits des menuiseries referment aussi les murs (baies, grandes portes sans battant dessiné)
+    // les pièces vont jusqu'aux murs redessinés ; les traits d'origine ne servent que si une pièce s'ouvre sur l'extérieur
+    const seeds = [...surfaces, ...named];
+    // limites : murs redessinés et traits des murs et fenêtres du dessin, sans les menuiseries (vantaux, casiers, cadres)
+    // (les contours des poteaux supprimés ne découpent pas les pièces)
+    const wallLines = segs.filter((s) => (isWallRole(s.role) || s.role === 'windows') && !s.small);
+    const clean = floodRooms(seeds, finalWalls, [...doors, ...windows], wallLines, m, labelOf, labelSize, true);
+    rooms.push(...clean.rooms);
+    if (clean.unplaced.length) {
+      const fallback = floodRooms(clean.unplaced, finalWalls, [...doors, ...windows], obstacleSegs, m, labelOf, labelSize, false);
+      rooms.push(...fallback.rooms.filter((r) => !clean.rooms.some((c) => pointInPolygon(centroidOf(r.points as P[]), c.points as P[]))));
+    }
   }
 
   return { walls: wallEls, doors, windows, stairs, rooms };
 }
 
-/** Pièces par remplissage d'une grille depuis chaque nom, jusqu'aux murs et portes refermées. */
-function floodRooms(
-  labels: { at: P; lines: string[]; height: number }[], walls: { a: P; b: P; t: number }[], doors: DoorElement[], rawSegs: Seg[], m: number,
-  labelOf: (l: string[]) => { label: string; hadArea: boolean }, labelSize: (h: number) => number,
-): AreaElement[] {
-  // Emprise
+/** Mur en cours de mise au propre ; `v` : morceau né d'une porte ou d'une fenêtre (sans mur dessiné). */
+type RawWall = { a: P; b: P; t: number; v?: boolean };
+type Opening = DoorElement | WindowElement;
+
+function distToSeg(p: P, a: P, b: P): number {
+  const ab = sub(b, a), L2 = dot(ab, ab);
+  const t = L2 ? Math.max(0, Math.min(1, dot(sub(p, a), ab) / L2)) : 0;
+  return dist(p, add(a, mulv(ab, t)));
+}
+
+/**
+ * Raccord des angles et des jonctions en T : chaque extrémité est prolongée (ou recoupée) jusqu'à l'axe
+ * du mur qu'elle rejoint. `extra` élargit la portée ; un prolongement ne traverse jamais une porte ou une fenêtre.
+ */
+function joinCorners(walls: RawWall[], m: number, extra = 0, openings: Opening[] = []) {
+  for (let i = 0; i < walls.length; i++) {
+    for (const end of ['a', 'b'] as const) {
+      const W = walls[i];
+      const E = W[end];
+      const u = unit(sub(W.b, W.a));
+      let best: { X: P; d: number } | null = null;
+      for (let j = 0; j < walls.length; j++) {
+        if (j === i) continue;
+        const V = walls[j];
+        const v = unit(sub(V.b, V.a));
+        if (angleDiff(dirAngle(u), dirAngle(v)) < 20) continue;
+        const X = lineIntersection(E, u, V.a, v);
+        if (!X) continue;
+        const reach = Math.max(W.t, V.t) * 1.05 + 0.02 * m + extra;
+        const dE = dist(X, E);
+        if (dE > reach) continue;
+        const LV = dist(V.a, V.b), sV = dot(sub(X, V.a), v);
+        if (sV < -Math.max(W.t, V.t) || sV > LV + Math.max(W.t, V.t)) continue;
+        // ne pas raccourcir un mur au-delà de son autre extrémité
+        const other = end === 'a' ? W.b : W.a;
+        if (dot(sub(X, other), sub(E, other)) <= 0) continue;
+        if (extra && dot(sub(X, E), sub(E, other)) > 0 && openings.some((o) => distToSeg([o.x, o.y], E, X) <= W.t / 2 + 0.1 * m)) continue;
+        if (!best || dE < best.d) best = { X, d: dE };
+      }
+      if (best) walls[i] = { ...W, [end]: best.X };
+    }
+  }
+}
+
+/**
+ * Murs alignés d'épaisseurs différentes (façade puis mur intérieur dans le prolongement) séparés de moins
+ * de 60 cm sans ouverture entre eux : l'extrémité la plus proche rejoint l'autre mur, pour qu'ils se touchent.
+ */
+function touchCollinear(walls: RawWall[], openings: Opening[], m: number) {
+  for (let i = 0; i < walls.length; i++) {
+    for (const end of ['a', 'b'] as const) {
+      const W = walls[i], E = W[end], other = end === 'a' ? W.b : W.a;
+      const out = unit(sub(E, other));
+      let best: { F: P; d: number } | null = null;
+      for (let j = 0; j < walls.length; j++) {
+        if (j === i) continue;
+        const V = walls[j], v = unit(sub(V.b, V.a));
+        if (angleDiff(dirAngle(out), dirAngle(v)) > 3) continue;
+        if (Math.abs(dot(sub(V.a, E), perp(out))) > Math.max(W.t, V.t) / 2 + 0.02 * m) continue;
+        for (const F of [V.a, V.b]) {
+          const ahead = dot(sub(F, E), out), d = dist(F, E);
+          if (ahead <= 0.005 * m || d > 0.6 * m) continue;
+          if (openings.some((o) => distToSeg([o.x, o.y], E, F) <= W.t / 2 + 0.1 * m)) continue;
+          if (!best || d < best.d) best = { F, d };
+        }
+      }
+      if (best) walls[i] = { ...W, [end]: add(E, mulv(out, dot(sub(best.F, E), out))) };
+    }
+  }
+}
+
+function centroidOf(pts: P[]): P {
+  let x = 0, y = 0;
+  for (const p of pts) { x += p[0]; y += p[1]; }
+  return [x / pts.length, y / pts.length];
+}
+
+/** Fenêtres parasites : trop petites (< 50 cm) ou posées sur une porte (cadre d'une porte extérieure). */
+function pruneWindows(windows: WindowElement[], doors: DoorElement[], m: number) {
+  for (let i = windows.length - 1; i >= 0; i--) {
+    const w = windows[i];
+    if (w.width < 0.5 * m) { windows.splice(i, 1); continue; }
+    const u = openingDir(w);
+    const onDoor = doors.some((d) => {
+      if (angleDiff(dirAngle(openingDir(d)), dirAngle(u)) > 15) return false;
+      const rel = sub([d.x, d.y], [w.x, w.y]);
+      if (Math.abs(dot(rel, perp(u))) > 0.4 * m) return false;
+      const along = dot(rel, u);
+      const overlap = Math.min(w.width / 2, along + d.width / 2) - Math.max(-w.width / 2, along - d.width / 2);
+      return overlap > 0.3 * Math.min(w.width, d.width);
+    });
+    if (onDoor) windows.splice(i, 1);
+  }
+}
+
+/** Morceau de mur sous chaque ouverture, de l'épaisseur du mur aligné voisin (sinon 15 cm ou la profondeur de la fenêtre). */
+function openingWalls(openings: Opening[], walls: RawWall[], m: number): RawWall[] {
+  return openings.map((o) => {
+    const u = openingDir(o), c: P = [o.x, o.y], hw = o.width / 2;
+    // épaisseur du mur aligné le plus long à proximité (pas celle d'un poteau)
+    let t = o.type === 'window' ? Math.max(0.1 * m, o.depth) : 0.15 * m, longest = 0;
+    for (const w of walls) {
+      const wu = unit(sub(w.b, w.a)), L = dist(w.a, w.b);
+      if (angleDiff(dirAngle(wu), dirAngle(u)) > 15 || L < 0.5 * m) continue;
+      const rel = sub(c, w.a);
+      if (Math.abs(dot(rel, perp(wu))) > w.t / 2 + 0.3 * m) continue;
+      if (distToSeg(c, w.a, w.b) <= hw + 1.5 * m && L > longest) { longest = L; t = w.t; }
+    }
+    return { a: sub(c, mulv(u, hw)), b: add(c, mulv(u, hw)), t, v: true };
+  });
+}
+
+/** Morceau « ouverture » resté isolé (aucun mur à ses extrémités) : ce n'était pas une ouverture dans un mur. */
+function dropLooseOpeningWalls(walls: RawWall[], m: number) {
+  const touches = (p: P, self: RawWall) => walls.some((w) => w !== self && !w.v && distToSeg(p, w.a, w.b) <= w.t / 2 + 0.05 * m);
+  for (let i = walls.length - 1; i >= 0; i--) {
+    const w = walls[i];
+    if (w.v && !touches(w.a, w) && !touches(w.b, w)) walls.splice(i, 1);
+  }
+  for (const w of walls) delete w.v;
+}
+
+const openingDir = (o: Opening): P => [Math.cos((o.rotation * Math.PI) / 180), Math.sin((o.rotation * Math.PI) / 180)];
+
+/**
+ * Murs continus : deux murs alignés sont réunis quand l'intervalle qui les sépare est occupé par une porte
+ * ou une fenêtre (le dessin laisse un trou à cet endroit), ou quand il ne fait que quelques centimètres.
+ */
+function mergeAcrossOpenings(walls: RawWall[], openings: Opening[], m: number) {
+  let merged = true;
+  while (merged) {
+    merged = false;
+    for (let i = 0; i < walls.length; i++) {
+      for (let j = i + 1; j < walls.length; j++) {
+        // le mur le plus long sert de base (son axe et son épaisseur sont conservés)
+        const [W1, W2] = dist(walls[i].a, walls[i].b) >= dist(walls[j].a, walls[j].b) ? [walls[i], walls[j]] : [walls[j], walls[i]];
+        const u = unit(sub(W1.b, W1.a)), v = unit(sub(W2.b, W2.a));
+        if (angleDiff(dirAngle(u), dirAngle(v)) > 3) continue;
+        const n = perp(u), tol = Math.max(W1.t, W2.t) / 2 + 0.02 * m;
+        if (Math.abs(dot(sub(W2.a, W1.a), n)) > tol || Math.abs(dot(sub(W2.b, W1.a), n)) > tol) continue;
+        const L1 = dist(W1.a, W1.b);
+        const s0 = dot(sub(W2.a, W1.a), u), s1 = dot(sub(W2.b, W1.a), u);
+        const lo2 = Math.min(s0, s1), hi2 = Math.max(s0, s1);
+        const gap = lo2 > L1 ? lo2 - L1 : hi2 < 0 ? -hi2 : 0;
+        const overlap = Math.min(L1, hi2) - Math.max(0, lo2);
+        // épaisseurs différentes : seulement un doublon presque entièrement superposé (traits doublés du dessin)
+        if (Math.min(W1.t, W2.t) < Math.max(W1.t, W2.t) * 0.75 && overlap < 0.6 * Math.min(L1, hi2 - lo2)) continue;
+        let join = gap <= 0.6 * m; // trou laissé par un poteau supprimé
+        if (!join && gap <= 4 * m) {
+          const g0 = lo2 > L1 ? L1 : hi2, g1 = lo2 > L1 ? lo2 : 0;
+          join = openings.some((o) => {
+            if (angleDiff(dirAngle(openingDir(o)), dirAngle(u)) > 15) return false;
+            const rel = sub([o.x, o.y], W1.a), along = dot(rel, u);
+            return Math.abs(dot(rel, n)) <= Math.max(W1.t, W2.t) / 2 + 0.25 * m && along >= g0 - 0.1 * m && along <= g1 + 0.1 * m;
+          });
+        }
+        if (!join) continue;
+        const lo = Math.min(0, lo2), hi = Math.max(L1, hi2);
+        walls[i] = { a: add(W1.a, mulv(u, lo)), b: add(W1.a, mulv(u, hi)), t: W1.t, ...(W1.v && W2.v ? { v: true } : {}) };
+        walls.splice(j, 1);
+        merged = true;
+        j = i; // le mur i a changé : on le recompare à tous les suivants
+      }
+    }
+  }
+}
+
+/**
+ * Façade vitrée : les fenêtres alignées qui ne reposent sur aucun mur (trumeaux trop courts, poteaux)
+ * reçoivent un mur continu sous toute la suite de fenêtres.
+ */
+function wallsUnderWindowRuns(walls: RawWall[], windows: WindowElement[], m: number) {
+  const hosted = (o: WindowElement) => walls.some((w) => {
+    const u = unit(sub(w.b, w.a)), rel = sub([o.x, o.y], w.a), along = dot(rel, u), L = dist(w.a, w.b);
+    return angleDiff(dirAngle(u), dirAngle(openingDir(o))) <= 15 && Math.abs(dot(rel, perp(u))) <= w.t / 2 + 0.1 * m
+      && along >= o.width / 2 - 0.05 * m && along <= L - o.width / 2 + 0.05 * m;
+  });
+  const free = windows.filter((o) => !hosted(o));
+  const used = new Set<WindowElement>();
+  for (const first of free) {
+    if (used.has(first)) continue;
+    used.add(first);
+    const u = openingDir(first), n = perp(u), c0: P = [first.x, first.y];
+    const run = [first];
+    const span = (o: WindowElement) => { const a = dot(sub([o.x, o.y], c0), u); return [a - o.width / 2, a + o.width / 2]; };
+    let lo = span(first)[0], hi = span(first)[1];
+    for (let grown = true; grown;) {
+      grown = false;
+      for (const o of free) {
+        if (used.has(o) || angleDiff(dirAngle(openingDir(o)), dirAngle(u)) > 3) continue;
+        if (Math.abs(dot(sub([o.x, o.y], c0), n)) > 0.3 * m) continue;
+        const [a, b] = span(o);
+        if (a > hi + 1.2 * m || b < lo - 1.2 * m) continue;
+        run.push(o); used.add(o); lo = Math.min(lo, a); hi = Math.max(hi, b); grown = true;
+      }
+    }
+    const off = run.reduce((acc, o) => acc + dot(sub([o.x, o.y], c0), n), 0) / run.length;
+    const base = add(c0, mulv(n, off));
+    const t = Math.max(0.15 * m, ...run.map((o) => o.depth));
+    walls.push({ a: add(base, mulv(u, lo)), b: add(base, mulv(u, hi)), t });
+  }
+}
+
+/** Ouverture qui ne repose sur aucun mur (porte en bout de mur, contre un angle) : le mur aligné le plus proche est prolongé. */
+function extendToOpenings(walls: RawWall[], openings: Opening[], m: number) {
+  for (const o of openings) {
+    const ou = openingDir(o), c: P = [o.x, o.y], hw = o.width / 2;
+    const e0 = sub(c, mulv(ou, hw)), e1 = add(c, mulv(ou, hw));
+    let best: { i: number; end: 'a' | 'b'; to: P; d: number } | null = null;
+    let hosted = false;
+    for (let i = 0; i < walls.length && !hosted; i++) {
+      const w = walls[i], u = unit(sub(w.b, w.a));
+      if (angleDiff(dirAngle(u), dirAngle(ou)) > 15) continue;
+      const L = dist(w.a, w.b), rel = sub(c, w.a), along = dot(rel, u);
+      if (Math.abs(dot(rel, perp(u))) > w.t / 2 + 0.25 * m) continue;
+      if (along >= hw - 0.05 * m && along <= L - hw + 0.05 * m) { hosted = true; break; } // déjà porté par ce mur
+      for (const end of ['a', 'b'] as const) {
+        const E = w[end];
+        const near = Math.min(dist(E, e0), dist(E, e1));
+        if (near > 0.4 * m) continue;
+        const far = dist(E, e0) > dist(E, e1) ? e0 : e1;
+        const to = add(w.a, mulv(u, dot(sub(far, w.a), u)));
+        if (!best || near < best.d) best = { i, end, to, d: near };
+      }
+    }
+    if (best && !hosted) walls[best.i] = { ...walls[best.i], [best.end]: best.to };
+  }
+}
+
+/**
+ * Épaisseurs lisibles : les murs de l'enveloppe (en contact avec l'extérieur) reçoivent tous la même épaisseur,
+ * celle de la façade (28 à 45 cm) ; les murs intérieurs passent à 15 cm, les cloisons gardent la leur.
+ */
+function normalizeThickness(walls: RawWall[], openings: Opening[], rawSegs: Seg[], m: number) {
+  if (!walls.length) return;
+  const g = obstacleGrid(walls, openings, rawSegs, m, []);
+  if (!g) return;
+  const { grid, W, H, x0, y0, res } = g;
+  const outside = new Uint8Array(W * H);
+  const queue: number[] = [];
+  const seed = (c: number) => { if (!outside[c] && !grid[c]) { outside[c] = 1; queue.push(c); } };
+  for (let x = 0; x < W; x++) { seed(x); seed((H - 1) * W + x); }
+  for (let y = 0; y < H; y++) { seed(y * W); seed(y * W + W - 1); }
+  for (let qi = 0; qi < queue.length; qi++) {
+    const c = queue[qi], cx = c % W, cy = (c - cx) / W;
+    if (cx > 0) seed(c - 1);
+    if (cx < W - 1) seed(c + 1);
+    if (cy > 0) seed(c - W);
+    if (cy < H - 1) seed(c + W);
+  }
+  const isOut = (p: P) => {
+    const gx = Math.floor((p[0] - x0) / res), gy = Math.floor((p[1] - y0) / res);
+    return gx >= 0 && gy >= 0 && gx < W && gy < H && outside[gy * W + gx] === 1;
+  };
+  const exterior = walls.map((w) => {
+    const u = unit(sub(w.b, w.a)), n = perp(u), L = dist(w.a, w.b);
+    const k = Math.max(3, Math.round(L / (0.5 * m)));
+    return [1, -1].some((side) => {
+      let hits = 0;
+      for (let i = 1; i <= k; i++) {
+        const p = add(add(w.a, mulv(u, (L * i) / (k + 1))), mulv(n, side * (w.t / 2 + 0.2 * m)));
+        if (isOut(p)) hits++;
+      }
+      return hits / k >= 0.4;
+    });
+  });
+  const ext = walls.map((w, i) => ({ t: w.t, L: dist(w.a, w.b), e: exterior[i] })).filter((x) => x.e).sort((a, b) => a.t - b.t);
+  const total = ext.reduce((acc, x) => acc + x.L, 0);
+  let acc = 0, median = 0.3 * m;
+  for (const x of ext) { acc += x.L; if (acc >= total / 2) { median = x.t; break; } }
+  const cm = (v: number) => Math.round(v / (0.01 * m)) * 0.01 * m;
+  const tExt = cm(Math.max(0.28 * m, Math.min(0.45 * m, median)));
+  walls.forEach((w, i) => {
+    if (exterior[i]) w.t = tExt;
+    else w.t = w.t >= 0.12 * m ? 0.15 * m : cm(w.t);
+  });
+}
+
+/** Portes et fenêtres calées dans leur mur : centrées sur son axe, orientées comme lui, fenêtre à l'épaisseur du mur. */
+function snapOpenings(openings: Opening[], walls: RawWall[], m: number): Set<Opening> {
+  const hosted = new Set<Opening>();
+  for (const o of openings) {
+    const ou = openingDir(o), c: P = [o.x, o.y], hw = o.width / 2;
+    let best: { w: RawWall; u: P; along: number; L: number; d: number } | null = null;
+    for (const w of walls) {
+      const u = unit(sub(w.b, w.a));
+      if (angleDiff(dirAngle(u), dirAngle(ou)) > 15) continue;
+      const L = dist(w.a, w.b), rel = sub(c, w.a), along = dot(rel, u), across = Math.abs(dot(rel, perp(u)));
+      if (across > w.t / 2 + 0.25 * m || along < -0.1 * m || along > L + 0.1 * m) continue;
+      if (!best || across < best.d) best = { w, u, along, L, d: across };
+    }
+    if (!best) continue;
+    const { w, u, along, L } = best;
+    const center = L >= o.width ? Math.max(hw, Math.min(L - hw, along)) : along;
+    const p = add(w.a, mulv(u, center));
+    const turn = ((((deg(Math.atan2(u[1], u[0])) - o.rotation) % 180) + 270) % 180) - 90;
+    o.x = round(p[0]); o.y = round(p[1]); o.rotation = round(o.rotation + turn);
+    if (o.type === 'window') o.depth = round(w.t);
+    hosted.add(o);
+  }
+  return hosted;
+}
+
+/** « E.i. 30' », « EI 60 », « CF 30 » posé près d'une porte : porte coupe-feu avec son degré. */
+function markFireDoors(doors: DoorElement[], texts: { at: P; lines: string[] }[], m: number) {
+  for (const t of texts) {
+    const r = /^\s*(?:R?E\.?\s*I\.?|CF)\s*(\d+)/i.exec(t.lines.join(' '));
+    if (!r) continue;
+    let best: DoorElement | null = null, bestD = 1.5 * m;
+    for (const d of doors) { const dd = dist(t.at, [d.x, d.y]); if (dd < bestD) { best = d; bestD = dd; } }
+    if (best) { best.fireRated = true; best.fireRating = `EI ${r[1]}`; }
+  }
+}
+
+/** Grille d'obstacles (murs, traits des murs et menuiseries, ouvertures refermées) pour les remplissages. */
+function obstacleGrid(walls: RawWall[], openings: Opening[], rawSegs: Seg[], m: number, extra: P[]) {
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
   const ext = (p: P) => { x0 = Math.min(x0, p[0]); y0 = Math.min(y0, p[1]); x1 = Math.max(x1, p[0]); y1 = Math.max(y1, p[1]); };
   walls.forEach((w) => { ext(w.a); ext(w.b); });
   rawSegs.forEach((s) => { ext(s.a); ext(s.b); });
-  labels.forEach((l) => ext(l.at));
-  if (!Number.isFinite(x0)) return [];
+  extra.forEach(ext);
+  if (!Number.isFinite(x0)) return null;
   const res = Math.max(0.05 * m, Math.max(x1 - x0, y1 - y0) / 1500);
-  x0 -= res * 3; y0 -= res * 3; x1 += res * 3; y1 += res * 3;
+  // marge autour du dessin : l’extérieur doit entourer la façade pour la reconnaître
+  const margin = Math.max(res * 3, 0.6 * m);
+  x0 -= margin; y0 -= margin; x1 += margin; y1 += margin;
   const W = Math.ceil((x1 - x0) / res), H = Math.ceil((y1 - y0) / res);
   const grid = new Uint8Array(W * H); // 1 = obstacle
   const stamp = (a: P, b: P, radius: number) => {
@@ -563,51 +918,211 @@ function floodRooms(
   };
   walls.forEach((w) => stamp(w.a, w.b, w.t / 2));
   rawSegs.forEach((s) => stamp(s.a, s.b, 0));
-  for (const d of doors) { // referme l'ouverture
-    const th = (d.rotation * Math.PI) / 180, u: P = [Math.cos(th), Math.sin(th)];
+  for (const d of openings) { // referme l'ouverture
+    const u = openingDir(d);
     stamp(sub([d.x, d.y], mulv(u, d.width / 2)), add([d.x, d.y], mulv(u, d.width / 2)), 0.03 * m);
   }
-  const owner = new Int32Array(W * H).fill(-1);
-  const out: AreaElement[] = [];
-  const maxCells = W * H * 0.6;
-  labels.forEach((lab) => {
-    let sx = Math.floor((lab.at[0] - x0) / res), sy = Math.floor((lab.at[1] - y0) / res);
+  return { grid, W, H, x0, y0, res };
+}
+
+/** Pièces par remplissage d'une grille depuis chaque nom, jusqu'aux murs et portes refermées. */
+type RoomLabel = { at: P; lines: string[]; height: number };
+
+/**
+ * Pièces par remplissage. Renvoie aussi les textes restés sans pièce (zone ouverte vers l'extérieur) ;
+ * avec `circulation`, les espaces fermés sans texte (couloirs, dégagements ≥ 2 m²) deviennent des zones sans nom.
+ */
+function floodRooms(
+  labels: RoomLabel[], walls: { a: P; b: P; t: number }[], doors: (DoorElement | WindowElement)[], rawSegs: Seg[], m: number,
+  labelOf: (l: string[]) => { label: string; hadArea: boolean }, labelSize: (h: number) => number, circulation = false,
+): { rooms: AreaElement[]; unplaced: RoomLabel[] } {
+  const g = obstacleGrid(walls, doors, rawSegs, m, labels.map((l) => l.at));
+  if (!g) return { rooms: [], unplaced: labels };
+  const { grid, W, H, x0, y0, res } = g;
+  // 1. Zones fermées : un remplissage depuis chaque texte (surfaces d'abord, puis noms)
+  type Seed = { cell: number; name: string; hadArea: boolean; height: number; lab: RoomLabel };
+  const unplaced = new Set<RoomLabel>(); // textes tombés dans une zone ouverte vers l'extérieur
+  const comp = new Int32Array(W * H).fill(-1); // -2 : zone ouverte vers l'extérieur
+  const comps: { seeds: Seed[] }[] = [];
+  const loose: Seed[] = []; // noms posés sur un trait ou dans une zone ouverte
+  // garde-fou seulement : une fuite est détectée par le contact avec le bord (marge de 3 cellules)
+  const maxCells = W * H * 0.9;
+  const reach = Math.ceil((1 * m) / res);
+  for (const lab of labels) {
+    const { label: name, hadArea } = labelOf(lab.lines);
+    let sx = Math.min(W - 1, Math.max(0, Math.floor((lab.at[0] - x0) / res)));
+    let sy = Math.min(H - 1, Math.max(0, Math.floor((lab.at[1] - y0) / res)));
+    const seed: Seed = { cell: sy * W + sx, name, hadArea, height: lab.height, lab };
+    // un numéro posé sur une porte ou un mur (et non à l'intérieur d'un local) : rattaché à la zone voisine
+    // (≤ 1 m) qui a encore des surfaces sans nom ; sinon le texte nomme le local où il est écrit
+    const onDoorOrWall = grid[seed.cell] === 1 || doors.some((o) => {
+      if (o.type !== 'door') return false;
+      const u = openingDir(o), rel = sub(lab.at, [o.x, o.y]);
+      return Math.abs(dot(rel, u)) <= o.width / 2 + 0.3 * m && Math.abs(dot(rel, perp(u))) <= 0.6 * m;
+    });
+    if (name && onDoorOrWall) {
+      let best = -1, bestD = Infinity;
+      for (let dy = -reach; dy <= reach; dy++) for (let dx = -reach; dx <= reach; dx++) {
+        const gx = sx + dx, gy = sy + dy;
+        if (gx < 0 || gy < 0 || gx >= W || gy >= H) continue;
+        const o = comp[gy * W + gx], d = dx * dx + dy * dy;
+        if (o < 0 || d >= bestD) continue;
+        const named = comps[o].seeds.filter((x) => x.name).length, surf = comps[o].seeds.filter((x) => !x.name).length;
+        if (named < surf || d <= 4) { best = gy * W + gx; bestD = d; }
+      }
+      if (best >= 0) { comps[comp[best]].seeds.push({ ...seed, cell: best }); continue; }
+    }
     // décale le point de départ s'il tombe sur un trait
     let found = false;
     for (let r = 0; r <= 4 && !found; r++) for (let dy = -r; dy <= r && !found; dy++) for (let dx = -r; dx <= r && !found; dx++) {
       const gx = sx + dx, gy = sy + dy;
       if (gx >= 0 && gy >= 0 && gx < W && gy < H && !grid[gy * W + gx]) { sx = gx; sy = gy; found = true; }
     }
-    if (!found || owner[sy * W + sx] >= 0) return; // déjà dans une pièce nommée
-    const idx = out.length;
+    const c0 = sy * W + sx;
+    if (!found || comp[c0] === -2) { unplaced.add(lab); if (name) loose.push(seed); continue; }
+    seed.cell = c0;
+    if (comp[c0] >= 0) { comps[comp[c0]].seeds.push(seed); continue; }
+    const id = comps.length;
     const cells: number[] = [];
-    const stack = [sy * W + sx];
-    owner[sy * W + sx] = idx;
+    const stack = [c0];
+    comp[c0] = id;
     let leaked = false;
     while (stack.length) {
       const c = stack.pop()!;
       cells.push(c);
       const cx = c % W, cy = (c - cx) / W;
-      if (cx === 0 || cy === 0 || cx === W - 1 || cy === H - 1) { leaked = true; break; }
-      if (cells.length > maxCells) { leaked = true; break; }
+      if (cx === 0 || cy === 0 || cx === W - 1 || cy === H - 1 || cells.length > maxCells) { leaked = true; break; }
       for (const nb of [c - 1, c + 1, c - W, c + W]) {
-        if (!grid[nb] && owner[nb] < 0) { owner[nb] = idx; stack.push(nb); }
+        if (!grid[nb] && comp[nb] === -1) { comp[nb] = id; stack.push(nb); }
       }
     }
-    if (leaked) { for (const c of cells) owner[c] = -2; for (const c of stack) owner[c] = -2; return; }
+    if (leaked) {
+      for (const c of cells) comp[c] = -2;
+      for (const c of stack) comp[c] = -2;
+      comps.push({ seeds: [] });
+      unplaced.add(lab);
+      if (name) loose.push(seed);
+      continue;
+    }
+    comps.push({ seeds: [seed] });
+  }
+
+  // 2. Une zone qui contient plusieurs surfaces (salles séparées par des amorces de murs seulement)
+  //    est partagée entre elles : chacune grandit depuis son texte, la frontière tombe à mi-chemin.
+  const part = new Int32Array(W * H).fill(-1);
+  const parts: { cells: number[]; names: Seed[]; hadArea: boolean; height: number }[] = [];
+  comps.forEach((cp, id) => {
+    if (!cp.seeds.length) return;
+    const surfaces = cp.seeds.filter((x) => !x.name);
+    const primaries = surfaces.length ? surfaces : cp.seeds;
+    const queue: number[] = [];
+    for (const seedP of primaries) {
+      if (part[seedP.cell] >= 0) continue;
+      part[seedP.cell] = parts.length;
+      parts.push({ cells: [], names: seedP.name ? [seedP] : [], hadArea: seedP.hadArea, height: seedP.height });
+      queue.push(seedP.cell);
+    }
+    for (let qi = 0; qi < queue.length; qi++) {
+      const c = queue[qi];
+      parts[part[c]].cells.push(c);
+      for (const nb of [c - 1, c + 1, c - W, c + W]) {
+        if (comp[nb] === id && part[nb] === -1) { part[nb] = part[c]; queue.push(nb); }
+      }
+    }
+    for (const x of cp.seeds) {
+      if (primaries.includes(x) || part[x.cell] < 0) continue;
+      const target = parts[part[x.cell]];
+      if (x.name) target.names.push(x);
+      target.hadArea ||= x.hadArea;
+    }
+  });
+
+  // 3. Noms restés à l'écart : pièce la plus proche (≤ 1 m) encore sans nom
+  for (const x of loose) {
+    const sx = x.cell % W, sy = (x.cell - sx) / W;
+    let best = -1, bestD = Infinity;
+    for (let dy = -reach; dy <= reach; dy++) for (let dx = -reach; dx <= reach; dx++) {
+      const gx = sx + dx, gy = sy + dy;
+      if (gx < 0 || gy < 0 || gx >= W || gy >= H) continue;
+      const o = part[gy * W + gx], d = dx * dx + dy * dy;
+      if (o >= 0 && !parts[o].names.length && d < bestD) { best = o; bestD = d; }
+    }
+    if (best >= 0) { parts[best].names.push(x); parts[best].hadArea ||= x.hadArea; unplaced.delete(x.lab); }
+  }
+
+  // 3 bis. Espaces fermés sans texte (couloirs, dégagements, sas) : zones sans nom
+  if (circulation) {
+    const minCells = (2 * m * m) / (res * res);
+    for (let c0 = 0; c0 < W * H; c0++) {
+      if (grid[c0] || comp[c0] !== -1) continue;
+      const id = comps.length;
+      comps.push({ seeds: [] });
+      const cells: number[] = [];
+      const stack = [c0];
+      comp[c0] = id;
+      let leaked = false;
+      while (stack.length) {
+        const c = stack.pop()!;
+        cells.push(c);
+        const cx = c % W, cy = (c - cx) / W;
+        if (cx === 0 || cy === 0 || cx === W - 1 || cy === H - 1) leaked = true;
+        for (const nb of [c - 1, c + 1, c - W, c + W]) {
+          if (nb >= 0 && nb < W * H && !grid[nb] && comp[nb] === -1) { comp[nb] = id; stack.push(nb); }
+        }
+      }
+      if (leaked) { for (const c of cells) comp[c] = -2; continue; }
+      if (cells.length >= minCells) parts.push({ cells, names: [], hadArea: false, height: 0 });
+    }
+  }
+
+  // 4. Contours
+  const out: AreaElement[] = [];
+  for (const pr of parts) {
+    if (!pr.cells.length) continue;
     const region = new Uint8Array(W * H);
-    for (const c of cells) region[c] = 1;
+    for (const c of pr.cells) region[c] = 1;
     // dilate d'une cellule dans les obstacles : le contour suit le nu des murs
-    for (const c of cells) for (const nb of [c - 1, c + 1, c - W, c + W]) if (grid[nb]) region[nb] = 1;
+    for (const c of pr.cells) for (const nb of [c - 1, c + 1, c - W, c + W]) if (grid[nb]) region[nb] = 1;
+    // comble les encoches étroites (< 60 cm) laissées par les poteaux et les petits traits du dessin
+    closeRegion(region, pr.cells, W, H, Math.max(1, Math.round((0.3 * m) / res)));
     const poly = traceRegion(region, W, H).map(([gx, gy]) => [x0 + gx * res, y0 + gy * res] as P);
     const simp = simplify(poly, res * 1.2);
-    if (simp.length < 3 || polygonAreaAbs(simp) < 0.5 * m * m) return;
-    const { label, hadArea } = labelOf(lab.lines);
+    if (simp.length < 3 || polygonAreaAbs(simp) < 0.5 * m * m) continue;
+    const [first] = pr.names;
     out.push(makeElement('area', {
-      kind: 'room', points: simp.map(rp), label, showArea: hadArea, labelSize: round(labelSize(lab.height)), strokeWidth: 0,
+      kind: 'room', points: simp.map(rp), label: first?.name ?? '', showArea: pr.hadArea,
+      labelSize: round(labelSize(first?.height ?? pr.height)), strokeWidth: 0,
     }) as AreaElement);
-  });
-  return out;
+  }
+  return { rooms: out, unplaced: [...unplaced] };
+}
+
+/**
+ * Fermeture morphologique (dilatation puis érosion de `k` cellules) limitée à l'emprise de la région :
+ * les creux plus étroits que 2·k cellules sont comblés, le contour général ne bouge pas.
+ */
+function closeRegion(region: Uint8Array, cells: number[], W: number, H: number, k: number) {
+  let x0 = W, y0 = H, x1 = 0, y1 = 0;
+  for (const c of cells) { const x = c % W, y = (c - x) / W; if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+  x0 = Math.max(0, x0 - k - 2); y0 = Math.max(0, y0 - k - 2); x1 = Math.min(W - 1, x1 + k + 2); y1 = Math.min(H - 1, y1 + k + 2);
+  const bw = x1 - x0 + 1, bh = y1 - y0 + 1;
+  let cur = new Uint8Array(bw * bh);
+  for (let y = 0; y < bh; y++) for (let x = 0; x < bw; x++) cur[y * bw + x] = region[(y + y0) * W + x + x0];
+  // dilatation / érosion séparables (croix horizontale puis verticale = carré), sans allocation par cellule
+  const pass = (src: Uint8Array, grow: boolean, dx: number, dy: number) => {
+    const dst = new Uint8Array(bw * bh);
+    const off = dy * bw + dx;
+    for (let y = 0; y < bh; y++) for (let x = 0; x < bw; x++) {
+      const i = y * bw + x;
+      const hasA = dx ? x > 0 : y > 0, hasB = dx ? x < bw - 1 : y < bh - 1;
+      const a = hasA ? src[i - off] : 0, b = hasB ? src[i + off] : 0;
+      dst[i] = grow ? (src[i] | a | b) : (src[i] & a & b);
+    }
+    return dst;
+  };
+  for (let i = 0; i < k; i++) cur = pass(pass(cur, true, 1, 0), true, 0, 1);
+  for (let i = 0; i < k; i++) cur = pass(pass(cur, false, 1, 0), false, 0, 1);
+  for (let y = 0; y < bh; y++) for (let x = 0; x < bw; x++) if (cur[y * bw + x]) region[(y + y0) * W + x + x0] = 1;
 }
 
 /** Contour extérieur d'une région de cellules (coins de grille), plus grande boucle. */

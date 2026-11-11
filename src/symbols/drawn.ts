@@ -197,6 +197,16 @@ export const DRAWN_SYMBOLS: SymbolDef[] = [
     <rect x="22" y="46" width="44" height="7"/>
     <path d="M38 34 H70 M63 28 L70 34 L63 40" fill="none" stroke-width="3"/>`),
   plan('window', 'Fenêtre', CAT.structure, `<rect x="4" y="40" width="92" height="20"/><path d="M4 50 H96" stroke-width="2"/>`),
+  // volets : la fenêtre dans le mur (en bas), le volet côté extérieur (en haut)
+  plan('shutter-rolling', 'Volet roulant', CAT.structure, `
+    <rect x="4" y="58" width="92" height="16"/><path d="M4 66 H96" stroke-width="2"/>
+    <rect x="4" y="22" width="92" height="22" rx="3" fill="${INK}" fill-opacity="0.12"/>
+    <path d="M10 29 H90 M10 36 H90" stroke-width="2"/>
+    <path d="M14 44 V58 M86 44 V58" stroke-width="2" stroke-dasharray="3 3"/>`),
+  plan('shutter-hinged', 'Volets battants', CAT.structure, `
+    <rect x="4" y="58" width="92" height="16"/><path d="M4 66 H96" stroke-width="2"/>
+    <path d="M6 56 L28 18 M94 56 L72 18" stroke-width="6"/>
+    <path d="M28 18 A44 44 0 0 1 50 56 M72 18 A44 44 0 0 0 50 56" fill="none" stroke-width="2" stroke-dasharray="4 4"/>`),
   plan('wall-opening', 'Baie libre / passage', CAT.structure, `<path d="M4 50 H24 M76 50 H96" stroke-width="10"/><path d="M24 36 V64 M76 36 V64" stroke-width="2"/>`),
   plan('stairs', 'Escalier droit', CAT.structure, `
     <rect x="26" y="4" width="48" height="92"/>

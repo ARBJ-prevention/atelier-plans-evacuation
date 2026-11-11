@@ -3,7 +3,7 @@ import { makeElement } from '../model/defaults';
 import { getCountry } from '../model/countries';
 import {
   boxOf, constrain45, distance, distToSegment, elementBounds, floorContentBounds, isVisibleInVariant,
-  openingWallFit, polylineLength, rectContains, rectFromPoints, rectsIntersect, RESIZE_DIRECTIONS, resizeBoxElement, rotatePoint, snapSymbolToWalls, snapToGrid, translateElement,
+  openingWallFit, polylineLength, snapPointToWalls, wallJoints, rectContains, rectFromPoints, rectsIntersect, RESIZE_DIRECTIONS, resizeBoxElement, rotatePoint, snapSymbolToWalls, snapToGrid, translateElement,
   unionRects, windowGlassWallFit, windowResizeWallFit, type Rect,
 } from '../model/geometry';
 import type { DoorElement, Element, Floor, Pt, SymbolElement, WindowElement } from '../model/types';
@@ -12,11 +12,14 @@ import { FloorDrawing } from '../render/FloorDrawing';
 import { getBuiltinSymbol } from '../symbols/library';
 import { currentFloor, currentVariantId, useStore, type Tool } from '../store/store';
 
+/** Sommet d'un autre mur raccordé au mur déplacé (il suit le déplacement). */
+type Joint = { id: string; index: number; orig: Pt };
+
 type Drag =
   | { kind: 'pan'; sx: number; sy: number; vx: number; vy: number }
-  | { kind: 'move'; start: Pt; orig: Element[]; startBounds: Rect; began: boolean; candX: number[]; candY: number[] }
+  | { kind: 'move'; start: Pt; orig: Element[]; startBounds: Rect; began: boolean; candX: number[]; candY: number[]; joints?: Joint[] }
   | { kind: 'marquee'; start: Pt; additive: boolean }
-  | { kind: 'vertex'; id: string; index: number; began: boolean }
+  | { kind: 'vertex'; id: string; index: number; began: boolean; joints?: Joint[] }
   | { kind: 'resize'; orig: Element; start: Pt; direction: Pt; wallDepth?: number; began: boolean }
   | { kind: 'pscale'; id: string; orig: Element; box: Rect; direction: Pt; start: Pt; began: boolean }
   | { kind: 'rotate'; id: string; center: Pt }
@@ -87,6 +90,8 @@ export function Canvas({ onCalibrate }: CanvasProps) {
   const [marquee, setMarquee] = useState<Rect | null>(null);
   const [rectDraft, setRectDraft] = useState<Rect | null>(null);
   const [guideLines, setGuideLines] = useState<{ x?: number; y?: number }>({});
+  /** Point d'accroche d'un mur sur un autre (extrémité ou axe), affiché pendant le tracé ou le déplacement. */
+  const [wallHint, setWallHint] = useState<Pt | null>(null);
   const [windowResizeGuides, setWindowResizeGuides] = useState<[Pt, Pt][]>([]);
   const [glassGuide, setGlassGuide] = useState<[Pt, Pt] | undefined>();
   const [calib, setCalib] = useState<Pt[]>([]);
@@ -163,6 +168,13 @@ export function Canvas({ onCalibrate }: CanvasProps) {
     const g = useStore.getState().grid;
     return g.snap && !e.altKey ? snapToGrid(p, g.size) : p;
   }, []);
+
+  /** Point de mur : accroché à l'extrémité ou à l'axe d'un mur voisin (Alt pour un placement libre), sinon à la grille. */
+  const snapWall = (p: Pt, e: { altKey: boolean }, exclude: Set<string> = new Set()): Pt => {
+    const hit = e.altKey ? null : snapPointToWalls(floor, variantId, p, 10 / useStore.getState().view.zoom, exclude);
+    setWallHint(hit ? hit.point : null);
+    return hit ? hit.point : snap(p, e);
+  };
 
   // ——— Zoom à la molette (autour du curseur) ———
   useEffect(() => {
@@ -269,7 +281,7 @@ export function Canvas({ onCalibrate }: CanvasProps) {
       return;
     }
     if (e.button !== 0) return;
-    const sp = snap(p, e);
+    const sp = s.tool === 'wall' ? snapWall(p, e) : snap(p, e);
     const target = e.target as SVGElement;
 
     switch (s.tool) {
@@ -287,7 +299,9 @@ export function Canvas({ onCalibrate }: CanvasProps) {
               }
               return;
             }
-            drag.current = { kind: 'vertex', id: el.id, index: Number(arg), began: false };
+            const index = Number(arg);
+            const joints = el.type === 'wall' ? wallJoints(floor, variantId, el.id, el.points[index]) : undefined;
+            drag.current = { kind: 'vertex', id: el.id, index, began: false, joints };
           } else if (kind === 'm' && 'points' in el) {
             const i = Number(arg) + 1;
             s.mutateFloor((f) => { const d = f.elements.find((x) => x.id === el.id) as any; d.points.splice(i, 0, sp); });
@@ -325,7 +339,11 @@ export function Canvas({ onCalibrate }: CanvasProps) {
             candX.push(r.x, r.x + r.w / 2, r.x + r.w);
             candY.push(r.y, r.y + r.h / 2, r.y + r.h);
           }
-          drag.current = { kind: 'move', start: p, orig, startBounds: unionRects(orig.map((o) => elementBounds(o, lc)))!, began: false, candX, candY };
+          // un mur déplacé seul entraîne les extrémités des murs qui lui sont raccordés
+          const wall = orig.length === 1 && orig[0].type === 'wall' ? orig[0] : undefined;
+          const joints = wall ? wall.points.flatMap((v, i) => wallJoints(floor, variantId, wall.id, v,
+            i + 1 < wall.points.length ? [v, wall.points[i + 1]] : undefined)) : undefined;
+          drag.current = { kind: 'move', start: p, orig, startBounds: unionRects(orig.map((o) => elementBounds(o, lc)))!, began: false, candX, candY, joints };
           return;
         }
         if (target.getAttribute('data-bg') && floor.background) {
@@ -427,7 +445,8 @@ export function Canvas({ onCalibrate }: CanvasProps) {
   const onPointerMove = (e: React.PointerEvent) => {
     const s = useStore.getState();
     const p = toWorld(e.clientX, e.clientY);
-    const sp = snap(p, e);
+    const sp = s.tool === 'wall' && !drag.current ? snapWall(p, e) : snap(p, e);
+    if (s.tool !== 'wall' && !drag.current && wallHint) setWallHint(null);
     setCursor(POLY_TOOLS.includes(s.tool) && draft.length && e.shiftKey ? constrain45(draft[draft.length - 1], sp) : (s.tool === 'calibrate' ? p : sp));
     const d = drag.current;
     if (!d) return;
@@ -478,9 +497,28 @@ export function Canvas({ onCalibrate }: CanvasProps) {
           if (fitted.x !== moved.x) { dx += fitted.x - moved.x; delete g.x; }
           if (fitted.y !== moved.y) { dy += fitted.y - moved.y; delete g.y; }
         }
+        if (only?.type === 'wall' && !e.altKey) {
+          // accroche le mur déplacé aux murs voisins par le sommet le plus proche d'une extrémité ou d'un axe
+          const exclude = new Set([only.id, ...(d.joints ?? []).map((j) => j.id)]);
+          let fix: { dx: number; dy: number; at: Pt; dist: number } | null = null;
+          for (const v of only.points) {
+            const q: Pt = [v[0] + dx, v[1] + dy];
+            const hit = snapPointToWalls(floor, variantId, q, 10 / s.view.zoom, exclude);
+            if (hit && (!fix || distance(q, hit.point) < fix.dist)) fix = { dx: hit.point[0] - q[0], dy: hit.point[1] - q[1], at: hit.point, dist: distance(q, hit.point) };
+          }
+          if (fix) { dx += fix.dx; dy += fix.dy; delete g.x; delete g.y; }
+          setWallHint(fix ? fix.at : null);
+        }
         setGuideLines(g);
         const moved = new Map(d.orig.map((o) => [o.id, translateElement(o, dx, dy)]));
-        s.mutateFloor((f) => { f.elements = f.elements.map((x) => (moved.get(x.id) as any) ?? x); }, { history: false, keepValidation: true });
+        const joints = d.joints ?? [];
+        s.mutateFloor((f) => {
+          f.elements = f.elements.map((x) => (moved.get(x.id) as any) ?? x);
+          for (const j of joints) {
+            const w = f.elements.find((x) => x.id === j.id) as any;
+            if (w?.points?.[j.index]) w.points[j.index] = [j.orig[0] + dx, j.orig[1] + dy];
+          }
+        }, { history: false, keepValidation: true });
         return;
       }
       case 'marquee':
@@ -489,12 +527,21 @@ export function Canvas({ onCalibrate }: CanvasProps) {
       case 'vertex': {
         if (!d.began) { d.began = true; s.beginLive(); }
         const el = elById(d.id) as any;
-        let pt = sp;
+        let pt = el?.type === 'wall' ? snapWall(p, e, new Set([d.id, ...(d.joints ?? []).map((j) => j.id)])) : sp;
         if (e.shiftKey && el?.points) {
           const ref = el.points[d.index - 1] ?? el.points[d.index + 1];
           if (ref) pt = constrain45(ref, sp);
         }
-        s.mutateFloor((f) => { const x = f.elements.find((q) => q.id === d.id) as any; if (x) x.points[d.index] = pt; }, { history: false, keepValidation: true });
+        const joints = d.joints ?? [];
+        s.mutateFloor((f) => {
+          const x = f.elements.find((q) => q.id === d.id) as any;
+          if (x) x.points[d.index] = pt;
+          // les murs raccordés à ce sommet le suivent
+          for (const j of joints) {
+            const w = f.elements.find((q) => q.id === j.id) as any;
+            if (w?.points?.[j.index]) w.points[j.index] = pt;
+          }
+        }, { history: false, keepValidation: true });
         return;
       }
       case 'resize':
@@ -571,6 +618,7 @@ export function Canvas({ onCalibrate }: CanvasProps) {
     const d = drag.current;
     drag.current = null;
     setGuideLines({});
+    setWallHint(null);
     setWindowResizeGuides([]);
     setGlassGuide(undefined);
     if (!d) return;
@@ -792,6 +840,7 @@ export function Canvas({ onCalibrate }: CanvasProps) {
             {selBoxes}
             {handles}
             {marquee && <rect className="marquee" x={marquee.x} y={marquee.y} width={marquee.w} height={marquee.h} />}
+            {wallHint && <circle className="wall-snap" cx={wallHint[0]} cy={wallHint[1]} r={7 / z} />}
             {guidesOn && guideLines.x !== undefined && <line className="guide" x1={guideLines.x} x2={guideLines.x} y1={-1e5} y2={1e5} />}
             {guidesOn && guideLines.y !== undefined && <line className="guide" y1={guideLines.y} y2={guideLines.y} x1={-1e5} x2={1e5} />}
             {guidesOn && windowResizeGuides.map(([[x1, y1], [x2, y2]], i) => (

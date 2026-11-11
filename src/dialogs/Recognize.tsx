@@ -28,6 +28,7 @@ export async function askRecognition(
   const r = await ask({
     title: 'Redessiner le plan',
     wide: true,
+    large: true,
     initial: { roles, kinds: RECOGNIZED_KINDS.map((k) => k.key) },
     render: (v, set) => <RecognizePanel values={v} set={set} layers={layers} counts={counts} run={run} floor={floor} background={background} upm={unitsPerMeter} />,
     buttons: [

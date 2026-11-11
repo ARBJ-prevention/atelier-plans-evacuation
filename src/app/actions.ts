@@ -300,7 +300,7 @@ export async function importDxfBackground(name: string, data: Uint8Array, dwgVer
       applyDxfBackground(name, choice, upm, rec.elements);
       if (rec.elements.length) {
         const c = rec.counts;
-        S().toast(`Plan redessiné à l’échelle réelle (${dims}) : ${c.rooms} pièce(s), ${c.walls} mur(s), ${c.doors} porte(s), ${c.windows} fenêtre(s), ${c.stairs} escalier(s). Vérifiez-le, puis ajoutez les pictogrammes.`, 'success');
+        S().toast(`Plan redessiné à l’échelle réelle (${dims}) : ${c.rooms} pièce(s), ${c.walls} mur(s), ${c.doors} porte(s), ${c.windows} fenêtre(s), ${c.stairs} escalier(s). Le tracé d’origine est masqué (calque « Plan de fond ») ; vérifiez le plan, puis ajoutez les pictogrammes.`, 'success');
         return;
       }
     } else {
@@ -331,7 +331,12 @@ export function applyDxfBackground(name: string, choice: DxfImportChoice, upm: n
   S().mutateFloor((f) => {
     f.background = bg;
     f.unitsPerMeter = upm;
-    if (elements.length) f.elements.push(...(elements as Draft<Element>[]));
+    if (elements.length) {
+      f.elements.push(...(elements as Draft<Element>[]));
+      // plan redessiné : seul le plan épuré reste affiché ; le tracé importé reste disponible (calque « Plan de fond »)
+      const bgLayer = f.layers.find((l) => l.id === 'background');
+      if (bgLayer) bgLayer.visible = false;
+    }
   });
   S().requestFit();
 }

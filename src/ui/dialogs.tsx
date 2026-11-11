@@ -26,6 +26,8 @@ interface DialogReq {
   /** Désactive le bouton principal tant que la fonction renvoie un message. */
   invalid?: (values: Record<string, any>) => string | null;
   wide?: boolean;
+  /** Fenêtre presque plein écran (aperçus de plan). */
+  large?: boolean;
   resolve(r: { button: string; values: Record<string, any> }): void;
 }
 
@@ -82,7 +84,7 @@ function DialogView({ req }: { req: DialogReq }) {
 
   return (
     <div className="modal-backdrop" onKeyDown={(e) => { if (e.key === 'Escape') { e.stopPropagation(); close('cancel'); } }}>
-      <form className={req.wide ? 'modal wide' : 'modal'} onSubmit={submit} role="dialog" aria-modal="true" aria-label={req.title}>
+      <form className={req.large ? 'modal wide large' : req.wide ? 'modal wide' : 'modal'} onSubmit={submit} role="dialog" aria-modal="true" aria-label={req.title}>
         <h2>{req.title}</h2>
         {req.message && <div className="modal-msg">{req.message}</div>}
         {(req.fields ?? []).map((f, i) => (

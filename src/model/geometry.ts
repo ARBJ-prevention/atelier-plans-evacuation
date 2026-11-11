@@ -296,6 +296,66 @@ export function isVisibleInVariant(el: Element, variantId: string): boolean {
   return el.variantId ? el.variantId === variantId : !el.excludedVariantIds?.includes(variantId);
 }
 
+function* visibleWalls(floor: Floor, variantId: string, exclude: Set<string>) {
+  for (const el of floor.elements) {
+    if (el.type === 'wall' && el.points.length >= 2 && !exclude.has(el.id) && isVisibleInVariant(el, variantId)) yield el;
+  }
+}
+
+/**
+ * Aimantation d'un point de mur sur les autres murs : une extrémité ou un angle proche en priorité,
+ * sinon le point le plus proche de l'axe d'un mur (jonction en T). `tolerance` en unités plan.
+ */
+export function snapPointToWalls(
+  floor: Floor, variantId: string, p: Pt, tolerance: number, exclude: Set<string> = new Set(),
+): { point: Pt; kind: 'end' | 'axis' } | null {
+  let end: Pt | null = null, bestEnd = tolerance;
+  for (const w of visibleWalls(floor, variantId, exclude)) {
+    for (const v of w.points) {
+      const d = distance(p, v);
+      if (d <= bestEnd) { bestEnd = d; end = v; }
+    }
+  }
+  if (end) return { point: [end[0], end[1]], kind: 'end' };
+  let axis: Pt | null = null, bestAxis = tolerance;
+  for (const w of visibleWalls(floor, variantId, exclude)) {
+    const n = w.points.length, segs = w.closed ? n : n - 1;
+    for (let i = 0; i < segs; i++) {
+      const a = w.points[i], b = w.points[(i + 1) % n];
+      const abx = b[0] - a[0], aby = b[1] - a[1], L2 = abx * abx + aby * aby;
+      if (!L2) continue;
+      const t = Math.max(0, Math.min(1, ((p[0] - a[0]) * abx + (p[1] - a[1]) * aby) / L2));
+      const q: Pt = [a[0] + abx * t, a[1] + aby * t];
+      const d = distance(p, q);
+      if (d <= bestAxis) { bestAxis = d; axis = q; }
+    }
+  }
+  return axis ? { point: axis, kind: 'axis' } : null;
+}
+
+/**
+ * Murs raccordés à un point : sommets d'autres murs confondus avec lui, et (avec `segment`) extrémités
+ * d'autres murs posées sur ce segment (jonctions en T). Sert à les faire suivre quand on déplace un mur.
+ */
+export function wallJoints(
+  floor: Floor, variantId: string, owner: string, at: Pt, segment?: [Pt, Pt], tolerance = 0.75,
+): { id: string; index: number; orig: Pt }[] {
+  const out: { id: string; index: number; orig: Pt }[] = [];
+  for (const w of visibleWalls(floor, variantId, new Set([owner]))) {
+    w.points.forEach((v, index) => {
+      const isEnd = !w.closed && (index === 0 || index === w.points.length - 1);
+      let joined = distance(v, at) <= tolerance;
+      if (!joined && segment && isEnd) {
+        const [a, b] = segment, abx = b[0] - a[0], aby = b[1] - a[1], L2 = abx * abx + aby * aby;
+        const t = L2 ? ((v[0] - a[0]) * abx + (v[1] - a[1]) * aby) / L2 : -1;
+        joined = t >= 0 && t <= 1 && distance(v, [a[0] + abx * t, a[1] + aby * t]) <= tolerance;
+      }
+      if (joined) out.push({ id: w.id, index, orig: [v[0], v[1]] });
+    });
+  }
+  return out;
+}
+
 export const DEFAULT_SYMBOL_WALL_GAP = 6;
 const SYMBOL_WALL_SNAP_RANGE = 50;
 

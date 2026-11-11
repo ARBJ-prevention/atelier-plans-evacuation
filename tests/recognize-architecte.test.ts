@@ -1,0 +1,231 @@
+/**
+ * Plans d'architecte « réels » : conventions de calques numérotées (« 913_AR_RE_Mur coupé »…),
+ * fichier déclaré en millimètres mais dessiné en centimètres, portes dessinées ouvertes à 45°,
+ * numéros de locaux posés sur les portes et surfaces au centre des pièces, salles séparées
+ * seulement par des amorces de murs.
+ */
+import { existsSync, readFileSync } from 'node:fs';
+import { describe, expect, it } from 'vitest';
+import {
+  arcPoints, checkUnitByDoors, decodeDxfBytes, flattenDxf, parseDxf, renderDxfSvg, unitMeters, type DxfPrim, type FlatDxf, type Vec,
+} from '../src/services/dxf';
+import { guessLayerRole, recognizePlan, type LayerRole } from '../src/services/recognize';
+import { getBuiltinSymbol } from '../src/symbols/library';
+
+const UPM = 50;
+const WALL = '913_AR_RE_Mur coupé';
+const DOORS = '159_AR_INT_Menuiseries int.';
+
+const base = (layer: string) => ({ layer, chain: [layer], color: '#000000', lw: 0 });
+const line = (layer: string, pts: Vec[], closed = false): DxfPrim => ({ ...base(layer), kind: 'line', pts, closed });
+const rect = (layer: string, x0: number, y0: number, x1: number, y1: number) => line(layer, [[x0, y0], [x1, y0], [x1, y1], [x0, y1]], true);
+const text = (layer: string, at: Vec, ...lines: string[]): DxfPrim => ({
+  ...base(layer), kind: 'text', at, height: 20, rotation: 0, lines, hAlign: 'middle', vAlign: 'middle',
+});
+/** Battant ouvert à 45° (rayon r, charnière h), avec le trait du vantail ouvert. */
+function door45(h: Vec, r: number, startDeg: number, group: number): DxfPrim[] {
+  const start = (startDeg * Math.PI) / 180, sweep = Math.PI / 4;
+  const pts = arcPoints(h[0], h[1], r, start, sweep);
+  const p0 = pts[0], p1 = pts[pts.length - 1];
+  return [
+    { ...base(DOORS), group, kind: 'line', pts, closed: false, arc: { c: h, r, p0, p1, sweep: 45 } },
+    { ...base(DOORS), group, kind: 'line', pts: [h, p1], closed: false },
+  ];
+}
+
+/**
+ * Deux salles de 5,8 m × 4,6 m (dessin en cm, fichier déclaré en mm) :
+ * murs de 20 cm, une porte de 90 cm ouverte à 45° dans le mur du haut,
+ * cloison centrale réduite à deux amorces (l'ouverture du milieu n'est pas dessinée).
+ */
+function architectPlan(): FlatDxf {
+  const prims: DxfPrim[] = [
+    // façade : contour extérieur et intérieur, interrompu par la porte (x 300 → 390)
+    line(WALL, [[300, 500], [0, 500], [0, 0], [1200, 0], [1200, 500], [390, 500]]),
+    line(WALL, [[300, 480], [20, 480], [20, 20], [1180, 20], [1180, 480], [390, 480]]),
+    line(WALL, [[300, 480], [300, 500]]), line(WALL, [[390, 480], [390, 500]]),
+    // amorces de la séparation centrale (le milieu reste ouvert dans le dessin)
+    rect(WALL, 590, 20, 610, 140), rect(WALL, 590, 360, 610, 480),
+    // poteau de 40 × 20 cm contre la façade (détail à exclure du plan d'évacuation)
+    rect(WALL, 1100, 20, 1140, 40),
+    // gaine dessinée en simple trait sur le calque des murs
+    line(WALL, [[100, 300], [100, 480]]),
+    ...door45([300, 490], 90, 0, 1),
+    line('Seuil', [[300, 490], [390, 490]]),
+    // cadre de la porte sur le calque des menuiseries extérieures : ce n'est pas une fenêtre
+    line('154_AR_EXT_Menuiserie_ext', [[305, 485], [385, 485]]), line('154_AR_EXT_Menuiserie_ext', [[305, 495], [385, 495]]),
+    // réduit fermé de 2 m × 1,8 m sans nom ni surface (dégagement) dans la salle de droite
+    line(WALL, [[700, 20], [700, 200], [900, 200], [900, 20]]),
+    text('TEXTES COTES', [300, 250], '30,00 m²'),
+    text('TEXTES COTES', [900, 250], '30,00 m²'),
+    text('TEXTES COTES', [900, 380], 'NIV. 10.00'),
+    text('TEXTES COTES', [345, 530], "E.i. 30'"),
+    text('N° LOCAL', [345, 495], 'A 101'), // posé sur la porte
+    text('N° LOCAL', [900, 10], 'A 102'), // posé dans le mur
+  ];
+  const layers = [...new Set(prims.map((p) => p.layer))].map((name) => ({
+    name, count: prims.filter((p) => p.layer === name).length, color: '#000000', defaultVisible: true,
+  }));
+  return { prims, layers, insUnits: 4, skipped: {} };
+}
+
+function recognizeArchitect(flat: FlatDxf, unit: string) {
+  const roles: Record<string, LayerRole> = Object.fromEntries(flat.layers.map((l) => [l.name, l.defaultVisible ? guessLayerRole(l.name) : 'ignore']));
+  const visible = new Set(flat.layers.filter((l) => l.defaultVisible).map((l) => l.name));
+  const res = renderDxfSvg(flat, { visibleLayers: visible, metersPerUnit: unitMeters(unit), unitsPerMeter: UPM, monochrome: true });
+  return recognizePlan(flat, { roles, origin: res.origin, unitsPerMeter: UPM });
+}
+
+describe('calques d’architecte à numéros', () => {
+  it('reconnaît menuiseries, numéros de locaux, textes et écarte seuils, sanitaires et traits cachés', () => {
+    expect(guessLayerRole('159_AR_INT_Menuiseries int.')).toBe('doors');
+    expect(guessLayerRole('154_AR_EXT_Menuiserie_ext')).toBe('windows');
+    expect(guessLayerRole('N° LOCAL')).toBe('labels');
+    expect(guessLayerRole('TEXTES COTES')).toBe('labels');
+    expect(guessLayerRole('913_AR_RE_Mur coupé')).toBe('walls');
+    expect(guessLayerRole('157_AR_INT_Cloison coupée')).toBe('partitions');
+    expect(guessLayerRole('912_AR_RE_Mur caché')).toBe('ignore');
+    expect(guessLayerRole('156_AR_INT_Cloison cachée')).toBe('ignore');
+    expect(guessLayerRole('Seuil')).toBe('ignore');
+    expect(guessLayerRole('401_SAN_Equipements')).toBe('ignore');
+    expect(guessLayerRole('406_SAN_Diffusion')).toBe('ignore');
+    expect(guessLayerRole('COTATIONS')).toBe('ignore');
+  });
+});
+
+describe('contrôle de l’unité par la largeur des portes', () => {
+  const flat: FlatDxf = {
+    prims: [0, 1, 2, 3, 4, 5].flatMap((i) => door45([i * 200, 0], i % 2 ? 83 : 93, 0, i)),
+    layers: [{ name: DOORS, count: 12, color: '#000000', defaultVisible: true }], insUnits: 4, skipped: {},
+  };
+  const visible = new Set([DOORS]);
+
+  it('propose les centimètres quand un fichier « mm » donnerait des portes de 9 cm', () => {
+    const fix = checkUnitByDoors(flat, visible, 'mm');
+    expect(fix?.unit).toBe('cm');
+    expect(fix!.doorM).toBeCloseTo(0.093, 3);
+  });
+
+  it('ne change rien quand l’unité est plausible ou qu’il y a trop peu de portes', () => {
+    expect(checkUnitByDoors(flat, visible, 'cm')).toBeNull();
+    expect(checkUnitByDoors({ ...flat, prims: flat.prims.slice(0, 4) }, visible, 'mm')).toBeNull();
+  });
+});
+
+describe('reconnaissance d’un plan d’architecte (dessin en cm)', () => {
+  const rec = recognizeArchitect(architectPlan(), 'cm');
+
+  it('retrouve la porte ouverte à 45°, avec sa largeur réelle', () => {
+    expect(rec.doors).toHaveLength(1);
+    expect(rec.doors[0].width / UPM).toBeCloseTo(0.9, 2);
+  });
+
+  it('sépare les deux salles reliées par une ouverture non dessinée et leur rattache les numéros posés sur la porte et dans le mur', () => {
+    const rooms = rec.rooms.filter((r) => r.label).sort((a, b) => a.points[0][0] - b.points[0][0]);
+    expect(rooms.map((r) => r.label)).toEqual(['A 101', 'A 102']);
+    expect(rooms.every((r) => r.showArea)).toBe(true);
+    // la frontière tombe à mi-chemin des surfaces, au droit des amorces de la cloison (x = 6 m)
+    const xs = rooms[0].points.map((p) => p[0] / UPM);
+    expect(Math.min(...xs)).toBeCloseTo(0.2, 0);
+    expect(Math.abs(Math.max(...xs) - 6)).toBeLessThan(0.15);
+  });
+
+  const len = (w: { points: number[][] }) => Math.hypot(w.points[1][0] - w.points[0][0], w.points[1][1] - w.points[0][1]) / UPM;
+
+  it('donne aux murs extérieurs une épaisseur unique, plus forte que celle des murs intérieurs', () => {
+    const façade = rec.walls.filter((w) => len(w) > 4);
+    expect(façade.length).toBeGreaterThanOrEqual(4);
+    expect(façade.every((w) => Math.abs(w.thickness / UPM - 0.28) < 0.005)).toBe(true);
+    const amorces = rec.walls.filter((w) => Math.abs(w.points[0][0] / UPM - 6) < 0.05 && Math.abs(w.points[1][0] / UPM - 6) < 0.05);
+    expect(amorces.length).toBe(2);
+    expect(amorces.every((w) => w.thickness / UPM <= 0.15 + 1e-6)).toBe(true);
+  });
+
+  it('rend le mur continu au droit de la porte et y cale la porte', () => {
+    const d = rec.doors[0];
+    const host = rec.walls.find((w) => {
+      const [a, b] = w.points, L = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      const ux = (b[0] - a[0]) / L, uy = (b[1] - a[1]) / L, along = (d.x - a[0]) * ux + (d.y - a[1]) * uy;
+      return Math.abs((d.x - a[0]) * uy - (d.y - a[1]) * ux) < 0.5 && along >= d.width / 2 && along <= L - d.width / 2;
+    });
+    expect(host).toBeTruthy();
+    expect(Math.abs(((d.rotation % 180) + 180) % 180)).toBeLessThan(0.5);
+  });
+
+  it('écarte poteaux et petits morceaux, retrace le mur en simple trait', () => {
+    expect(rec.walls.every((w) => len(w) >= 0.5)).toBe(true);
+    expect(rec.walls.some((w) => Math.abs(w.points[0][0] / UPM - 1) < 0.05 && Math.abs(len(w) - 1.8) < 0.15)).toBe(true);
+  });
+
+  it('marque coupe-feu la porte signalée « E.i. 30’ »', () => {
+    expect(rec.doors[0].fireRated).toBe(true);
+    expect(rec.doors[0].fireRating).toBe('EI 30');
+  });
+
+  it('ne garde pas de fenêtre sur une porte', () => {
+    expect(rec.windows).toHaveLength(0);
+    expect(rec.doors).toHaveLength(1);
+  });
+
+  it('donne une zone sans nom aux espaces fermés sans texte (dégagements)', () => {
+    const free = rec.rooms.filter((r) => !r.label);
+    expect(free).toHaveLength(1);
+    const xs = free[0].points.map((q) => q[0] / UPM), ys = free[0].points.map((q) => q[1] / UPM);
+    expect(Math.max(...xs) - Math.min(...xs)).toBeCloseTo(2, 0);
+    expect(free[0].showArea).toBe(false);
+  });
+
+  it('n’utilise pas les niveaux ou les degrés coupe-feu comme noms de pièces', () => {
+    expect(rec.rooms.some((r) => /NIV/.test(r.label))).toBe(false);
+  });
+
+  it('ne reconnaît rien d’utile avec l’unité déclarée (mm), d’où le contrôle par les portes', () => {
+    const wrong = recognizeArchitect(architectPlan(), 'mm');
+    expect(wrong.doors).toHaveLength(0);
+    expect(wrong.rooms.filter((r) => r.label)).toHaveLength(0);
+  });
+});
+
+/**
+ * Plan réel fourni par l'utilisateur (non versionné) : définir PLAN_ARCHITECTE_DXF avec le chemin
+ * du DXF converti (ODA File Converter) pour lancer ce contrôle.
+ */
+const realPlan = process.env.PLAN_ARCHITECTE_DXF;
+describe.skipIf(!realPlan || !existsSync(realPlan))('plan d’architecte réel (PLAN_ARCHITECTE_DXF)', () => {
+  it('corrige l’unité et redessine pièces, portes, fenêtres et escaliers', () => {
+    const flat = flattenDxf(parseDxf(decodeDxfBytes(readFileSync(realPlan!))));
+    const visible = new Set(flat.layers.filter((l) => l.defaultVisible).map((l) => l.name));
+    const unit = checkUnitByDoors(flat, visible, 'mm')?.unit;
+    expect(unit).toBe('cm');
+    const rec = recognizeArchitect(flat, unit!);
+    expect(rec.doors.length).toBeGreaterThanOrEqual(60);
+    expect(rec.windows.length).toBeGreaterThanOrEqual(20);
+    expect(rec.stairs.length).toBeGreaterThanOrEqual(2);
+    expect(rec.rooms.length).toBeGreaterThanOrEqual(20);
+    expect(rec.rooms.filter((r) => /^A \d+/.test(r.label)).length).toBeGreaterThanOrEqual(15);
+    const len = (w: { points: number[][] }) => Math.hypot(w.points[1][0] - w.points[0][0], w.points[1][1] - w.points[0][1]) / UPM;
+    expect(rec.walls.filter((w) => len(w) < 0.5)).toHaveLength(0);
+    // couloirs et dégagements reçoivent aussi une zone
+    expect(rec.rooms.length).toBeGreaterThanOrEqual(30);
+    expect(rec.rooms.filter((r) => !r.label).length).toBeGreaterThanOrEqual(3);
+    // aucune fenêtre posée sur une porte
+    const onDoor = rec.windows.filter((w) => rec.doors.some((d) => Math.hypot(d.x - w.x, d.y - w.y) < (d.width + w.width) / 2 - 1
+      && Math.abs((((d.rotation - w.rotation) % 180) + 180) % 180 - 90) > 60));
+    expect(onDoor).toHaveLength(0);
+    const thick = [...new Set(rec.walls.map((w) => Math.round((w.thickness / UPM) * 100)))].sort((a, b) => a - b);
+    expect(thick[thick.length - 1]).toBeGreaterThanOrEqual(28); // façade
+    expect(thick.filter((t) => t > 15 && t < 28)).toHaveLength(0); // intérieur : 15 cm au plus
+    expect(rec.doors.filter((d) => d.fireRated).length).toBeGreaterThanOrEqual(3);
+  });
+});
+
+describe('pictogrammes de volets', () => {
+  it('propose un volet roulant et des volets battants dans « Structure du bâtiment »', () => {
+    for (const id of ['shutter-rolling', 'shutter-hinged']) {
+      const sym = getBuiltinSymbol(id);
+      expect(sym?.category).toBe('Structure du bâtiment');
+      expect(sym?.planSymbol).toBe(true);
+      expect(sym?.name.toLowerCase()).toContain('volet');
+    }
+  });
+});

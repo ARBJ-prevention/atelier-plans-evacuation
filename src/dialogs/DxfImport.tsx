@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import {
-  declaredUnit, DXF_UNITS, dxfMaxDim, guessUnit, renderDxfSvg, unitMeters, type DxfRenderResult, type FlatDxf,
+  checkUnitByDoors, declaredUnit, DXF_UNITS, dxfMaxDim, guessUnit, renderDxfSvg, unitMeters, type DxfRenderResult, type FlatDxf,
 } from '../services/dxf';
 import { ask } from '../ui/dialogs';
 
@@ -24,7 +24,11 @@ function svgPreviewUrl(svg: string): string {
 export async function askDxfImport(flat: FlatDxf, fileName: string, unitsPerMeter: number, dwgVersion?: string): Promise<DxfImportChoice | null> {
   const declared = declaredUnit(flat.insUnits);
   const defaultVisible = flat.layers.filter((l) => l.defaultVisible).map((l) => l.name);
-  const unit = declared ?? guessUnit(dxfMaxDim(flat, new Set(defaultVisible)));
+  const base = declared ?? guessUnit(dxfMaxDim(flat, new Set(defaultVisible)));
+  // unité corrigée si les portes auraient une largeur invraisemblable (fichier « mm » dessiné en cm…)
+  const doorCheck = checkUnitByDoors(flat, new Set(defaultVisible), base);
+  const unit = doorCheck?.unit ?? base;
+  const correction = doorCheck ? { from: base, to: doorCheck.unit, doorM: doorCheck.doorM } : null;
   const render = (v: Record<string, any>): DxfRenderResult | string => {
     try {
       return renderDxfSvg(flat, { visibleLayers: new Set(v.visible as string[]), metersPerUnit: unitMeters(v.unit), unitsPerMeter, monochrome: !!v.mono });
@@ -37,9 +41,10 @@ export async function askDxfImport(flat: FlatDxf, fileName: string, unitsPerMete
     title: `Importer un plan ${dwgVersion ? 'DWG' : 'DXF'} — ${fileName}`,
     message: dwgVersion ? `Fichier ${dwgVersion} lu grâce à ODA File Converter.` : undefined,
     wide: true,
+    large: true,
     initial: { unit, visible: defaultVisible, mono: true, recognize: true },
     invalid: (v) => ((v.visible as string[]).length ? null : 'Aucun calque'),
-    render: (v, set) => <DxfPanel flat={flat} values={v} set={set} declared={declared} render={render} skipped={skippedTypes} />,
+    render: (v, set) => <DxfPanel flat={flat} values={v} set={set} declared={declared} render={render} skipped={skippedTypes} correction={correction} />,
     buttons: [{ label: 'Annuler', value: 'cancel' }, { label: 'Continuer', value: 'ok', primary: true }],
   });
   if (r.button !== 'ok') return null;
@@ -48,9 +53,14 @@ export async function askDxfImport(flat: FlatDxf, fileName: string, unitsPerMete
   return { result: res, unit: r.values.unit, unitDeclared: declared === r.values.unit, visibleLayers: r.values.visible, monochrome: !!r.values.mono, recognize: !!r.values.recognize };
 }
 
-export function DxfPanel({ flat, values, set, declared, render, skipped }: {
+export interface UnitCorrection { from: string; to: string; doorM: number }
+
+const unitLabel = (key: string) => DXF_UNITS.find((u) => u.key === key)?.label.toLowerCase() ?? key;
+const fmtLen = (m: number) => (m < 1 ? `${Math.round(m * 100)} cm` : `${fmtM(m)} m`);
+
+export function DxfPanel({ flat, values, set, declared, render, skipped, correction = null }: {
   flat: FlatDxf; values: Record<string, any>; set(p: Record<string, any>): void; declared: string | null;
-  render(v: Record<string, any>): DxfRenderResult | string; skipped: [string, number][];
+  render(v: Record<string, any>): DxfRenderResult | string; skipped: [string, number][]; correction?: UnitCorrection | null;
 }) {
   const [filter, setFilter] = useState('');
   const visible = new Set(values.visible as string[]);
@@ -79,7 +89,9 @@ export function DxfPanel({ flat, values, set, declared, render, skipped }: {
           <select value={values.unit} onChange={(e) => set({ unit: e.target.value })}>
             {DXF_UNITS.map((u) => <option key={u.key} value={u.key}>{u.label}{u.key === declared ? ' (indiquée dans le fichier)' : ''}</option>)}
           </select>
-          <small>{declared ? 'Unité lue dans le fichier.' : 'Le fichier n’indique pas d’unité : vérifiez que les dimensions ci-dessous sont correctes.'}</small>
+          {correction && values.unit === correction.to
+            ? <small className="dxf-unit-fix" role="status">{declared === correction.from ? 'Le fichier indique' : 'L’unité devinée était'} « {unitLabel(correction.from)} », mais les portes mesureraient alors {fmtLen(correction.doorM)} de large : « {unitLabel(correction.to)} » a été choisi d’après la largeur des portes. Vérifiez les dimensions ci-dessous.</small>
+            : <small>{declared ? 'Unité lue dans le fichier.' : 'Le fichier n’indique pas d’unité : vérifiez que les dimensions ci-dessous sont correctes.'}</small>}
         </label>
         {typeof preview !== 'string' && (
           <p className="dxf-dims">
