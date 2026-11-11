@@ -1,6 +1,7 @@
 # Journal des versions
 
-## À venir
+## 2.0.10 — novembre 2026
+- **Nouveau pictogramme pour le BAES** : luminaire d’éclairage de sécurité (boîtier, panneau vert avec la silhouette ISO 7010, flèche et halo lumineux). Les plans existants affichent automatiquement le nouveau dessin. Il se trouve aussi en cherchant « secours » dans la bibliothèque.
 - **Plan redessiné automatiquement** à l'import d'un DXF ou d'un DWG : murs et cloisons (épaisseurs réelles, angles raccordés), portes simples et doubles (sens d'ouverture repris), fenêtres, escaliers et pièces nommées sont créés comme éléments modifiables du logiciel, aux vraies dimensions. Fenêtre de vérification avec aperçu, nombre d'éléments par catégorie et rôle de chaque calque (deviné d'après son nom en français, anglais, néerlandais ou allemand, modifiable avec mise à jour immédiate). Les noms de pièces et leur surface sont repris des textes du plan.
 
 ## 2.0.9 — novembre 2026
