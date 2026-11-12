@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import brandIcon from '../../build/icon.svg';
 import * as A from '../app/actions';
 import { ARROW_PRESETS, GREEN_ARROW_STYLE, insertArrowPreset, type ArrowPreset } from '../app/arrowPresets';
 import { makeElement } from '../model/defaults';
@@ -61,10 +62,7 @@ export function Ribbon({ onPrintPreview, onQuickExport }: { onPrintPreview(): vo
     <header className="ribbon">
       <div className="rb-top">
         <div className="rb-brand" title="Atelier Plans d’Évacuation">
-          <svg viewBox="0 0 100 100" width={22} height={22} aria-hidden="true">
-            <rect x="2" y="2" width="96" height="96" rx="22" fill="#00a651" />
-            <path d="M24 70 L43 51 L55 61 L76 36 M76 36 H63 M76 36 V49" fill="none" stroke="#fff" strokeWidth="9" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
+          <img src={brandIcon} width={22} height={22} alt="" />
         </div>
         <div className="rb-quick">
           <button title="Enregistrer (Ctrl+S)" onClick={() => A.saveProject(false)}><Icon name="save" size={16} /></button>
