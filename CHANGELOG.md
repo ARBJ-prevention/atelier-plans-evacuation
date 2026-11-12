@@ -1,5 +1,10 @@
 # Journal des versions
 
+## 2.0.15 — novembre 2026
+- **Découper en locaux** (panneau Actions d'une forme ou d'une zone) : la forme est limitée au bâtiment puis remplacée par une zone par local ; les murs, cloisons et portes séparent les locaux, l'épaisseur des murs est partagée entre voisins pour couvrir toute la zone, et chaque zone reprend le nom de la pièce ou du texte qu'elle contient.
+- « Limiter au bâtiment » et « Découper en locaux » arrêtent la zone au milieu de la façade, sous le mur : son contour ne dépasse plus du plan.
+- **Volets sur les fenêtres** (onglet Bâtiment › Volets : Roulant ou Battants) : la fenêtre se pose avec son volet côté extérieur ; le type de volet et le côté se changent dans les propriétés de la fenêtre.
+
 ## 2.0.14 — novembre 2026
 - **Nouveau logo** : un A blanc traversé par une flèche d'évacuation verte, sur fond bleu nuit (icône du logiciel, de l'installateur et du ruban).
 
