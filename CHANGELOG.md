@@ -1,5 +1,8 @@
 # Journal des versions
 
+## 2.0.14 — novembre 2026
+- **Nouveau logo** : un A blanc traversé par une flèche d'évacuation verte, sur fond bleu nuit (icône du logiciel, de l'installateur et du ruban).
+
 ## 2.0.13 — novembre 2026
 - **Avancer / Reculer d'un cran** (ruban Accueil › Organiser, panneau Actions, Ctrl+Page préc. / Ctrl+Page suiv.) : la forme passe juste devant ou derrière l'élément qu'elle chevauche, y compris sous les murs du calque Bâtiment, pour placer un fond de couleur derrière le plan.
 - **Limiter au bâtiment** (panneau Actions d'une forme ou d'une zone) : une forme dessinée plus grande que le plan est découpée au nu extérieur des façades, les portes, fenêtres et petites ouvertures étant refermées ; elle passe en fond du calque Bâtiment.
