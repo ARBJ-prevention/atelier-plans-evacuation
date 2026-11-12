@@ -108,6 +108,8 @@ export interface WindowElement extends BaseElement {
   depth: number;
   panes: number;
   color: string;
+  /** Volet côté extérieur (côté A ; flipY : côté B). Absent = aucun volet. */
+  shutter?: 'none' | 'rolling' | 'hinged';
 }
 
 export interface StairsElement extends BaseElement {

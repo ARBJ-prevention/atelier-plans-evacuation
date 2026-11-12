@@ -1,7 +1,7 @@
 import { produce, type Draft } from 'immer';
 import { create } from 'zustand';
 import { LAYER_ORDER, makeElement, newProject, uid } from '../model/defaults';
-import { clipToBuilding, outlineOf } from '../services/footprint';
+import { clipToBuilding, outlineOf, splitIntoRooms } from '../services/footprint';
 import {
   DEFAULT_SYMBOL_WALL_GAP, elementBounds, isVisibleInVariant, rectCenter, rotateElementAround, snapSymbolToWalls, translateElement, unionRects,
 } from '../model/geometry';
@@ -41,6 +41,8 @@ export interface ToolPresets {
   shape: 'rect' | 'ellipse' | 'triangle' | 'diamond' | 'hexagon' | 'line' | 'arrow' | 'star';
   routeKind: 'principal' | 'secondaire';
   wallThickness: number;
+  /** Volet des nouvelles fenêtres (outil Fenêtre / Volet). */
+  windowShutter: 'none' | 'rolling' | 'hinged';
 }
 
 const VIEW_KEY = 'evac.view.v2';
@@ -129,6 +131,8 @@ export interface EditorState {
   reorderSelection(where: 'front' | 'back' | 'forward' | 'backward'): void;
   /** Découpe les formes / zones sélectionnées selon l'emprise du bâtiment (intérieur des façades). */
   clipSelectionToBuilding(): void;
+  /** Découpe la forme / zone sélectionnée en une zone par local (limitée au bâtiment). */
+  splitSelectionIntoRooms(): void;
   nudgeSelection(dx: number, dy: number): void;
   flipSelection(axis: 'h' | 'v'): void;
   toggleLockSelection(): void;
@@ -155,7 +159,7 @@ export const useStore = create<EditorState>((set, get) => ({
   grid: prefs.grid,
   guides: prefs.guides,
   rulers: prefs.rulers,
-  presets: { doorType: 'single', doorFire: false, stairType: 'straight', stairArrow: true, stairSplit: false, shape: 'rect', routeKind: 'principal', wallThickness: 12 },
+  presets: { doorType: 'single', doorFire: false, stairType: 'straight', stairArrow: true, stairSplit: false, shape: 'rect', routeKind: 'principal', wallThickness: 12, windowShutter: 'none' },
   clipboard: [],
   toasts: [],
   fitRequest: 0,
@@ -501,6 +505,50 @@ export const useStore = create<EditorState>((set, get) => ({
       fd.elements = [...moved, ...rest];
     });
     get().toast(results.size > 1 ? `${results.size} formes limitées au bâtiment.` : 'Forme limitée à l’intérieur du bâtiment.', 'success');
+  },
+
+  splitSelectionIntoRooms() {
+    const f = currentFloor(get());
+    if (!f) return;
+    const variant = currentVariantId(get());
+    const ids = new Set(get().selection);
+    const results = new Map<string, Element[]>();
+    for (const e of f.elements) {
+      if (!ids.has(e.id) || e.locked) continue;
+      const outline = outlineOf(e);
+      if (!outline) continue;
+      const pieces = splitIntoRooms(f, variant, outline, e.id);
+      if (!pieces) continue;
+      const src = e as any;
+      const isArea = e.type === 'area';
+      const style = {
+        kind: 'zone' as const, layer: 'building' as const,
+        fill: src.fill, fillOpacity: src.fillOpacity, pattern: src.pattern, patternColor: src.patternColor,
+        stroke: src.stroke, strokeWidth: src.strokeWidth, dash: src.dash,
+        opacity: src.opacity, shadow: src.shadow, variantId: src.variantId, excludedVariantIds: src.excludedVariantIds, groupId: src.groupId,
+        labelSize: isArea ? src.labelSize : src.textSize ?? 16,
+        labelColor: isArea ? src.labelColor : src.textColor ?? '#3b4754',
+        labelBold: isArea ? src.labelBold : false,
+        showArea: isArea ? src.showArea : false,
+      };
+      results.set(e.id, pieces.map((p, i) => {
+        const el = makeElement('area', { ...style, points: p.points, label: p.label }) as Element;
+        // le premier morceau garde l'identité de la forme d'origine
+        return i === 0 ? { ...el, id: e.id } : el;
+      }));
+    }
+    if (!results.size) {
+      get().toast('Aucune forme à découper : sélectionnez un rectangle, une ellipse ou une zone qui chevauche des murs.', 'info');
+      return;
+    }
+    const all = [...results.values()].flat();
+    get().mutateFloor((fd) => {
+      const rest = fd.elements.filter((e) => !results.has(e.id));
+      // fond du bâtiment : derrière les murs et les pièces
+      fd.elements = [...(all as any[]), ...rest];
+    });
+    get().select(all.map((e) => e.id));
+    get().toast(all.length > 1 ? `Zone découpée en ${all.length} locaux.` : 'Un seul local trouvé : la zone a été limitée au bâtiment.', 'success');
   },
 
   flipSelection(axis) {

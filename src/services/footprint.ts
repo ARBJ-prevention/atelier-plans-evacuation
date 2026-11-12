@@ -45,20 +45,24 @@ function dilate(src: Uint8Array, W: number, H: number, k: number): Uint8Array {
   return cur;
 }
 
-/**
- * Découpe un contour selon l'emprise du bâtiment : on ne garde que la partie située à l'intérieur
- * de la façade (nu extérieur des murs). Les portes, fenêtres et trous de façade plus étroits que
- * `gapMeters` sont refermés. Renvoie null si l'étage n'a pas de murs ou si rien ne reste.
- */
-export function clipToBuilding(floor: Floor, variantId: string, outline: P[], ignoreId?: string, gapMeters = 1.6): Pt[] | null {
+interface Mask {
+  m: number; res: number; x0: number; y0: number; W: number; H: number;
+  /** murs, contours de pièces et menuiseries tels que dessinés */
+  grid: Uint8Array;
+  /** extérieur du bâtiment (baies refermées), regonflé jusqu'au milieu des façades */
+  out: Uint8Array;
+}
+
+/** Rastérise les murs de l'étage et calcule l'extérieur du bâtiment. */
+function buildingMask(floor: Floor, variantId: string, ignoreId: string | undefined, gapMeters: number): Mask | null {
   const m = floor.unitsPerMeter > 0 ? floor.unitsPerMeter : 100;
-  const segs: { a: P; b: P; r: number }[] = [];
+  const segs: { a: P; b: P; r: number; wall?: boolean }[] = [];
   for (const e of floor.elements) {
     if (e.id === ignoreId || !isVisibleInVariant(e, variantId)) continue;
     if (e.type === 'wall') {
       const pts = e.points as P[];
-      for (let i = 0; i + 1 < pts.length; i++) segs.push({ a: pts[i], b: pts[i + 1], r: e.thickness / 2 });
-      if (e.closed && pts.length > 2) segs.push({ a: pts[pts.length - 1], b: pts[0], r: e.thickness / 2 });
+      for (let i = 0; i + 1 < pts.length; i++) segs.push({ a: pts[i], b: pts[i + 1], r: e.thickness / 2, wall: true });
+      if (e.closed && pts.length > 2) segs.push({ a: pts[pts.length - 1], b: pts[0], r: e.thickness / 2, wall: true });
     } else if (e.type === 'area' && (e as AreaElement).kind === 'room') {
       const pts = e.points as P[];
       for (let i = 0; i < pts.length; i++) segs.push({ a: pts[i], b: pts[(i + 1) % pts.length], r: 0 });
@@ -107,23 +111,132 @@ export function clipToBuilding(floor: Floor, variantId: string, outline: P[], ig
     if (c >= W) seed(c - W);
     if (c < N - W) seed(c + W);
   }
-  const out = dilate(outside, W, H, k);
-  // intérieur ∩ forme dessinée
+  // on regonfle jusqu'au nu extérieur de la façade, puis encore d'une demi-épaisseur du mur le plus
+  // épais : la zone s'arrête au milieu de la façade, sous le mur, et son contour ne déborde pas du plan
+  const half = Math.max(0, ...segs.filter((s) => s.wall).map((s) => s.r));
+  const inset = Math.max(1, Math.round(half / res));
+  return { m, res, x0, y0, W, H, grid, out: dilate(outside, W, H, k + inset) };
+}
+
+/** Cellules de l'intérieur du bâtiment situées dans le contour dessiné. */
+function insideOutline(mk: Mask, outline: P[]): { region: Uint8Array; count: number } {
+  const { res, x0, y0, W, H, out } = mk;
   let ox0 = Infinity, oy0 = Infinity, ox1 = -Infinity, oy1 = -Infinity;
   for (const p of outline) { ox0 = Math.min(ox0, p[0]); oy0 = Math.min(oy0, p[1]); ox1 = Math.max(ox1, p[0]); oy1 = Math.max(oy1, p[1]); }
   const gx0 = Math.max(0, Math.floor((ox0 - x0) / res)), gx1 = Math.min(W - 1, Math.ceil((ox1 - x0) / res));
   const gy0 = Math.max(0, Math.floor((oy0 - y0) / res)), gy1 = Math.min(H - 1, Math.ceil((oy1 - y0) / res));
-  const region = new Uint8Array(N);
+  const region = new Uint8Array(W * H);
   let count = 0;
   for (let gy = gy0; gy <= gy1; gy++) for (let gx = gx0; gx <= gx1; gx++) {
     const c = gy * W + gx;
     if (out[c]) continue;
     if (pointInPolygon(x0 + (gx + 0.5) * res, y0 + (gy + 0.5) * res, outline)) { region[c] = 1; count++; }
   }
-  if (!count) return null;
+  return { region, count };
+}
+
+function toPolygon(mk: Mask, region: Uint8Array, minM2: number): Pt[] | null {
+  const { res, x0, y0, W, H, m } = mk;
   const poly = traceRegion(region, W, H).map(([gx, gy]) => [x0 + gx * res, y0 + gy * res] as P);
   const simp = simplify(poly, res * 1.2);
-  if (simp.length < 3 || polygonAreaAbs(simp) < 0.25 * m * m) return null;
+  if (simp.length < 3 || polygonAreaAbs(simp) < minM2 * m * m) return null;
   const rd = (v: number) => Math.round(v * 100) / 100;
   return simp.map((p) => [rd(p[0]), rd(p[1])] as Pt);
+}
+
+/**
+ * Découpe un contour selon l'emprise du bâtiment : on ne garde que la partie située à l'intérieur
+ * de la façade (nu extérieur des murs). Les portes, fenêtres et trous de façade plus étroits que
+ * `gapMeters` sont refermés. Renvoie null si l'étage n'a pas de murs ou si rien ne reste.
+ */
+export function clipToBuilding(floor: Floor, variantId: string, outline: P[], ignoreId?: string, gapMeters = 1.6): Pt[] | null {
+  const mk = buildingMask(floor, variantId, ignoreId, gapMeters);
+  if (!mk) return null;
+  const { region, count } = insideOutline(mk, outline);
+  if (!count) return null;
+  return toPolygon(mk, region, 0.25);
+}
+
+export interface RoomPiece { points: Pt[]; label: string }
+
+/**
+ * Découpe un contour, limité au bâtiment, en un morceau par local : les murs, cloisons, contours de
+ * pièces et portes séparent les locaux, et l'épaisseur des murs est partagée entre les locaux voisins
+ * pour que les morceaux couvrent toute la zone. Les recoins de moins de 1 m² rejoignent le local voisin.
+ * Chaque morceau reprend le nom de la pièce ou du texte qu'il contient.
+ */
+export function splitIntoRooms(floor: Floor, variantId: string, outline: P[], ignoreId?: string, gapMeters = 1.6): RoomPiece[] | null {
+  const mk = buildingMask(floor, variantId, ignoreId, gapMeters);
+  if (!mk) return null;
+  const { region, count } = insideOutline(mk, outline);
+  if (!count) return null;
+  const { res, x0, y0, W, H, grid, m } = mk;
+  const N = W * H;
+  const nbs = (c: number) => { const cx = c % W; return [cx > 0 ? c - 1 : -1, cx < W - 1 ? c + 1 : -1, c >= W ? c - W : -1, c < N - W ? c + W : -1]; };
+  // 1. locaux : composantes de l'intérieur hors murs
+  const label = new Int32Array(N).fill(-1);
+  const sizes: number[] = [];
+  for (let c0 = 0; c0 < N; c0++) {
+    if (!region[c0] || grid[c0] || label[c0] >= 0) continue;
+    const id = sizes.length, st = [c0];
+    label[c0] = id;
+    let n = 0;
+    while (st.length) {
+      const c = st.pop()!;
+      n++;
+      for (const nb of nbs(c)) if (nb >= 0 && region[nb] && !grid[nb] && label[nb] < 0) { label[nb] = id; st.push(nb); }
+    }
+    sizes.push(n);
+  }
+  if (!sizes.length) return null;
+  // 2. les recoins trop petits (vides entre deux traits, gaines) sont rendus au remplissage
+  const minCells = (m * m) / (res * res);
+  const keep = sizes.map((n) => n >= minCells);
+  if (!keep.some(Boolean)) keep[sizes.indexOf(Math.max(...sizes))] = true;
+  for (let c = 0; c < N; c++) if (label[c] >= 0 && !keep[label[c]]) label[c] = -1;
+  // 3. remplissage par proximité : murs et recoins vont au local le plus proche
+  let front: number[] = [];
+  for (let c = 0; c < N; c++) if (label[c] >= 0) front.push(c);
+  while (front.length) {
+    const nextF: number[] = [];
+    for (const c of front) for (const nb of nbs(c)) if (nb >= 0 && region[nb] && label[nb] < 0) { label[nb] = label[c]; nextF.push(nb); }
+    front = nextF;
+  }
+  // 4. noms : pièces existantes et textes posés dans le local
+  const names = new Map<number, string>();
+  const idAt = (x: number, y: number) => {
+    const gx = Math.floor((x - x0) / res), gy = Math.floor((y - y0) / res);
+    return gx >= 0 && gy >= 0 && gx < W && gy < H ? label[gy * W + gx] : -1;
+  };
+  for (const e of floor.elements) {
+    if (e.id === ignoreId || !isVisibleInVariant(e, variantId)) continue;
+    let name = '', at: P | null = null;
+    if (e.type === 'area' && e.kind === 'room' && e.label.trim() && e.points.length > 2) {
+      name = e.label.trim();
+      const pts = e.points as P[];
+      const c: P = [pts.reduce((s, p) => s + p[0], 0) / pts.length, pts.reduce((s, p) => s + p[1], 0) / pts.length];
+      at = pointInPolygon(c[0], c[1], pts) ? [c[0] + e.labelDx, c[1] + e.labelDy] : null;
+    } else if (e.type === 'text' && e.text.trim()) {
+      name = e.text.trim().split('\n')[0];
+      at = [e.x, e.y];
+    }
+    if (!at) continue;
+    const id = idAt(at[0], at[1]);
+    if (id >= 0 && !names.has(id)) names.set(id, name);
+  }
+  // 5. contours
+  const cells = new Map<number, number[]>();
+  for (let c = 0; c < N; c++) {
+    const id = label[c];
+    if (id >= 0) (cells.get(id) ?? cells.set(id, []).get(id)!).push(c);
+  }
+  const reg = new Uint8Array(N);
+  const pieces: RoomPiece[] = [];
+  for (const [id, list] of [...cells].sort((a, b) => a[0] - b[0])) {
+    for (const c of list) reg[c] = 1;
+    const pts = toPolygon(mk, reg, 0.25);
+    for (const c of list) reg[c] = 0;
+    if (pts) pieces.push({ points: pts, label: names.get(id) ?? '' });
+  }
+  return pieces.length ? pieces : null;
 }

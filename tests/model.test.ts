@@ -118,6 +118,18 @@ describe('accrochage des fenêtres pendant le redimensionnement', () => {
     const svg = renderPageSvg({ building, floor, variantId: floor.variants[0].id, customSymbols: [] });
     expect(svg).toMatch(/<rect x="-28\.8" y="-8\.8" width="57\.6" height="17\.6"[^>]*stroke-width="2\.4"/);
   });
+
+  it('dessine le volet roulant ou battant côté extérieur de la fenêtre', () => {
+    const project = newProject('Site', 'BE');
+    const building = project.buildings[0], floor = building.floors[0];
+    expect(makeElement('window', {})).toMatchObject({ shutter: 'none' });
+    floor.elements.push(makeElement('window', { x: 100, y: 100, width: 120, depth: 20, shutter: 'rolling' }));
+    floor.elements.push(makeElement('window', { x: 300, y: 100, width: 120, depth: 20, shutter: 'hinged', flipY: true }));
+    const svg = renderPageSvg({ building, floor, variantId: floor.variants[0].id, customSymbols: [] });
+    expect(svg).toMatch(/<rect x="-60" y="-21" width="120" height="11"[^>]*fill-opacity="0\.12"/); // coffre au-dessus de la façade
+    expect(svg).toContain('transform="scale(1 -1)"'); // volets battants côté B
+    expect(svg).toMatch(/A 60 60 0 0 0/);
+  });
 });
 
 describe('retrait des pictogrammes près des murs', () => {

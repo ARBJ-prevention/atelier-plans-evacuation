@@ -171,7 +171,13 @@ export function Ribbon({ onPrintPreview, onQuickExport }: { onPrintPreview(): vo
                 title="Mur porteur épais (M) — cliquez point par point, double-clic pour terminer" />
               <Big icon="partition" label="Cloison" active={tool === 'wall' && presets.wallThickness < 18} onClick={() => use('wall', { wallThickness: 10 })}
                 title="Cloison fine — cliquez point par point, double-clic pour terminer" />
-              <Big icon="window" label="Fenêtre" active={tool === 'window'} onClick={() => use('window')} title="Fenêtre (F) — cliquez sur un mur" />
+              <Big icon="window" label="Fenêtre" active={tool === 'window' && (presets.windowShutter ?? 'none') === 'none'} onClick={() => use('window', { windowShutter: 'none' })} title="Fenêtre (F) — cliquez sur un mur" />
+            </Group>
+            <Group title="Volets" cols>
+              <Small icon="shutterRolling" label="Roulant" active={tool === 'window' && presets.windowShutter === 'rolling'}
+                title="Fenêtre avec volet roulant (coffre côté extérieur) — cliquez sur un mur" onClick={() => use('window', { windowShutter: 'rolling' })} />
+              <Small icon="shutterHinged" label="Battants" active={tool === 'window' && presets.windowShutter === 'hinged'}
+                title="Fenêtre avec volets battants ouverts contre la façade — cliquez sur un mur" onClick={() => use('window', { windowShutter: 'hinged' })} />
             </Group>
             <Group title="Portes" cols>
               {([['single', 'Battante', 'door', 'Porte à un vantail qui pivote'], ['double', 'Double', 'doorDouble', 'Porte à deux vantaux'],

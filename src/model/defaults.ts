@@ -143,7 +143,7 @@ export function elementDefaults(type: Element['type'], routeColor = '#00843d'): 
     case 'door':
       return { ...common, layer: 'building', x: 0, y: 0, width: 90, swing: 'left', doorType: 'single', emergency: false, fireRated: false, fireRating: 'CF', color: '#1d2630' };
     case 'window':
-      return { ...common, layer: 'building', x: 0, y: 0, width: 120, depth: 12, panes: 2, color: '#1d2630' };
+      return { ...common, layer: 'building', x: 0, y: 0, width: 120, depth: 12, panes: 2, color: '#1d2630', shutter: 'none' };
     case 'stairs':
       return { ...common, layer: 'building', x: 0, y: 0, w: 120, h: 240, steps: 10, color: '#3b4754', fill: '#ffffff', arrow: true, split: false, stairType: 'straight', label: '' };
     case 'symbol':

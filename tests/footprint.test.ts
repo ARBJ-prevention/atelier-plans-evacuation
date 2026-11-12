@@ -45,6 +45,32 @@ describe('Limiter au bâtiment', () => {
     expect(b.h).toBeGreaterThan(390); expect(b.h).toBeLessThan(410);
   });
 
+  it('découpe en une zone par local, en couvrant toute la zone', () => {
+    const p = newProject();
+    useStore.getState().loadProject(p, null);
+    // carré 10 m × 10 m, cloison verticale à x = 400 avec une porte, deux textes de nom
+    const facade = makeElement('wall', { points: [[0, 0], [1000, 0], [1000, 1000], [0, 1000]], closed: true, thickness: 20 });
+    const cloison = makeElement('wall', { points: [[400, 0], [400, 1000]], thickness: 10 });
+    const door = makeElement('door', { x: 400, y: 500, width: 90, rotation: 90 });
+    const t1 = makeElement('text', { x: 200, y: 300, text: 'Bureau' });
+    const t2 = makeElement('text', { x: 700, y: 300, text: 'Atelier' });
+    const shape = makeElement('shape', { x: 500, y: 500, w: 3000, h: 3000, fill: '#123456' });
+    useStore.getState().mutateFloor((f) => { f.unitsPerMeter = 100; f.elements = [facade, cloison, door, t1, t2, shape] as any; });
+    useStore.getState().select([shape.id]);
+    useStore.getState().splitSelectionIntoRooms();
+    const zones = floorOf().elements.filter((e) => e.type === 'area') as any[];
+    expect(zones).toHaveLength(2);
+    expect(zones.some((z) => z.id === shape.id)).toBe(true);
+    expect(zones.every((z) => z.fill === '#123456' && z.layer === 'building')).toBe(true);
+    expect(zones.map((z) => z.label).sort()).toEqual(['Atelier', 'Bureau']);
+    const bureau = elementBounds(zones.find((z) => z.label === 'Bureau'));
+    const atelier = elementBounds(zones.find((z) => z.label === 'Atelier'));
+    // les deux locaux se rejoignent dans l'épaisseur de la cloison
+    expect(Math.abs(bureau.x + bureau.w - atelier.x)).toBeLessThan(6);
+    expect(bureau.x).toBeLessThan(5); expect(atelier.x + atelier.w).toBeGreaterThan(995);
+    expect(useStore.getState().selection).toHaveLength(2);
+  });
+
   it('suit l’emprise du plan d’exemple', () => {
     useStore.getState().loadProject(buildSampleProject(), null);
     const f = floorOf();
@@ -56,9 +82,10 @@ describe('Limiter au bâtiment', () => {
     const el = floorOf().elements.find((e) => e.id === big.id)!;
     expect(el.type).toBe('area');
     const b = elementBounds(el);
-    // façade du plan d'exemple : murs de 0 à 1500 × 0 à 900, 22 u d'épaisseur
-    expect(b.x).toBeGreaterThan(-15); expect(b.y).toBeGreaterThan(-15);
-    expect(b.x + b.w).toBeLessThan(1515); expect(b.y + b.h).toBeLessThan(915);
+    // façade du plan d'exemple : murs de 0 à 1500 × 0 à 900, 22 u d'épaisseur ; la zone s'arrête
+    // vers le milieu du mur, cachée dessous, sans déborder du nu extérieur (±11 u)
+    expect(b.x).toBeGreaterThan(-6); expect(b.y).toBeGreaterThan(-6);
+    expect(b.x + b.w).toBeLessThan(1506); expect(b.y + b.h).toBeLessThan(906);
     expect(b.w).toBeGreaterThan(1490); expect(b.h).toBeGreaterThan(890);
   });
 });

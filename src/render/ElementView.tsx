@@ -153,6 +153,38 @@ const shorten = (a: Pt, b: Pt, d: number): Pt => {
   return [a[0] + ((b[0] - a[0]) / l) * k, a[1] + ((b[1] - a[1]) / l) * k];
 };
 
+/**
+ * Volet d'une fenêtre, dessiné côté extérieur (y < 0 dans le repère de la fenêtre ; flip : côté opposé).
+ * - roulant : coffre le long de la façade, lames en pointillé ;
+ * - battants : deux vantaux ouverts vers l'extérieur, avec leur débattement en pointillé.
+ */
+function ShutterView({ w, d, kind, color, flip }: { w: number; d: number; kind: 'rolling' | 'hinged'; color: string; flip: boolean }) {
+  const face = -d / 2;
+  const sw = Math.max(0.8, d * 0.1);
+  let body: React.ReactNode;
+  if (kind === 'rolling') {
+    const c = Math.max(4, d * 0.55);
+    body = (
+      <>
+        <rect x={-w / 2} y={face - c} width={w} height={c} fill={color} fillOpacity={0.12} stroke={color} strokeWidth={sw} />
+        <line x1={-w / 2 + c * 0.4} y1={face - c / 2} x2={w / 2 - c * 0.4} y2={face - c / 2} stroke={color} strokeWidth={sw * 0.8} strokeDasharray={`${c * 0.5} ${c * 0.35}`} />
+      </>
+    );
+  } else {
+    const L = w / 2, a = (110 * Math.PI) / 180;
+    const dx = Math.cos(a) * L, dy = -Math.sin(a) * L;
+    const lt: Pt = [-w / 2 + dx, face + dy], rt: Pt = [w / 2 - dx, face + dy];
+    body = (
+      <>
+        <path d={`M ${-w / 2} ${face} L ${lt[0]} ${lt[1]} M ${w / 2} ${face} L ${rt[0]} ${rt[1]}`} stroke={color} strokeWidth={Math.max(1.2, d * 0.2)} strokeLinecap="round" fill="none" />
+        <path d={`M 0 ${face} A ${L} ${L} 0 0 0 ${lt[0]} ${lt[1]} M 0 ${face} A ${L} ${L} 0 0 1 ${rt[0]} ${rt[1]}`} stroke={color} strokeWidth={sw * 0.6}
+          strokeDasharray={`${Math.max(2, w * 0.03)} ${Math.max(1.5, w * 0.025)}`} fill="none" />
+      </>
+    );
+  }
+  return <g transform={flip ? 'scale(1 -1)' : undefined}>{body}</g>;
+}
+
 function RouteView({ el }: { el: RouteElement }) {
   if (el.points.length < 2) return null;
   const p = el.points;
@@ -377,6 +409,7 @@ function Inner({ el, ctx }: { el: Element; ctx: RenderCtx }): React.ReactElement
           <rect x={(frame - w) / 2} y={(frame - d) / 2} width={w - frame} height={d - frame} fill="#ffffff" stroke={el.color} strokeWidth={frame} />
           <line x1={-w / 2} y1={0} x2={w / 2} y2={0} stroke={el.color} strokeWidth={Math.min(d, Math.max(0.6, d * 0.07))} />
           {lines}
+          {el.shutter && el.shutter !== 'none' && <ShutterView w={w} d={d} kind={el.shutter} color={el.color} flip={!!el.flipY} />}
         </g>
       );
     }

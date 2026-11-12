@@ -180,6 +180,12 @@ function CommonActions() {
           <Icon name="building" size={15} /> Limiter au bâtiment
         </button>
       )}
+      {canClip && (
+        <button className="btn small" style={{ gridColumn: '1 / -1' }} onClick={() => S().splitSelectionIntoRooms()}
+          title="Limite la forme au bâtiment puis la découpe en une zone par local (les murs et les portes séparent les locaux)">
+          <Icon name="room" size={15} /> Découper en locaux
+        </button>
+      )}
       <button className="btn small" onClick={() => S().rotateSelection(-90)} title="Pivoter de 90° à gauche"><Icon name="rotate" size={15} /> −90°</button>
       <button className="btn small" onClick={() => S().rotateSelection(90)} title="Pivoter de 90° à droite"><Icon name="rotate" size={15} /> +90°</button>
       <button className="btn small" onClick={() => S().flipSelection('h')}><Icon name="flipH" size={15} /> Miroir ↔</button>
@@ -317,6 +323,8 @@ function ElementProps({ el, floor }: { el: Element; floor: Floor }) {
                 <Row label="Largeur"><Num value={e.width} min={20} max={1000} onChange={(v) => upd({ width: v })} suffix={u > 0 ? `${((e.width / u) * 100).toFixed(0)} cm` : 'u'} /></Row>
                 <Row label="Épaisseur"><Num value={e.depth} min={2} max={80} onChange={(v) => upd({ depth: v })} /></Row>
                 <Row label="Vantaux"><Num value={e.panes} min={1} max={8} onChange={(v) => upd({ panes: Math.round(v) })} /></Row>
+                <Row label="Volet"><Seg value={e.shutter ?? 'none'} options={[['none', 'Aucun'], ['rolling', 'Roulant'], ['hinged', 'Battants']]} onChange={(v) => upd({ shutter: v })} /></Row>
+                {(e.shutter ?? 'none') !== 'none' && <Row label="Côté du volet" hint="Côté extérieur de la façade"><Seg value={e.flipY ? 'b' : 'a'} options={[['a', 'Côté A'], ['b', 'Côté B']]} onChange={(v) => upd({ flipY: v === 'b' })} /></Row>}
               </Section>
             )}
             {el.type === 'stairs' && (

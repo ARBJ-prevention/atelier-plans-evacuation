@@ -380,7 +380,7 @@ export function Canvas({ onCalibrate }: CanvasProps) {
         const dt = s.presets.doorType;
         const at = { x: p[0], y: p[1] };
         const opening = (s.tool === 'window'
-          ? makeElement('window', { ...at, depth: s.presets.wallThickness })
+          ? makeElement('window', { ...at, depth: s.presets.wallThickness, shutter: s.presets.windowShutter ?? 'none' })
           : makeElement('door', { ...at, doorType: dt, fireRated: !!s.presets.doorFire, width: dt === 'double' || dt === 'opening' ? 160 : dt === 'revolving' ? 140 : 90 })) as DoorElement | WindowElement;
         placeOne(snapOpening(opening, e.altKey) ?? { ...opening, x: sp[0], y: sp[1] }, e.shiftKey);
         return;
