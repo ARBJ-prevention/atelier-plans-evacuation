@@ -1,3 +1,4 @@
+import { Fragment } from 'react';
 import { newBuilding, newFloor, newVariant, uid } from '../model/defaults';
 import { createDisplayLocation } from '../app/actions';
 import { isVisibleInVariant } from '../model/geometry';
@@ -67,12 +68,12 @@ export function ProjectPanel() {
     if (fid === floorId) s().setFloor(bid, useStore.getState().project!.buildings.find((x) => x.id === bid)!.floors[0].id);
   };
 
-  // Versions (emplacements « Vous êtes ici »)
+  // Affiches (une par emplacement « Vous êtes ici »)
   const floor = project.buildings.flatMap((b) => b.floors).find((f) => f.id === floorId);
   const duplicateVariant = async () => {
     if (!floor) return;
-    const n = await promptDialog('Dupliquer la version', 'Nom de la version (ex. « Accueil », « Couloir B »)', `Version ${floor.variants.length + 1}`,
-      'Chaque version partage les éléments communs de l’étage et possède ses propres éléments (notamment l’emplacement « Vous êtes ici »).');
+    const n = await promptDialog('Dupliquer l’affiche', 'Nom de l’affiche (ex. « Accueil », « Couloir B »)', `Affiche ${floor.variants.length + 1}`,
+      'Chaque affiche partage les éléments communs de l’étage et possède ses propres éléments (notamment le repère « Vous êtes ici »).');
     if (!n) return;
     const v = newVariant(n);
     s().mutateFloor((f) => {
@@ -92,13 +93,13 @@ export function ProjectPanel() {
   const renameVariant = async () => {
     const v = floor?.variants.find((x) => x.id === variantId);
     if (!v) return;
-    const n = await promptDialog('Renommer la version', 'Nom', v.name);
+    const n = await promptDialog('Renommer l’affiche', 'Nom', v.name);
     if (n) s().mutateFloor((f) => { f.variants.find((x) => x.id === v.id)!.name = n; }, { keepValidation: true });
   };
   const deleteVariant = async () => {
     if (!floor || floor.variants.length <= 1) return;
     const v = floor.variants.find((x) => x.id === variantId)!;
-    if (!(await confirmDialog('Supprimer la version', `Supprimer la version « ${v.name} » et ses éléments propres ?`, 'Supprimer', true))) return;
+    if (!(await confirmDialog('Supprimer l’affiche', `Supprimer l’affiche « ${v.name} » et ses éléments propres ?`, 'Supprimer', true))) return;
     s().mutateFloor((f) => {
       f.variants = f.variants.filter((x) => x.id !== v.id);
       f.elements = f.elements.filter((e) => e.variantId !== v.id);
@@ -130,7 +131,8 @@ export function ProjectPanel() {
               <button className="icon-btn" title="Supprimer" onClick={() => deleteBuilding(b.id, b.name)}><Icon name="trash" size={15} /></button>
             </div>
             {b.floors.map((f) => (
-              <div key={f.id} className={f.id === floorId ? 'tree-row floor active' : 'tree-row floor'}
+              <Fragment key={f.id}>
+              <div className={f.id === floorId ? 'tree-row floor active' : 'tree-row floor'}
                 onClick={() => s().setFloor(b.id, f.id)} role="button" tabIndex={0}
                 onKeyDown={(e) => { if (e.key === 'Enter') s().setFloor(b.id, f.id); }}>
                 <Icon name="floor" size={15} />
@@ -140,6 +142,21 @@ export function ProjectPanel() {
                 <button className="icon-btn" title="Renommer" onClick={(e) => { e.stopPropagation(); renameFloor(b.id, f.id, f.name); }}><Icon name="edit" size={14} /></button>
                 <button className="icon-btn" title="Supprimer" onClick={(e) => { e.stopPropagation(); deleteFloor(b.id, f.id, f.name); }}><Icon name="trash" size={14} /></button>
               </div>
+              {f.variants.map((v) => {
+                const active = f.id === floorId && v.id === variantId;
+                const own = f.elements.filter((e) => e.variantId === v.id).length;
+                const go = () => { if (f.id !== floorId) s().setFloor(b.id, f.id); s().setVariant(v.id); };
+                return (
+                  <div key={v.id} className={active ? 'tree-row poster active' : 'tree-row poster'} role="button" tabIndex={0}
+                    title={`Affiche « ${v.name} » · ${own} élément(s) propre(s)`}
+                    onClick={go} onKeyDown={(e) => { if (e.key === 'Enter') go(); }}>
+                    <Icon name="print" size={13} />
+                    <span className="tree-label">{v.name}</span>
+                    {own > 0 && <span className="muted tiny">{own} propre{own > 1 ? 's' : ''}</span>}
+                  </div>
+                );
+              })}
+              </Fragment>
             ))}
           </div>
         ))}
@@ -148,8 +165,8 @@ export function ProjectPanel() {
 
       {floor && (
         <section className="variants">
-          <h3>Versions de ce plan</h3>
-          <p className="muted small">Une version par emplacement « Vous êtes ici ». Les éléments communs sont partagés.</p>
+          <h3>Affiches de cet étage</h3>
+          <p className="muted small">Une affiche par emplacement « Vous êtes ici ». Les éléments communs sont partagés entre les affiches.</p>
           <div className="variant-list">
             {floor.variants.map((v) => (
               <button key={v.id} className={v.id === variantId ? 'variant active' : 'variant'} onClick={() => s().setVariant(v.id)}>
@@ -158,7 +175,7 @@ export function ProjectPanel() {
               </button>
             ))}
           </div>
-          <button className="btn small full" onClick={() => createDisplayLocation()}><Icon name="plus" size={14} /> Créer un emplacement</button>
+          <button className="btn small full" onClick={() => createDisplayLocation()}><Icon name="plus" size={14} /> Nouvelle affiche</button>
           <div className="row gap">
             <button className="btn small" onClick={duplicateVariant}><Icon name="copy" size={14} /> Dupliquer</button>
             <button className="btn small" onClick={renameVariant} title="Renommer"><Icon name="edit" size={14} /></button>

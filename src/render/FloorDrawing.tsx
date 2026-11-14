@@ -33,6 +33,11 @@ export function FloorDrawing({ floor, variantId, customSymbols, interactive = fa
               .map((e) => (
                 <g key={e.id} {...(interactive ? { 'data-id': e.id, className: e.locked ? 'el locked' : 'el' } : {})}>
                   <ElementView el={e} ctx={ctx} />
+                  {interactive && e.type === 'route' && e.points.length > 1 && (
+                    // zone de clic élargie : un clic dans un blanc du tireté sélectionne l'itinéraire, pas la pièce dessous
+                    <polyline points={e.points.map((p) => p.join(',')).join(' ')} fill="none" stroke="transparent"
+                      strokeWidth={14} vectorEffect="non-scaling-stroke" pointerEvents="stroke" />
+                  )}
                 </g>
               ))}
           </g>

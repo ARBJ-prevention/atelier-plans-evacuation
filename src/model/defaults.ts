@@ -88,7 +88,7 @@ export function defaultShadow(): Shadow {
   return { enabled: false, color: '#000000', opacity: 0.25, blur: 6, dx: 3, dy: 3 };
 }
 
-export function newVariant(name = 'Version 1'): Variant {
+export function newVariant(name = 'Affiche 1'): Variant {
   return { id: uid('var'), name };
 }
 

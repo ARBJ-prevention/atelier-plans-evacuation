@@ -645,3 +645,12 @@ export function polylineLength(pts: Pt[]): number {
   for (let i = 1; i < pts.length; i++) l += distance(pts[i - 1], pts[i]);
   return l;
 }
+
+/** Largeur de porte arrondie (pas en cm), en gardant fixe le montant opposé à la poignée tirée. */
+export function roundDoorWidth<T extends { x: number; y: number; width: number; rotation: number }>(door: T, side: number, unitsPerMeter: number, stepCm: number): T {
+  const step = (stepCm * unitsPerMeter) / 100;
+  const width = Math.max(step, Math.round(door.width / step) * step);
+  const shift = (side * (width - door.width)) / 2;
+  const a = (door.rotation * Math.PI) / 180;
+  return { ...door, width, x: door.x + Math.cos(a) * shift, y: door.y + Math.sin(a) * shift };
+}
