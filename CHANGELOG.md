@@ -1,6 +1,6 @@
 # Journal des versions
 
-## Prochaine version — ergonomie (non publiée)
+## 2.0.18 — novembre 2026
 - **Un seul mot : « affiche »** partout (barre au-dessus du plan, panneau Projet, aperçu, guide) à la place de « version » et « emplacement d'affichage ». Les anciens fichiers s'ouvrent sans changement.
 - **Portée explicite** : en haut des Propriétés, « S'applique à » montre et règle en un clic si la sélection est sur toutes les affiches de l'étage ou sur cette affiche uniquement ; retirer un élément des autres affiches demande confirmation. Une pastille jaune marque sur le plan les éléments propres à l'affiche affichée.
 - **Nouveaux éléments** (au-dessus du plan, étage à plusieurs affiches) : choisir si ce que l'on dessine ou pose va sur toutes les affiches ou sur l'affiche active ; la première création commune est signalée.
