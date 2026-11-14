@@ -1,5 +1,12 @@
 # Journal des versions
 
+## 2.0.16 — novembre 2026
+- **Porte coulissante double** (onglet Bâtiment › Portes › Coulis. double, bibliothèque › Structure du bâtiment, ou type de porte dans les propriétés) : deux vantaux qui s'écartent, pour les sas et les entrées automatiques ; posée sur un mur, elle s'y cale comme une vraie porte.
+- Import DWG / DXF : les grandes baies sans battant (rideau métallique, porte sectionnelle, volet roulant) deviennent des fenêtres avec volet roulant, coffre côté extérieur.
+- Import DWG / DXF : le contour du bâtiment est uniforme ; une cloison posée dans le prolongement de la façade, ou un morceau de façade légèrement décalé, prend l'épaisseur et l'alignement de la façade.
+- Import DWG / DXF : une entrée vitrée (sas) dessinée en menuiserie reçoit un mur de façade continu et une porte coulissante double à la place des vantaux.
+- Étirer un mur par sa poignée ↔ : l'extrémité tirée s'aimante aux murs voisins (Alt pour un étirement libre).
+
 ## 2.0.15 — novembre 2026
 - **Découper en locaux** (panneau Actions d'une forme ou d'une zone) : la forme est limitée au bâtiment puis remplacée par une zone par local ; les murs, cloisons et portes séparent les locaux, l'épaisseur des murs est partagée entre voisins pour couvrir toute la zone, et chaque zone reprend le nom de la pièce ou du texte qu'elle contient.
 - « Limiter au bâtiment » et « Découper en locaux » arrêtent la zone au milieu de la façade, sous le mur : son contour ne dépasse plus du plan.
