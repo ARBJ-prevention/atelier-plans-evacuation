@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { buildSampleDxf } from '../src/app/sampleDxf';
 import { flattenDxf, parseDxf, renderDxfSvg, unitMeters } from '../src/services/dxf';
-import { guessLayerRole, recognizePlan, type LayerRole } from '../src/services/recognize';
+import { guessLayerRole, recognizedElements, recognizePlan, type LayerRole } from '../src/services/recognize';
 
 const UPM = 50;
 
@@ -45,6 +45,42 @@ describe('reconnaissance du plan d’exemple (24 × 14 m)', () => {
     const xs = accueil.points.map((p) => p[0]), ys = accueil.points.map((p) => p[1]);
     expect((Math.max(...xs) - Math.min(...xs)) / UPM).toBeCloseTo(8.7, 0);
     expect((Math.max(...ys) - Math.min(...ys)) / UPM).toBeCloseTo(7.7, 0);
+  });
+
+  it('noms de pièces en évidence : gras, foncés, grands mais contenus dans la pièce', () => {
+    for (const r of rec.rooms) {
+      expect(r.labelBold).toBe(true);
+      expect(r.labelColor).toBe('#1d2630');
+      const xs = r.points.map((p) => p[0]);
+      const w = Math.max(...xs) - Math.min(...xs);
+      const chars = Math.max(...r.label.split('\n').map((l) => l.length));
+      expect(chars * r.labelSize * 0.6).toBeLessThanOrEqual(w * 0.85 + 1e-6); // tient dans la largeur
+      expect(r.labelSize).toBeGreaterThanOrEqual(0.2 * UPM);
+    }
+    // plan de 24 m : cible ≈ 53 cm (24/45) ; « Accueil » (8,7 m de large) l'atteint
+    expect(rec.rooms.find((r) => r.label === 'Accueil')!.labelSize / UPM).toBeGreaterThan(0.5);
+  });
+
+  it('sans remplissage des locaux : pas de pièces, mais leurs noms en textes à leur place', () => {
+    const all = new Set(['rooms', 'walls', 'doors', 'windows', 'stairs'] as const);
+    const filled = recognizedElements(rec, all);
+    const empty = recognizedElements(rec, all, false);
+    expect(filled.filter((e) => e.type === 'area')).toHaveLength(5);
+    expect(empty.filter((e) => e.type === 'area')).toHaveLength(0);
+    const texts = empty.filter((e) => e.type === 'text') as any[];
+    expect(texts.map((t) => t.text).sort()).toEqual(['Accueil', 'Atelier', 'Bureau 1', 'Salle de réunion', 'Stockage']);
+    // chaque nom reste dans sa pièce
+    for (const t of texts) {
+      const room = rec.rooms.find((r) => r.label === t.text)!;
+      const xs = room.points.map((p) => p[0]), ys = room.points.map((p) => p[1]);
+      expect(t.x).toBeGreaterThan(Math.min(...xs)); expect(t.x).toBeLessThan(Math.max(...xs));
+      expect(t.y).toBeGreaterThan(Math.min(...ys)); expect(t.y).toBeLessThan(Math.max(...ys));
+      expect(t.align).toBe('middle');
+      // étiquette foncée, texte blanc : se voit sur des locaux clairs
+      expect(t.background).toBe('#1d2630'); expect(t.color).toBe('#ffffff'); expect(t.bold).toBe(true);
+    }
+    // les autres éléments sont identiques
+    expect(empty.filter((e) => e.type !== 'text').length).toBe(filled.length - 5);
   });
 
   it('murs extérieurs de 30 cm et cloisons de 10 cm, raccordés aux angles', () => {

@@ -7,6 +7,8 @@ import type { DashStyle, Element, FillPattern, Floor, LayerId, PageSetup, PageTh
 import { symbolName } from '../render/ElementView';
 import { FRAME_ZONES, frameOn, THEMES, themePatch } from '../render/layout';
 import { STATUS_LABEL } from '../render/PrintPage';
+import { seamlessStroke } from '../services/footprint';
+import { ROOM_TAG_STYLE } from '../services/recognize';
 import { SYMBOLS_BY_CATEGORY } from '../symbols/library';
 import { currentBuilding, currentFloor, currentVariantId, useStore } from '../store/store';
 import { confirmDialog } from '../ui/dialogs';
@@ -127,6 +129,12 @@ const TYPE_ICON: Record<string, string> = {
   wall: 'wall', area: 'room', door: 'door', window: 'window', stairs: 'stairs', symbol: 'symbol', route: 'route', text: 'textIcon', image: 'image', legend: 'legendIcon', shape: 'shapeRect',
 };
 
+/** Élément qui porte un texte réglable : texte libre ou zone / pièce avec un nom. */
+const hasText = (e: Element) => e.type === 'text' || (e.type === 'area' && !!e.label.trim());
+/** Élément avec un fond coloré : zone, pièce, ou forme fermée. */
+const hasFill = (e: Element) => e.type === 'area' || (e.type === 'shape' && e.shape !== 'line' && e.shape !== 'arrow');
+const textSizeOf = (e: Element) => (e.type === 'text' ? e.fontSize : e.type === 'area' ? e.labelSize : 0);
+
 function MultiProps({ els }: { els: Element[] }) {
   const S = useStore.getState;
   const grouped = els.every((e) => e.groupId && e.groupId === els[0].groupId);
@@ -151,6 +159,113 @@ function MultiProps({ els }: { els: Element[] }) {
             {(Object.keys(LAYER_NAMES) as LayerId[]).filter((l) => l !== 'background').map((l) => <option key={l} value={l}>{LAYER_NAMES[l]}</option>)}
           </select>
         </Row>
+        {els.some((e) => e.type === 'wall') && (() => {
+          const walls = els.filter((e) => e.type === 'wall') as any[];
+          const u = currentFloor(S())?.unitsPerMeter ?? 0;
+          const th = walls.map((w) => w.thickness as number);
+          const lo = Math.min(...th), hi = Math.max(...th);
+          const same = hi - lo < 0.05;
+          // murs raccordés, portes et fenêtres retravaillés avec le mur
+          const setTh = (v: number) => S().setWallThickness(walls.map((w) => w.id), v);
+          const cmOf = (v: number) => (u > 0 ? `${((v / u) * 100).toFixed(0)} cm` : `${round(v)} u`);
+          return (
+            <Row label="Épaisseur des murs" hint={`${walls.length} mur(s) · ${same ? cmOf(lo) : `de ${cmOf(lo)} à ${cmOf(hi)}`} · une valeur saisie s’applique à tous`}>
+              <Num value={same ? lo : th.reduce((s, v) => s + v, 0) / th.length} min={1} max={200} width={60}
+                suffix={same ? cmOf(lo) : 'mixte'} onChange={setTh} />
+            </Row>
+          );
+        })()}
+        {els.some(hasFill) && (() => {
+          const filled = els.filter(hasFill) as any[];
+          const first = filled[0].fill as string;
+          const mixed = filled.some((e) => e.fill !== first);
+          return (
+            <Row label="Remplissage" hint={mixed ? 'Couleurs différentes : la couleur choisie s’applique à toutes les zones et formes sélectionnées' : undefined}>
+              <Color value={first} onChange={(v) => S().mutateFloor((f) => {
+                f.elements.forEach((e: any) => {
+                  if (!ids.has(e.id) || !hasFill(e)) return;
+                  // contour « invisible » (de la couleur du fond, après Découper en locaux) : il suit la nouvelle couleur
+                  if (e.stroke === e.fill) e.stroke = v;
+                  e.fill = v;
+                });
+              }, { coalesce: 'multi:fill' })} />
+            </Row>
+          );
+        })()}
+        {els.some(hasText) && (() => {
+          const withText = els.filter(hasText);
+          const sizes = withText.map(textSizeOf);
+          const allBold = withText.every((e) => (e.type === 'text' ? e.bold : (e as any).labelBold));
+          const scale = (k: number) => S().mutateFloor((f) => {
+            f.elements.forEach((e: any) => {
+              if (!ids.has(e.id)) return;
+              if (e.type === 'text') e.fontSize = Math.max(2, Math.round(e.fontSize * k * 10) / 10);
+              else if (e.type === 'area' && e.label?.trim()) e.labelSize = Math.max(2, Math.round(e.labelSize * k * 10) / 10);
+            });
+          });
+          const setSize = (v: number) => S().mutateFloor((f) => {
+            f.elements.forEach((e: any) => {
+              if (!ids.has(e.id)) return;
+              if (e.type === 'text') e.fontSize = v;
+              else if (e.type === 'area' && e.label?.trim()) e.labelSize = v;
+            });
+          }, { coalesce: 'multi:textsize' });
+          const lo = Math.min(...sizes), hi = Math.max(...sizes);
+          const same = hi - lo < 0.05;
+          return (
+            <>
+              <Row label="Taille du texte" hint={`${withText.length} texte(s) · ${same ? `taille ${round(lo)}` : `de ${round(lo)} à ${round(hi)}`} · une valeur saisie s’applique à tous`}>
+                <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                  <Num value={same ? lo : Math.round(sizes.reduce((s, v) => s + v, 0) / sizes.length)} min={2} max={400} width={60}
+                    suffix={same ? undefined : 'mixte'} onChange={setSize} />
+                  <button className="btn small" title="Réduire tous les textes sélectionnés" onClick={() => scale(1 / 1.2)}>A−</button>
+                  <button className="btn small" title="Agrandir tous les textes sélectionnés" onClick={() => scale(1.2)}>A+</button>
+                </div>
+              </Row>
+              {withText.some((e) => e.type === 'text') && (() => {
+                const texts = withText.filter((e) => e.type === 'text') as any[];
+                const setTexts = (patch: Record<string, unknown>, key: string) => S().mutateFloor((f) => {
+                  f.elements.forEach((e: any) => { if (ids.has(e.id) && e.type === 'text') Object.assign(e, patch); });
+                }, { coalesce: `multi:${key}` });
+                return (
+                  <>
+                    <Row label="Couleur du texte"><Color value={texts[0].color} onChange={(v) => setTexts({ color: v }, 'color')} /></Row>
+                    <Row label="Fond du texte"><Color value={texts[0].background} allowNone onChange={(v) => setTexts({ background: v === 'none' ? '' : v }, 'bg')} /></Row>
+                    <div className="actions-grid" style={{ marginBottom: 6 }}>
+                      <button className="btn small" title="Fond foncé, texte blanc en gras : le numéro saute aux yeux sur des locaux clairs"
+                        onClick={() => setTexts({ ...ROOM_TAG_STYLE }, 'tag')}>Étiquette foncée</button>
+                      <button className="btn small" title="Fond blanc bordé, texte foncé en gras"
+                        onClick={() => setTexts({ color: '#1d2630', background: '#ffffff', border: true, borderColor: '#1d2630', bold: true, padding: 0.22 }, 'tag')}>Étiquette blanche</button>
+                    </div>
+                  </>
+                );
+              })()}
+              <Row label="Gras">
+                <Toggle checked={allBold} onChange={(v) => S().mutateFloor((f) => {
+                  f.elements.forEach((e: any) => { if (!ids.has(e.id)) return; if (e.type === 'text') e.bold = v; else if (e.type === 'area') e.labelBold = v; });
+                })} label="" />
+              </Row>
+            </>
+          );
+        })()}
+        {els.some((e) => e.type === 'area' && !!e.label.trim()) && (
+          <button className="btn small" style={{ width: '100%', marginBottom: 6 }}
+            title="Efface le nom affiché dans les zones et pièces sélectionnées (les textes indépendants ne sont pas touchés)"
+            onClick={() => S().mutateFloor((f) => {
+              f.elements.forEach((e) => { if (ids.has(e.id) && e.type === 'area') e.label = ''; });
+            })}>
+            <Icon name="text" size={15} /> Retirer les noms des zones
+          </button>
+        )}
+        {els.every((e) => e.type === 'area') && (
+          <button className="btn small" style={{ width: '100%' }}
+            title="Retire le contour de toutes les zones sélectionnées (utile après « Découper en locaux » : plus de traits entre les locaux)"
+            onClick={() => S().mutateFloor((f) => {
+              f.elements.forEach((e) => { if (ids.has(e.id) && e.type === 'area') Object.assign(e, seamlessStroke(e as any)); });
+            })}>
+            <Icon name="fill" size={15} /> Sans contour
+          </button>
+        )}
       </Section>
       <Section title="Organiser" icon="group">
         <div className="actions-grid">
@@ -182,10 +297,20 @@ function CommonActions() {
       )}
       {canClip && (
         <button className="btn small" style={{ gridColumn: '1 / -1' }} onClick={() => S().splitSelectionIntoRooms()}
-          title="Limite la forme au bâtiment puis la découpe en une zone par local (les murs et les portes séparent les locaux)">
+          title="Limite la forme au bâtiment puis la découpe en une zone par local (les murs et les portes séparent les locaux). Les zones n’ont pas de nom : les noms des locaux restent des textes indépendants.">
           <Icon name="room" size={15} /> Découper en locaux
         </button>
       )}
+      {canClip && (
+        <button className="btn small" style={{ gridColumn: '1 / -1' }} onClick={() => S().splitSelectionIntoRooms(true)}
+          title="Comme « Découper en locaux », mais chaque zone reprend le nom de la pièce ou du texte qu’elle contient">
+          <Icon name="room" size={15} /> Découper en locaux avec les noms
+        </button>
+      )}
+      <button className="btn small" style={{ gridColumn: '1 / -1' }} onClick={() => S().selectWhere('similar')}
+        title="Sélectionne tous les éléments du même genre (toutes les zones, tous les textes, le même pictogramme…) pour les modifier d’un coup">
+        <Icon name="select" size={15} /> Sélectionner les semblables
+      </button>
       <button className="btn small" onClick={() => S().rotateSelection(-90)} title="Pivoter de 90° à gauche"><Icon name="rotate" size={15} /> −90°</button>
       <button className="btn small" onClick={() => S().rotateSelection(90)} title="Pivoter de 90° à droite"><Icon name="rotate" size={15} /> +90°</button>
       <button className="btn small" onClick={() => S().flipSelection('h')}><Icon name="flipH" size={15} /> Miroir ↔</button>
@@ -343,7 +468,7 @@ function ElementProps({ el, floor }: { el: Element; floor: Floor }) {
             {el.type === 'wall' && (
               <Section title="Mur" icon="wall">
                 <Row label="Rendu"><Seg value={e.wallStyle} options={[['solid', 'Plein'], ['hatch', 'Hachuré'], ['outline', 'Contour']]} onChange={(v) => upd({ wallStyle: v })} /></Row>
-                <Row label="Épaisseur"><Num value={e.thickness} min={1} max={200} onChange={(v) => upd({ thickness: v })} suffix={u > 0 ? `${((e.thickness / u) * 100).toFixed(0)} cm` : 'u'} /></Row>
+                <Row label="Épaisseur"><Num value={e.thickness} min={1} max={200} onChange={(v) => useStore.getState().setWallThickness([el.id], v)} suffix={u > 0 ? `${((e.thickness / u) * 100).toFixed(0)} cm` : 'u'} /></Row>
                 <Row label="Fermé"><Toggle checked={e.closed} onChange={(v) => upd({ closed: v })} /></Row>
                 <p className="muted small">{e.points.length} points · longueur {len(polylineLength(e.points))}</p>
               </Section>
@@ -398,6 +523,17 @@ function ElementProps({ el, floor }: { el: Element; floor: Floor }) {
                 {el.type === 'route' && <Row label="Épaisseur"><Num value={e.width} min={1} max={80} onChange={(v) => upd({ width: v })} /></Row>}
                 {(el.type === 'area' || el.type === 'shape' || el.type === 'route') && (
                   <Row label="Style"><Seg value={e.dash} options={DASHES} onChange={(v) => upd({ dash: v })} /></Row>
+                )}
+                {el.type === 'area' && e.kind === 'zone' && e.strokeWidth > 0 && e.stroke !== e.fill && (
+                  <button className="btn small" style={{ width: '100%' }}
+                    title="Après « Découper en locaux » : retire le contour de toutes les zones de même couleur, pour qu'aucun trait ne sépare les locaux"
+                    onClick={() => useStore.getState().mutateFloor((f) => {
+                      f.elements.forEach((x) => {
+                        if (x.type === 'area' && x.kind === 'zone' && x.fill === e.fill && x.stroke === e.stroke && x.strokeWidth === e.strokeWidth) Object.assign(x, seamlessStroke(x));
+                      });
+                    })}>
+                    Sans contour sur toutes les zones de cette couleur
+                  </button>
                 )}
                 {el.type === 'route' && (
                   <>
@@ -698,7 +834,7 @@ export function PageSettings({ page }: { page: PageSetup }) {
         </p>
       </Section>
       <Section title="Contenu" icon="legendIcon">
-        {([['showTitleBlock', 'En-tête et cartouche'], ['showLegend', 'Légende'], ['showInstructions', 'Consignes'], ['showEmergencyNumbers', 'Numéros d’urgence'],
+        {([['showTitleBlock', 'En-tête'], ['showFooter', 'Cartouche (auteur, date, version)'], ['showLegend', 'Légende'], ['showInstructions', 'Consignes'], ['showEmergencyNumbers', 'Numéros d’urgence'],
           ['showAerial', 'Vue aérienne du site'], ['showSketch', 'Croquis de situation (miniature du plan)'],
           ['showScaleBar', 'Barre d’échelle'], ['showNorth', 'Flèche du nord'], ['showWatermark', 'Filigrane Brouillon / À valider'], ['showFrame', 'Cadre de page (thèmes encadrés)']] as const).map(([k, l]) => (
           <div key={k} className="toggle-line"><Toggle checked={!!page[k]} onChange={(v) => set({ [k]: v } as any)} label={l} /></div>

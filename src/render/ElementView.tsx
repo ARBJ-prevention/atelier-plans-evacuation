@@ -1,5 +1,5 @@
 import React from 'react';
-import { boxOf, doorDimensions, legendSize, openingWallFit, polygonArea, symbolFuseSides, textSize, usedSymbolIds, windowFrameWidth, type FuseSides } from '../model/geometry';
+import { boxOf, doorDimensions, legendSize, openingHostFit, polygonArea, symbolFuseSides, textSize, usedSymbolIds, windowFrameWidth, type FuseSides } from '../model/geometry';
 import type {
   ArrowStyle, CustomSymbol, DashStyle, Element, FillPattern, Floor, Pt, RouteElement, ShapeElement, SymbolElement,
 } from '../model/types';
@@ -348,7 +348,8 @@ function Inner({ el, ctx }: { el: Element; ctx: RenderCtx }): React.ReactElement
     case 'door': {
       const w = el.width;
       const { gap: defaultGap, stroke: sw } = doorDimensions(w);
-      const gap = openingWallFit(ctx.floor, ctx.variantId, el)?.depth ?? defaultGap;
+      // épaisseur du mur porteur (même légèrement décalée de l'axe, la porte suit son mur)
+      const gap = openingHostFit(ctx.floor, ctx.variantId, el)?.depth ?? defaultGap;
       const parts: React.ReactNode[] = [];
       const leaf = (hx: number, dir: 1 | -1, lw: number, k: string) => {
         parts.push(

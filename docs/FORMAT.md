@@ -49,7 +49,7 @@ Enregistrement : écriture dans un fichier temporaire, synchronisation disque, c
 | `theme` | `moderne` `epure` `institutionnel` `signaletique` `encadre` `bandeaux` `technique` `horizon` `editorial` |
 | `accentColor`, `planBackground` | couleurs `#rrggbb` |
 | `sidePosition` | position de la légende et des consignes : `right` `left` `bottom` |
-| `showTitleBlock`, `showLegend`, `showInstructions`, `showEmergencyNumbers`, `showWatermark`, `showScaleBar`, `showNorth`, `showFrame` | booléens |
+| `showTitleBlock` (en-tête), `showFooter` (cartouche ; absent → reprend `showTitleBlock`), `showLegend`, `showInstructions`, `showEmergencyNumbers`, `showWatermark`, `showScaleBar`, `showNorth`, `showFrame` | booléens |
 | `northAngle` | angle de la flèche du nord (°) |
 | `frames` | facultatif : zones encadrées choisies par l'utilisateur, `{ plan, legend, instructions, aerial, sketch, footer }` (booléens) ; une zone absente suit le thème |
 

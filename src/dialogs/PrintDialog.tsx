@@ -146,7 +146,7 @@ export function PrintDialog({ onClose, onEdit, currentOnly = false, focusScale =
           )}
 
           <h3>Contenu de la page</h3>
-          {([['showTitleBlock', 'En-tête et cartouche'], ['showLegend', 'Légende'], ['showInstructions', 'Consignes'],
+          {([['showTitleBlock', 'En-tête'], ['showFooter', 'Cartouche'], ['showLegend', 'Légende'], ['showInstructions', 'Consignes'],
             ['showEmergencyNumbers', 'Numéros d’urgence'], ['showScaleBar', 'Barre d’échelle'], ['showNorth', 'Flèche du nord'], ['showWatermark', 'Filigrane « Brouillon / À valider »']] as const).map(([k, label]) => (
             <label key={k} className="check"><input type="checkbox" checked={page[k]} onChange={(e) => set({ [k]: e.target.checked } as any)} /> {label}</label>
           ))}

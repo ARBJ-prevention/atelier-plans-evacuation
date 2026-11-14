@@ -106,6 +106,12 @@ export function Ribbon({ onPrintPreview, onQuickExport }: { onPrintPreview(): vo
               <Big icon="pan" label="Main" active={tool === 'pan'} onClick={() => use('pan')} title="Déplacer la vue (H)" />
               <Big icon="route" label="Itinéraire" active={tool === 'route'} onClick={() => use('route', { routeKind: 'principal' })} title="Itinéraire d’évacuation (I)" />
             </Group>
+            <Group title="Sélectionner" cols>
+              <Small icon="select" label="Semblables" title="Sélectionne tous les éléments du même genre que la sélection (même type de zone, même pictogramme…)" onClick={() => S().selectWhere('similar')} disabled={!sel} />
+              <Small icon="room" label="Zones et pièces" title="Sélectionne toutes les zones et pièces du plan" onClick={() => S().selectWhere('areas')} />
+              <Small icon="text" label="Textes" title="Sélectionne tous les textes du plan (noms de locaux importés…)" onClick={() => S().selectWhere('texts')} />
+              <Small icon="image" label="Pictogrammes" title="Sélectionne tous les pictogrammes du plan" onClick={() => S().selectWhere('symbols')} />
+            </Group>
             <Group title="Organiser" cols>
               <Small icon="group" label="Grouper" onClick={() => S().groupSelection()} disabled={sel < 2} />
               <Small icon="group" label="Dégrouper" onClick={() => S().ungroupSelection()} disabled={!sel} />
@@ -309,7 +315,7 @@ function PageTab({ page, onPreview }: { page: PageSetup; onPreview(): void }) {
   const set = (patch: Partial<PageSetup>) =>
     useStore.getState().mutateFloor((f) => { Object.assign(f.page, patch); }, { keepValidation: true, coalesce: `page:${Object.keys(patch).join(',')}` });
   const toggles: [keyof PageSetup, string, string][] = [
-    ['showTitleBlock', 'Cartouche', 'layout'], ['showLegend', 'Légende', 'legendIcon'], ['showInstructions', 'Consignes', 'textIcon'],
+    ['showTitleBlock', 'En-tête', 'layout'], ['showFooter', 'Cartouche', 'layout'], ['showLegend', 'Légende', 'legendIcon'], ['showInstructions', 'Consignes', 'textIcon'],
     ['showEmergencyNumbers', 'N° d’urgence', 'phone'], ['showAerial', 'Vue aérienne', 'image'], ['showSketch', 'Croquis', 'floor'],
     ['showScaleBar', 'Échelle', 'ruler'], ['showNorth', 'Nord', 'north'], ['showWatermark', 'Filigrane', 'watermark'],
   ];

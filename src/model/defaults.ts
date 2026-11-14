@@ -70,6 +70,7 @@ export function defaultPage(): PageSetup {
     planBackground: '#ffffff',
     sidePosition: 'right',
     showTitleBlock: true,
+    showFooter: true,
     showLegend: true,
     showInstructions: true,
     showEmergencyNumbers: true,

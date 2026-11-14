@@ -322,7 +322,10 @@ export interface PageSetup {
   accentColor: string;
   planBackground: string;
   sidePosition: 'right' | 'left' | 'bottom';
+  /** En-tête (titre, adresse, numéros d'urgence). */
   showTitleBlock: boolean;
+  /** Cartouche en pied de page (auteur, date, version, statut…). Absent des anciens fichiers : suit `showTitleBlock`. */
+  showFooter: boolean;
   showLegend: boolean;
   showInstructions: boolean;
   showEmergencyNumbers: boolean;

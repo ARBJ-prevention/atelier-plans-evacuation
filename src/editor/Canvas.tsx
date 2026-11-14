@@ -23,6 +23,7 @@ type Drag =
   | { kind: 'resize'; orig: Element; start: Pt; direction: Pt; wallDepth?: number; began: boolean }
   | { kind: 'pscale'; id: string; orig: Element; box: Rect; direction: Pt; start: Pt; began: boolean }
   | { kind: 'rotate'; id: string; center: Pt }
+  | { kind: 'label'; id: string; start: Pt; ox: number; oy: number; began: boolean }
   | { kind: 'bgmove'; start: Pt; ox: number; oy: number; began: boolean }
   | { kind: 'rect'; start: Pt };
 
@@ -296,7 +297,9 @@ export function Canvas({ onCalibrate }: CanvasProps) {
           const el = elById(s.selection[0]);
           if (!el || el.locked) return;
           const [kind, arg] = handle.split(':');
-          if (kind === 'v') {
+          if (kind === 'lbl' && el.type === 'area') {
+            drag.current = { kind: 'label', id: el.id, start: p, ox: el.labelDx || 0, oy: el.labelDy || 0, began: false };
+          } else if (kind === 'v') {
             if (e.detail === 2 && 'points' in el) {
               const min = el.type === 'area' ? 3 : 2;
               if (el.points.length > min) {
@@ -622,6 +625,17 @@ export function Canvas({ onCalibrate }: CanvasProps) {
         s.mutateFloor((f) => { const x = f.elements.find((q) => q.id === d.id); if (x) x.rotation = ang; }, { history: false, keepValidation: true });
         return;
       }
+      case 'label': {
+        // nom de la zone déplacé librement (décalage par rapport au centre de la zone)
+        const dx = p[0] - d.start[0], dy = p[1] - d.start[1];
+        if (!d.began) { if (Math.hypot(dx, dy) * s.view.zoom < 3) return; d.began = true; s.beginLive(); }
+        const rd = (v: number) => Math.round(v * 10) / 10;
+        s.mutateFloor((f) => {
+          const x = f.elements.find((q) => q.id === d.id) as any;
+          if (x) { x.labelDx = rd(d.ox + dx); x.labelDy = rd(d.oy + dy); }
+        }, { history: false, keepValidation: true });
+        return;
+      }
       case 'bgmove': {
         const dx = p[0] - d.start[0], dy = p[1] - d.start[1];
         if (!d.began) { if (Math.hypot(dx, dy) * s.view.zoom < 3) return; d.began = true; s.beginLive(); }
@@ -709,6 +723,21 @@ export function Canvas({ onCalibrate }: CanvasProps) {
   const handles: React.ReactNode[] = [];
   if (tool === 'select' && selEls.length === 1 && !selEls[0].locked) {
     const el = selEls[0];
+    if (el.type === 'area' && (el.label.trim() || el.showArea)) {
+      // poignée du nom : on le fait glisser où l'on veut dans (ou hors de) la zone
+      const c = polygonCentroid(el.points);
+      const lines = el.label ? el.label.split('\n') : [];
+      const n = lines.length + (el.showArea ? 1 : 0);
+      const chars = Math.max(6, ...lines.map((l) => l.length));
+      const w = chars * el.labelSize * 0.62 + 8 / z, h = n * el.labelSize * 1.2 + 6 / z;
+      const lx = c[0] + (el.labelDx || 0), ly = c[1] + (el.labelDy || 0);
+      handles.push(
+        <rect key="lbl" data-handle="lbl" className="label-handle" x={lx - w / 2} y={ly - h / 2} width={w} height={h} rx={4 / z}
+          style={{ cursor: 'move' }} fill="rgba(37,99,235,0.07)" stroke="#2563eb" strokeWidth={1} strokeDasharray="4 3" vectorEffect="non-scaling-stroke">
+          <title>Glisser pour déplacer le nom</title>
+        </rect>,
+      );
+    }
     if ('points' in el) {
       el.points.forEach((pt, i) => {
         if (i < el.points.length - 1 || el.type === 'area') {

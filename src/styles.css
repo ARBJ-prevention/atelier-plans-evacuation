@@ -265,6 +265,7 @@ label.check { display: flex; flex-direction: row; align-items: center; gap: 8px;
 .overlay .resize-handle path { fill: none; stroke: var(--sel); stroke-width: 1.3; stroke-linecap: round; stroke-linejoin: round; pointer-events: none; }
 .overlay .resize-handle:hover rect { fill: var(--sel); }
 .overlay .resize-handle:hover path { stroke: #fff; }
+.overlay .label-handle:hover { fill: rgba(37, 99, 235, .16); }
 .overlay .handle-mid { fill: var(--sel); fill-opacity: .35; stroke: var(--sel); stroke-width: 1; vector-effect: non-scaling-stroke; cursor: copy; }
 .overlay .handle-rot { fill: #fff; stroke: var(--accent); stroke-width: 2; vector-effect: non-scaling-stroke; cursor: grab; }
 .overlay .marquee { fill: rgba(31, 111, 209, .08); stroke: var(--sel); stroke-width: 1; stroke-dasharray: 4 3; vector-effect: non-scaling-stroke; }

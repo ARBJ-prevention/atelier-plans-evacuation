@@ -49,6 +49,8 @@ interface Mask {
   m: number; res: number; x0: number; y0: number; W: number; H: number;
   /** murs, contours de pièces et menuiseries tels que dessinés */
   grid: Uint8Array;
+  /** murs seuls (sans les contours de pièces ni les traits de fermeture des baies) */
+  walls: Uint8Array;
   /** extérieur du bâtiment (baies refermées), regonflé jusqu'au milieu des façades */
   out: Uint8Array;
 }
@@ -83,7 +85,8 @@ function buildingMask(floor: Floor, variantId: string, ignoreId: string | undefi
   const W = Math.ceil((x1 - x0) / res), H = Math.ceil((y1 - y0) / res);
   const N = W * H;
   const grid = new Uint8Array(N);
-  for (const { a, b, r } of segs) {
+  const walls = new Uint8Array(N);
+  for (const { a, b, r, wall } of segs) {
     const L = Math.hypot(b[0] - a[0], b[1] - a[1]), n = Math.max(1, Math.ceil(L / (res * 0.5)));
     const rc = Math.max(0.75, r / res), ri = Math.ceil(rc);
     for (let s = 0; s <= n; s++) {
@@ -92,7 +95,7 @@ function buildingMask(floor: Floor, variantId: string, ignoreId: string | undefi
       for (let dy = -ri; dy <= ri; dy++) for (let dx = -ri; dx <= ri; dx++) {
         const gx = cx + dx, gy = cy + dy;
         if (gx < 0 || gy < 0 || gx >= W || gy >= H) continue;
-        if ((gx + 0.5 - px) ** 2 + (gy + 0.5 - py) ** 2 <= rc * rc) grid[gy * W + gx] = 1;
+        if ((gx + 0.5 - px) ** 2 + (gy + 0.5 - py) ** 2 <= rc * rc) { grid[gy * W + gx] = 1; if (wall) walls[gy * W + gx] = 1; }
       }
     }
   }
@@ -115,7 +118,7 @@ function buildingMask(floor: Floor, variantId: string, ignoreId: string | undefi
   // épais : la zone s'arrête au milieu de la façade, sous le mur, et son contour ne déborde pas du plan
   const half = Math.max(0, ...segs.filter((s) => s.wall).map((s) => s.r));
   const inset = Math.max(1, Math.round(half / res));
-  return { m, res, x0, y0, W, H, grid, out: dilate(outside, W, H, k + inset) };
+  return { m, res, x0, y0, W, H, grid, walls, out: dilate(outside, W, H, k + inset) };
 }
 
 /** Cellules de l'intérieur du bâtiment situées dans le contour dessiné. */
@@ -135,10 +138,10 @@ function insideOutline(mk: Mask, outline: P[]): { region: Uint8Array; count: num
   return { region, count };
 }
 
-function toPolygon(mk: Mask, region: Uint8Array, minM2: number): Pt[] | null {
+function toPolygon(mk: Mask, region: Uint8Array, minM2: number, tol = 1.2): Pt[] | null {
   const { res, x0, y0, W, H, m } = mk;
   const poly = traceRegion(region, W, H).map(([gx, gy]) => [x0 + gx * res, y0 + gy * res] as P);
-  const simp = simplify(poly, res * 1.2);
+  const simp = simplify(poly, res * tol);
   if (simp.length < 3 || polygonAreaAbs(simp) < minM2 * m * m) return null;
   const rd = (v: number) => Math.round(v * 100) / 100;
   return simp.map((p) => [rd(p[0]), rd(p[1])] as Pt);
@@ -158,6 +161,82 @@ export function clipToBuilding(floor: Floor, variantId: string, outline: P[], ig
 }
 
 export interface RoomPiece { points: Pt[]; label: string }
+
+/**
+ * Contour d'un morceau de « Découper en locaux » : aucun trait visible. Les limites entre deux locaux
+ * qui ne passent pas sous un mur (baies, bouts de cloison, escaliers) ne doivent pas se dessiner.
+ * Sur un fond plein et opaque, un trait fin de la couleur du fond bouche le jour d'anticrénelage
+ * entre deux morceaux voisins ; sinon (fond transparent ou hachuré), pas de trait du tout.
+ */
+export function seamlessStroke(src: { fill?: string; fillOpacity?: number; pattern?: string; opacity?: number }) {
+  const opaque = !!src.fill && src.fill !== 'none' && src.fill !== 'transparent'
+    && (src.pattern ?? 'solid') === 'solid' && (src.fillOpacity ?? 1) >= 0.99 && (src.opacity ?? 1) >= 0.99;
+  return opaque
+    ? { stroke: src.fill as string, strokeWidth: 1, dash: 'solid' as const }
+    : { stroke: src.fill || '#000000', strokeWidth: 0, dash: 'solid' as const };
+}
+
+/**
+ * Dans un local couvert au moins pour moitié par des pièces au fond opaque, le morceau est ramené à
+ * l'intérieur de ces pièces, une cellule en retrait : il ne dépasse plus dans le petit jour laissé
+ * entre le contour d'une pièce et le mur, et deux bords confondus ne laissent rien filtrer à
+ * l'anticrénelage. (Garder la bande sous le mur ferait du jour un trou, qu'un contour ne sait pas
+ * représenter.) Renvoie les locaux ainsi ramenés.
+ */
+function hideUnderRooms(floor: Floor, variantId: string, ignoreId: string | undefined, mk: Mask, region: Uint8Array, label: Int32Array): Set<number> {
+  const { res, x0, y0, W, H, grid } = mk;
+  const CW = W + 1, CH = H + 1;
+  const hidden = new Set<number>();
+  const roomCov = new Uint8Array(CW * CH);
+  const fillPoly = (pts: P[]) => {
+    let py0 = Infinity, py1 = -Infinity;
+    for (const p of pts) { py0 = Math.min(py0, p[1]); py1 = Math.max(py1, p[1]); }
+    const r0 = Math.max(0, Math.ceil((py0 - y0) / res)), r1 = Math.min(CH - 1, Math.floor((py1 - y0) / res));
+    for (let r = r0; r <= r1; r++) {
+      const y = y0 + r * res, xs: number[] = [];
+      for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+        const [xi, yi] = pts[i], [xj, yj] = pts[j];
+        if ((yi > y) !== (yj > y)) xs.push(xi + ((y - yi) * (xj - xi)) / (yj - yi));
+      }
+      xs.sort((u, v) => u - v);
+      for (let k = 0; k + 1 < xs.length; k += 2) {
+        const c0 = Math.max(0, Math.ceil((xs[k] - x0) / res)), c1 = Math.min(CW - 1, Math.floor((xs[k + 1] - x0) / res));
+        for (let c = c0; c <= c1; c++) roomCov[r * CW + c] = 1;
+      }
+    }
+  };
+  let any = false;
+  for (const e of floor.elements) {
+    if (e.id === ignoreId || e.type !== 'area' || e.kind !== 'room' || e.points.length < 3 || !isVisibleInVariant(e, variantId)) continue;
+    const a = e as AreaElement & { opacity?: number };
+    if (!a.fill || a.fill === 'none' || a.fill === 'transparent' || (a.fillOpacity ?? 1) < 0.5 || (a.opacity ?? 1) < 0.5) continue;
+    fillPoly(e.points as P[]);
+    any = true;
+  }
+  if (!any) return hidden;
+  // part de chaque local sous une pièce (centre des cellules libres approché par leur coin)
+  const free = new Map<number, number>(), under = new Map<number, number>();
+  for (let c = 0; c < W * H; c++) {
+    const id = label[c];
+    if (id < 0 || grid[c]) continue;
+    free.set(id, (free.get(id) ?? 0) + 1);
+    const gx = c % W, gy = (c - gx) / W;
+    if (roomCov[(gy + 1) * CW + gx + 1]) under.set(id, (under.get(id) ?? 0) + 1);
+  }
+  for (const [id, n] of free) if ((under.get(id) ?? 0) >= n * 0.5) hidden.add(id);
+  if (!hidden.size) return hidden;
+  const safe = new Uint8Array(CW * CH);
+  for (let r = 1; r < CH - 1; r++) for (let c = 1; c < CW - 1; c++) {
+    const k = r * CW + c;
+    safe[k] = roomCov[k] & roomCov[k - 1] & roomCov[k + 1] & roomCov[k - CW] & roomCov[k + CW];
+  }
+  for (let c = 0; c < W * H; c++) {
+    if (!hidden.has(label[c])) continue;
+    const gx = c % W, gy = (c - gx) / W, k = gy * CW + gx;
+    if (!(safe[k] && safe[k + 1] && safe[k + CW] && safe[k + CW + 1])) { label[c] = -1; region[c] = 0; }
+  }
+  return hidden;
+}
 
 /**
  * Découpe un contour, limité au bâtiment, en un morceau par local : les murs, cloisons, contours de
@@ -191,16 +270,70 @@ export function splitIntoRooms(floor: Floor, variantId: string, outline: P[], ig
   if (!sizes.length) return null;
   // 2. les recoins trop petits (vides entre deux traits, gaines) sont rendus au remplissage
   const minCells = (m * m) / (res * res);
-  const keep = sizes.map((n) => n >= minCells);
+  // les bandes de moins de 50 cm de large (jour entre un contour de pièce et un mur) ne sont pas des locaux
+  const blocked = new Uint8Array(N);
+  for (let c = 0; c < N; c++) blocked[c] = region[c] && !grid[c] ? 0 : 1;
+  const core = dilate(blocked, W, H, Math.max(1, Math.round((0.25 * m) / res)));
+  const wide = new Set<number>();
+  for (let c = 0; c < N; c++) if (!core[c] && label[c] >= 0) wide.add(label[c]);
+  const keep = sizes.map((n, id) => n >= minCells && wide.has(id));
   if (!keep.some(Boolean)) keep[sizes.indexOf(Math.max(...sizes))] = true;
   for (let c = 0; c < N; c++) if (label[c] >= 0 && !keep[label[c]]) label[c] = -1;
-  // 3. remplissage par proximité : murs et recoins vont au local le plus proche
-  let front: number[] = [];
-  for (let c = 0; c < N; c++) if (label[c] >= 0) front.push(c);
-  while (front.length) {
-    const nextF: number[] = [];
-    for (const c of front) for (const nb of nbs(c)) if (nb >= 0 && region[nb] && label[nb] < 0) { label[nb] = label[c]; nextF.push(nb); }
-    front = nextF;
+  // 3. remplissage par proximité : murs et recoins vont au local le plus proche.
+  // D'abord sans traverser de mur : une bande isolée par un simple contour de pièce ou un trait de baie
+  // revient au local de son côté du mur, jamais à celui d'en face. Puis l'épaisseur des murs, partagée.
+  const grow = (passable: (c: number) => boolean) => {
+    let front: number[] = [];
+    for (let c = 0; c < N; c++) if (label[c] >= 0) front.push(c);
+    while (front.length) {
+      const nextF: number[] = [];
+      for (const c of front) for (const nb of nbs(c)) if (nb >= 0 && region[nb] && label[nb] < 0 && passable(nb)) { label[nb] = label[c]; nextF.push(nb); }
+      front = nextF;
+    }
+  };
+  grow((c) => !mk.walls[c]);
+  grow(() => true);
+  // 3 bis. sous une pièce opaque, le morceau suit le fond de la pièce (pas de liseré vert le long des murs)
+  const hidden = hideUnderRooms(floor, variantId, ignoreId, mk, region, label);
+  // 3 ter. un morceau d'un seul tenant : un contour ne dessine qu'une partie connexe, le reste ferait un trou.
+  // Les parties détachées assez grandes deviennent un local à part ; les autres rejoignent le local voisin
+  // avec lequel elles ont la plus longue frontière.
+  {
+    const comp = new Int32Array(N).fill(-1);
+    const parts: { id: number; cells: number[] }[] = [];
+    for (let c0 = 0; c0 < N; c0++) {
+      if (label[c0] < 0 || comp[c0] >= 0) continue;
+      const id = label[c0], cells = [c0], st = [c0];
+      comp[c0] = parts.length;
+      while (st.length) {
+        const c = st.pop()!;
+        for (const nb of nbs(c)) if (nb >= 0 && label[nb] === id && comp[nb] < 0) { comp[nb] = parts.length; cells.push(nb); st.push(nb); }
+      }
+      parts.push({ id, cells });
+    }
+    const largest = new Map<number, number>();
+    parts.forEach((p, i) => { const j = largest.get(p.id); if (j === undefined || parts[j].cells.length < p.cells.length) largest.set(p.id, i); });
+    let nextId = sizes.length;
+    const detached = parts.map((p, i) => i).filter((i) => largest.get(parts[i].id) !== i).sort((a, b) => parts[b].cells.length - parts[a].cells.length);
+    for (const i of detached) {
+      const p = parts[i];
+      if (p.cells.length >= minCells) {
+        const id = nextId++;
+        for (const c of p.cells) label[c] = id;
+        if (hidden.has(p.id)) hidden.add(id);
+        continue;
+      }
+      const contact = new Map<number, number>();
+      for (const c of p.cells) for (const nb of nbs(c)) {
+        if (nb < 0) continue;
+        const l = label[nb];
+        if (l >= 0 && l !== p.id) contact.set(l, (contact.get(l) ?? 0) + 1);
+      }
+      let best = -1, bestN = 0;
+      for (const [l, n] of contact) if (n > bestN) { best = l; bestN = n; }
+      if (best >= 0) for (const c of p.cells) label[c] = best;
+      else { const id = nextId++; for (const c of p.cells) label[c] = id; }
+    }
   }
   // 4. noms : pièces existantes et textes posés dans le local
   const names = new Map<number, string>();
@@ -234,7 +367,9 @@ export function splitIntoRooms(floor: Floor, variantId: string, outline: P[], ig
   const pieces: RoomPiece[] = [];
   for (const [id, list] of [...cells].sort((a, b) => a[0] - b[0])) {
     for (const c of list) reg[c] = 1;
-    const pts = toPolygon(mk, reg, 0.25);
+    // contour serré (au plus une demi-cellule d'écart) : chaque morceau est simplifié seul, une tolérance
+    // plus large écarterait deux voisins de part et d'autre de leur frontière commune (jours, chevauchements)
+    const pts = toPolygon(mk, reg, 0.25, 0.5);
     for (const c of list) reg[c] = 0;
     if (pts) pieces.push({ points: pts, label: names.get(id) ?? '' });
   }

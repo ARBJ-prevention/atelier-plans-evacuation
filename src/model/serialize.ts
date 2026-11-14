@@ -88,7 +88,8 @@ function migrate(raw: any): Project {
           elements: Array.isArray(f.elements) ? f.elements.filter((e: any) => e && e.id && KNOWN_TYPES.has(e.type)).map(migrateElement) : [],
           variants,
           titleBlock: { ...defaultTitleBlock(country), ...(f.titleBlock ?? {}) },
-          page: { ...defaultPage(), ...(f.page ?? {}) },
+          // Anciens fichiers : en-tête et cartouche n'avaient qu'une case commune (`showTitleBlock`).
+          page: { ...defaultPage(), showFooter: f.page?.showTitleBlock ?? true, ...(f.page ?? {}) },
         };
       }),
     })),
