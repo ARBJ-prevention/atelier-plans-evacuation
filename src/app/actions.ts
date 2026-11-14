@@ -300,7 +300,7 @@ export async function importDxfBackground(name: string, data: Uint8Array, dwgVer
       applyDxfBackground(name, choice, upm, rec.elements);
       if (rec.elements.length) {
         const c = rec.counts;
-        S().toast(`Plan redessiné à l’échelle réelle (${dims}) : ${c.rooms} pièce(s), ${c.walls} mur(s), ${c.doors} porte(s), ${c.windows} fenêtre(s), ${c.stairs} escalier(s). Le tracé d’origine est masqué (calque « Plan de fond ») ; vérifiez le plan, puis ajoutez les pictogrammes.`, 'success');
+        S().toast(`Plan redessiné à l’échelle réelle (${dims}) : ${c.rooms ? `${c.rooms} pièce(s), ` : ''}${c.walls} mur(s), ${c.doors} porte(s), ${c.windows} fenêtre(s), ${c.stairs} escalier(s). Le tracé d’origine est masqué (calque « Plan de fond ») ; vérifiez le plan, puis ajoutez les pictogrammes.`, 'success');
         return;
       }
     } else {

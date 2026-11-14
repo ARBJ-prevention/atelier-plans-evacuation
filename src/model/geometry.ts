@@ -504,6 +504,35 @@ export function openingWallFit(
   return best;
 }
 
+/**
+ * Mur qui porte une ouverture, avec une tolérance de quelques millimètres et d'un degré : une porte ou
+ * une fenêtre très légèrement décalée de l'axe (mur retouché, arrondis) reste rattachée à son mur.
+ * Renvoie la position exacte sur l'axe, l'angle du mur et son épaisseur.
+ */
+export function openingHostFit(floor: Floor, variantId: string, opening: Pick<DoorElement | WindowElement, 'x' | 'y' | 'width' | 'rotation'>) {
+  const exact = openingWallFit(floor, variantId, opening);
+  if (exact) return exact;
+  const m = floor.unitsPerMeter > 0 ? floor.unitsPerMeter : 50;
+  const tol = Math.max(1, 0.05 * m);
+  const halfWidth = opening.width / 2;
+  let best: { x: number; y: number; rotation: number; depth: number } | undefined;
+  let bestDistance = Infinity;
+  for (const { a: [ax, ay], b: [bx, by], length, depth } of visibleWallSegments(floor, variantId)) {
+    if (length < opening.width - tol) continue;
+    const ux = (bx - ax) / length, uy = (by - ay) / length;
+    const turn = openingTurn(Math.atan2(uy, ux) * 180 / Math.PI, opening.rotation);
+    if (Math.abs(turn) > 1) continue;
+    const along = (opening.x - ax) * ux + (opening.y - ay) * uy;
+    if (along < halfWidth - tol || along > length - halfWidth + tol) continue;
+    const dist = Math.abs((opening.x - ax) * uy - (opening.y - ay) * ux);
+    if (dist > tol || dist >= bestDistance) continue;
+    const center = Math.max(halfWidth, Math.min(length - halfWidth, along));
+    best = { x: ax + center * ux, y: ay + center * uy, rotation: opening.rotation + turn, depth };
+    bestDistance = dist;
+  }
+  return best;
+}
+
 /** Accroche le bord déplacé, ou les deux bords lors d'un changement de largeur seul. */
 export function windowResizeWallFit(floor: Floor, variantId: string, opening: WindowElement, side: number, tolerance: number) {
   const halfWidth = opening.width / 2;

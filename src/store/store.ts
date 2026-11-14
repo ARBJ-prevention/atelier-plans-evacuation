@@ -1,11 +1,12 @@
 import { produce, type Draft } from 'immer';
 import { create } from 'zustand';
 import { LAYER_ORDER, makeElement, newProject, uid } from '../model/defaults';
-import { clipToBuilding, outlineOf, splitIntoRooms } from '../services/footprint';
+import { clipToBuilding, outlineOf, seamlessStroke, splitIntoRooms } from '../services/footprint';
 import {
-  DEFAULT_SYMBOL_WALL_GAP, elementBounds, isVisibleInVariant, rectCenter, rotateElementAround, snapSymbolToWalls, translateElement, unionRects,
+  DEFAULT_SYMBOL_WALL_GAP, elementBounds, isVisibleInVariant, openingWallFit, rectCenter, rotateElementAround, snapSymbolToWalls, translateElement, unionRects,
 } from '../model/geometry';
 import type { Building, Element, Floor, Project } from '../model/types';
+import { setWallsThickness } from '../model/wallThickness';
 
 export type Tool =
   | 'select' | 'pan' | 'wall' | 'room' | 'zone' | 'door' | 'stairs' | 'route'
@@ -109,6 +110,10 @@ export interface EditorState {
   setVariant(variantId: string): void;
   setTool(t: Tool, symbolId?: string): void;
   select(ids: string[], additive?: boolean): void;
+  /** Épaisseur de murs, en retravaillant murs raccordés et fenêtres (voir setWallsThickness). */
+  setWallThickness(ids: string[], thickness: number): void;
+  /** Sélectionne d'un coup : les éléments semblables à la sélection, toutes les zones et pièces, tous les textes ou pictogrammes. */
+  selectWhere(what: 'similar' | 'areas' | 'texts' | 'symbols'): void;
   setView(v: Partial<View>): void;
   requestFit(): void;
   setGrid(g: Partial<GridSettings>): void;
@@ -132,7 +137,8 @@ export interface EditorState {
   /** Découpe les formes / zones sélectionnées selon l'emprise du bâtiment (intérieur des façades). */
   clipSelectionToBuilding(): void;
   /** Découpe la forme / zone sélectionnée en une zone par local (limitée au bâtiment). */
-  splitSelectionIntoRooms(): void;
+  /** Découpe en une zone par local ; `withNames` : chaque morceau reprend le nom de la pièce ou du texte qu'il contient. */
+  splitSelectionIntoRooms(withNames?: boolean): void;
   nudgeSelection(dx: number, dy: number): void;
   flipSelection(axis: 'h' | 'v'): void;
   toggleLockSelection(): void;
@@ -140,6 +146,8 @@ export interface EditorState {
 
 let toastSeq = 1;
 let lastCoalesce = { key: '', t: 0 };
+/** Saisie d'épaisseur de murs en cours : plan de départ, et dernier résultat (pour savoir si rien d'autre n'a changé). */
+let wallEdit: { key: string; floorId: string; t: number; base: readonly Element[]; result: readonly Element[] } | null = null;
 
 export const useStore = create<EditorState>((set, get) => ({
   project: null,
@@ -258,6 +266,46 @@ export const useStore = create<EditorState>((set, get) => ({
   },
 
   setTool(t, symbolId) { set({ tool: t, pendingSymbol: symbolId ?? get().pendingSymbol, ...(t !== 'select' ? { selection: [] } : {}) }); },
+
+  setWallThickness(ids, thickness) {
+    const f = currentFloor(get());
+    if (!f || !(thickness > 0)) return;
+    const variant = currentVariantId(get());
+    const key = [...ids].sort().join(',');
+    const now = Date.now();
+    // Saisie en cours (chiffre après chiffre) : on repart chaque fois du plan d'avant la saisie,
+    // pour que les raccords soient calculés depuis l'état d'origine et non enchaînés.
+    const resume = !!wallEdit && wallEdit.key === key && wallEdit.floorId === f.id && now - wallEdit.t < 1500 && wallEdit.result === f.elements;
+    if (!resume) wallEdit = { key, floorId: f.id, t: now, base: f.elements, result: f.elements };
+    const base = wallEdit!.base;
+    get().mutateFloor((fd) => {
+      if (resume) fd.elements = JSON.parse(JSON.stringify(base));
+      setWallsThickness(fd as unknown as Floor, variant, new Set(ids), thickness);
+    }, { coalesce: `wallthick:${key}` });
+    wallEdit = { ...wallEdit!, t: now, result: currentFloor(get())!.elements };
+  },
+
+  selectWhere(what) {
+    const f = currentFloor(get());
+    if (!f) return;
+    const variant = currentVariantId(get());
+    // « semblable » : même type ; même genre pour les zones / pièces ; même pictogramme pour les symboles ;
+    // même épaisseur (au centimètre près) pour les murs
+    const cm = (v: number) => Math.round(f.unitsPerMeter > 0 ? (v / f.unitsPerMeter) * 100 : v);
+    const keyOf = (e: Element) => e.type === 'area' ? `area:${e.kind}` : e.type === 'symbol' ? `symbol:${e.symbolId}`
+      : e.type === 'wall' ? `wall:${cm(e.thickness)}` : e.type;
+    const keys = new Set(f.elements.filter((e) => get().selection.includes(e.id)).map(keyOf));
+    const match = (e: Element) => what === 'similar' ? keys.has(keyOf(e))
+      : what === 'areas' ? e.type === 'area' : what === 'texts' ? e.type === 'text' : e.type === 'symbol';
+    const usable = new Set(f.layers.filter((l) => l.visible && !l.locked).map((l) => l.id));
+    const ids = f.elements.filter((e) => !e.locked && usable.has(e.layer) && isVisibleInVariant(e, variant) && match(e)).map((e) => e.id);
+    if (!ids.length) {
+      get().toast(what === 'similar' ? 'Sélectionnez d’abord un élément.' : 'Aucun élément de ce genre sur ce plan.', 'info');
+      return;
+    }
+    set({ selection: ids, tool: 'select' });
+    get().toast(`${ids.length} élément(s) sélectionné(s).`, 'success');
+  },
 
   select(ids, additive = false) {
     const f = currentFloor(get());
@@ -507,7 +555,7 @@ export const useStore = create<EditorState>((set, get) => ({
     get().toast(results.size > 1 ? `${results.size} formes limitées au bâtiment.` : 'Forme limitée à l’intérieur du bâtiment.', 'success');
   },
 
-  splitSelectionIntoRooms() {
+  splitSelectionIntoRooms(withNames = false) {
     const f = currentFloor(get());
     if (!f) return;
     const variant = currentVariantId(get());
@@ -524,7 +572,8 @@ export const useStore = create<EditorState>((set, get) => ({
       const style = {
         kind: 'zone' as const, layer: 'building' as const,
         fill: src.fill, fillOpacity: src.fillOpacity, pattern: src.pattern, patternColor: src.patternColor,
-        stroke: src.stroke, strokeWidth: src.strokeWidth, dash: src.dash,
+        // pas de contour sur les morceaux : les limites entre locaux hors des murs resteraient tracées
+        ...seamlessStroke(src),
         opacity: src.opacity, shadow: src.shadow, variantId: src.variantId, excludedVariantIds: src.excludedVariantIds, groupId: src.groupId,
         labelSize: isArea ? src.labelSize : src.textSize ?? 16,
         labelColor: isArea ? src.labelColor : src.textColor ?? '#3b4754',
@@ -532,7 +581,8 @@ export const useStore = create<EditorState>((set, get) => ({
         showArea: isArea ? src.showArea : false,
       };
       results.set(e.id, pieces.map((p, i) => {
-        const el = makeElement('area', { ...style, points: p.points, label: p.label }) as Element;
+        // par défaut sans nom : les noms des locaux restent des textes à part (pas de doublon sous le nom importé)
+        const el = makeElement('area', { ...style, points: p.points, label: withNames ? p.label : '' }) as Element;
         // le premier morceau garde l'identité de la forme d'origine
         return i === 0 ? { ...el, id: e.id } : el;
       }));
@@ -558,11 +608,25 @@ export const useStore = create<EditorState>((set, get) => ({
     const sel = f.elements.filter((e) => ids.has(e.id) && !e.locked);
     if (!sel.length) return;
     const [cx, cy] = rectCenter(unionRects(sel.map((e) => elementBounds(e)))!);
+    // Portes et fenêtres seules : retournées sur place, dans leur mur (le centre de leur cadre est au
+    // milieu des battants, une symétrie autour de lui les sortirait du mur de la longueur d'un battant).
+    const inPlace = sel.every((e) => e.type === 'door' || e.type === 'window');
+    const variant = currentVariantId(get());
     get().mutateFloor((fd) => {
       fd.elements = fd.elements.map((e: any) => {
         if (!ids.has(e.id) || e.locked) return e;
         if ('points' in e) return { ...e, points: e.points.map(([x, y]: [number, number]) => (axis === 'h' ? [2 * cx - x, y] : [x, 2 * cy - y])) };
-        const n = { ...e, x: axis === 'h' ? 2 * cx - e.x : e.x, y: axis === 'v' ? 2 * cy - e.y : e.y };
+        const n = inPlace ? { ...e } : { ...e, x: axis === 'h' ? 2 * cx - e.x : e.x, y: axis === 'v' ? 2 * cy - e.y : e.y };
+        if (inPlace) {
+          // Ouverture retournée dans son mur : symétrie autour de son propre axe (le mur), l'angle ne change pas.
+          // (Inverser l'angle la décrocherait d'un mur qui n'est pas parfaitement droit.)
+          if (axis === 'v') n.flipY = !e.flipY;
+          else if (e.type === 'door') n.swing = e.swing === 'left' ? 'right' : 'left';
+          // et on la recale sur l'axe du mur (répare aussi une ouverture déjà décrochée)
+          const fit = openingWallFit(f, variant, n, Math.max(1, (f.unitsPerMeter || 50) * 0.05));
+          if (fit) { n.x = fit.x; n.y = fit.y; n.rotation = ((fit.rotation % 360) + 360) % 360; }
+          return n;
+        }
         if (axis === 'h') n.flipX = !e.flipX; else n.flipY = !e.flipY;
         if (e.type === 'door' && axis === 'h') n.swing = e.swing === 'left' ? 'right' : 'left';
         if (e.rotation) n.rotation = (360 - e.rotation) % 360;

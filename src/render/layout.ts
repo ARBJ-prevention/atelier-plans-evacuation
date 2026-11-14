@@ -1,5 +1,6 @@
 import { floorContentBounds, isVisibleInVariant, usedSymbolIds, type Rect } from '../model/geometry';
 import type { FrameKey, Floor, PageSetup, PageTheme } from '../model/types';
+import { getBuiltinSymbol } from '../symbols/library';
 
 export const PAPER_MM: Record<string, [number, number]> = { A4: [210, 297], A3: [297, 420], A2: [420, 594] };
 
@@ -263,6 +264,25 @@ export function instructionsHeight(text: string, widthMm: number): number {
 
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 
+/**
+ * Largeur de colonne dont le contenu a besoin pour que chaque consigne et chaque libellé de légende
+ * tienne sur une ligne (mêmes estimations que `wrapText` et que le rendu de la légende).
+ */
+function sideContentWidth(floor: Floor, variantId: string, page: PageSetup): number {
+  let need = 0;
+  if (page.showInstructions) {
+    const longest = Math.max(0, ...floor.titleBlock.instructions.split('\n').map((line) => line.trim().length));
+    need = Math.max(need, (longest + 2) * INSTRUCTION_FONT * 0.5 + 12);
+  }
+  if (page.showLegend) {
+    const labels = usedSymbolIds(floor, variantId).map((id) => getBuiltinSymbol(id)?.name ?? 'Pictogramme personnalisé');
+    if (floor.elements.some((e) => e.type === 'route' && isVisibleInVariant(e, variantId))) labels.push('Itinéraire d’évacuation');
+    const longest = Math.max(0, ...labels.map((label) => label.length));
+    need = Math.max(need, (longest + 1) * 2.9 * 0.5 + 18);
+  }
+  return need;
+}
+
 export function computeLayout(floor: Floor, variantId: string, page: PageSetup = floor.page): PageLayout {
   const paper = pageSizeMm(page);
   const s = PAPER_SCALE[page.paper] ?? 1;
@@ -284,6 +304,8 @@ export function computeLayout(floor: Floor, variantId: string, page: PageSetup =
       header = { x: x0, y: y0, w: x1 - x0, h: headerH };
       y0 += headerH + G;
     }
+  }
+  if (page.showFooter ?? page.showTitleBlock) {
     footer = { x: x0, y: y1 - T.footerH, w: x1 - x0, h: T.footerH };
     y1 -= T.footerH + G;
   }
@@ -348,7 +370,10 @@ export function computeLayout(floor: Floor, variantId: string, page: PageSetup =
       const colMin = page.orientation === 'portrait' ? colPortrait : colBase;
       const planNeed = world.w * (kFixed || (H - reserveH) / world.h) + reserveW;
       const leftover = W - G - planNeed;
-      const sw = clamp(Math.min(extra ? 112 : 100, Math.max(leftover, colMin)), colMin, W * 0.42);
+      const roomy = clamp(Math.min(extra ? 112 : 100, Math.max(leftover, colMin)), colMin, W * 0.42);
+      // La colonne se resserre sur son contenu (consignes et libellés de légende sur une ligne) :
+      // la largeur ainsi libérée revient au plan au lieu de rester vide à droite des textes.
+      const sw = clamp(sideContentWidth(floor, variantId, page), Math.min(colMin, extra ? 66 : 60), roomy);
       if (pos === 'left') { side = { x: x0, y: y0, w: sw, h: H }; x0 += sw + G; }
       else { side = { x: x1 - sw, y: y0, w: sw, h: H }; x1 -= sw + G; }
     }

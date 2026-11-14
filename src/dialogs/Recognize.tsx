@@ -29,7 +29,7 @@ export async function askRecognition(
     title: 'Redessiner le plan',
     wide: true,
     large: true,
-    initial: { roles, kinds: RECOGNIZED_KINDS.map((k) => k.key) },
+    initial: { roles, kinds: RECOGNIZED_KINDS.map((k) => k.key), fillRooms: true },
     render: (v, set) => <RecognizePanel values={v} set={set} layers={layers} counts={counts} run={run} floor={floor} background={background} upm={unitsPerMeter} />,
     buttons: [
       { label: 'Annuler', value: 'cancel' },
@@ -41,7 +41,9 @@ export async function askRecognition(
   const rec = run(r.values);
   const counts2 = Object.fromEntries(RECOGNIZED_KINDS.map((k) => [k.key, rec[k.key].length])) as Record<keyof Recognized, number>;
   if (r.button === 'background') return { elements: [], counts: counts2 };
-  return { elements: recognizedElements(rec, new Set(r.values.kinds as (keyof Recognized)[])), counts: counts2 };
+  const elements = recognizedElements(rec, new Set(r.values.kinds as (keyof Recognized)[]), r.values.fillRooms !== false);
+  if (r.values.fillRooms === false) counts2.rooms = 0;
+  return { elements, counts: counts2 };
 }
 
 export function RecognizePanel({ values, set, layers, counts, run, floor, background, upm }: {
@@ -54,7 +56,7 @@ export function RecognizePanel({ values, set, layers, counts, run, floor, backgr
   const preview: Floor | null = rec ? {
     ...floor, unitsPerMeter: upm,
     background: { ...background, opacity: 0.35, grayscale: true },
-    elements: recognizedElements(rec, kinds),
+    elements: recognizedElements(rec, kinds, values.fillRooms !== false),
     layers: floor.layers.map((l) => ({ ...l, visible: true, locked: false })),
   } : null;
   const pad = Math.max(background.naturalWidth, background.naturalHeight) * 0.03;
@@ -68,8 +70,17 @@ export function RecognizePanel({ values, set, layers, counts, run, floor, backgr
           : <p className="muted small">La reconnaissance a échoué sur ce plan. Vous pouvez garder le fond seul.</p>}
       </div>
       <div className="recog-side">
-        <b className="small">Éléments reconnus</b>
-        {RECOGNIZED_KINDS.map((k) => (
+        <b className="small">Remplissage des locaux</b>
+        <label className="field check">
+          <input type="radio" name="recog-fill" checked={values.fillRooms !== false} onChange={() => set({ fillRooms: true, kinds: [...new Set([...kinds, 'rooms'])] })} />
+          <span>Remplir chaque local <span className="muted">({rec ? rec.rooms.length : 0})</span></span>
+        </label>
+        <label className="field check">
+          <input type="radio" name="recog-fill" checked={values.fillRooms === false} onChange={() => set({ fillRooms: false, kinds: [...new Set([...kinds, 'rooms'])] })} />
+          <span>Ne pas remplir : je dessine mes zones moi-même <span className="muted">(les noms des locaux restent affichés)</span></span>
+        </label>
+        <b className="small" style={{ marginTop: 8 }}>Éléments reconnus</b>
+        {RECOGNIZED_KINDS.filter((k) => k.key !== 'rooms').map((k) => (
           <label key={k.key} className="field check">
             <input type="checkbox" checked={kinds.has(k.key)}
               onChange={(e) => set({ kinds: RECOGNIZED_KINDS.map((x) => x.key).filter((x) => (x === k.key ? e.target.checked : kinds.has(x))) })} />

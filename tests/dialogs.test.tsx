@@ -30,7 +30,8 @@ describe('fenêtres d’import (rendu)', () => {
     const run = (v: Record<string, any>) => recognizePlan(flat, { roles: Object.fromEntries(flat.layers.map((l) => [l.name, v.roles[l.name] ?? 'ignore'])), origin: res.origin, unitsPerMeter: 50 });
     const html = renderToStaticMarkup(<RecognizePanel values={{ roles, kinds: RECOGNIZED_KINDS.map((k) => k.key) }} set={() => {}}
       layers={visible} counts={new Map(flat.layers.map((l) => [l.name, l.count]))} run={run} floor={floor} background={bg} upm={50} />);
-    expect(html).toContain('Pièces <span class="muted">(5)</span>');
+    expect(html).toContain('Remplir chaque local <span class="muted">(5)</span>');
+    expect(html).toContain('Ne pas remplir : je dessine mes zones moi-même');
     expect(html).toContain('Portes <span class="muted">(5)</span>');
     expect(html).toContain('Salle de réunion'); // nom de pièce dessiné dans l'aperçu
     expect(html).toMatch(/<option value="walls" selected="">Murs<\/option>/);

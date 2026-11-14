@@ -79,8 +79,36 @@ export const RECOGNIZED_KINDS: { key: keyof Recognized; label: string }[] = [
 ];
 
 /** Éléments à ajouter à l'étage, dans l'ordre de dessin (pièces dessous, ouvertures dessus). */
-export function recognizedElements(r: Recognized, kinds: Set<keyof Recognized>): Element[] {
-  return (['rooms', 'walls', 'windows', 'stairs', 'doors'] as const).filter((k) => kinds.has(k)).flatMap((k) => r[k] as Element[]);
+export function recognizedElements(r: Recognized, kinds: Set<keyof Recognized>, fillRooms = true): Element[] {
+  const out = (['rooms', 'walls', 'windows', 'stairs', 'doors'] as const)
+    .filter((k) => kinds.has(k) && (k !== 'rooms' || fillRooms)).flatMap((k) => r[k] as Element[]);
+  // locaux non remplis : on garde au moins leurs noms, en textes, pour dessiner ses zones soi-même
+  return kinds.has('rooms') && !fillRooms ? [...out, ...roomNameTexts(r.rooms)] : out;
+}
+
+/**
+ * Étiquette d'un numéro de local : fond foncé, texte blanc en gras. Elle saute aux yeux sur des locaux
+ * clairs et reste lisible par-dessus les traits du plan (escaliers, cloisons).
+ */
+export const ROOM_TAG_STYLE = { color: '#ffffff', background: '#1d2630', bold: true, border: false, padding: 0.22 } as const;
+
+/** Noms des pièces reconnues, en étiquettes centrées à l'emplacement du libellé. */
+export function roomNameTexts(rooms: AreaElement[]): Element[] {
+  return rooms.filter((r) => r.label.trim() && r.points.length > 2).map((r) => {
+    let a = 0, cx = 0, cy = 0;
+    const p = r.points;
+    for (let i = 0; i < p.length; i++) {
+      const [x0, y0] = p[i], [x1, y1] = p[(i + 1) % p.length];
+      const f = x0 * y1 - x1 * y0;
+      a += f; cx += (x0 + x1) * f; cy += (y0 + y1) * f;
+    }
+    const c: Pt = Math.abs(a) > 1e-6 ? [cx / (3 * a), cy / (3 * a)] : [p.reduce((s, q) => s + q[0], 0) / p.length, p.reduce((s, q) => s + q[1], 0) / p.length];
+    const text = r.label.trim(), lines = text.split('\n').length, fs = r.labelSize;
+    return makeElement('text', {
+      x: round(c[0] + (r.labelDx || 0)), y: round(c[1] + (r.labelDy || 0) - (lines * fs * 1.25) / 2),
+      ...ROOM_TAG_STYLE, text, fontSize: fs, align: 'middle', layer: 'annotations', radius: fs * 0.25,
+    }) as Element;
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -599,7 +627,30 @@ export function recognizePlan(flat: FlatDxf, opt: RecognizeOptions): Recognized 
     }
   }
 
+  emphasizeRoomLabels(rooms, span, m);
   return { walls: wallEls, doors, windows, stairs, rooms };
+}
+
+/**
+ * Noms et numéros de locaux bien visibles sur l'affiche : en gras, foncés, et aussi grands que la pièce
+ * le permet (cible ≈ 2,2 % de la taille du bâtiment, entre 50 cm et 1,5 m), jamais plus larges que la pièce.
+ */
+export function emphasizeRoomLabels(rooms: AreaElement[], span: number, m: number): void {
+  const target = Math.min(1.5 * m, Math.max(0.5 * m, span / 45));
+  for (const r of rooms) {
+    if (!r.label.trim()) continue;
+    const xs = r.points.map((p) => p[0]), ys = r.points.map((p) => p[1]);
+    const w = Math.max(...xs) - Math.min(...xs), h = Math.max(...ys) - Math.min(...ys);
+    const lines = r.label.trim().split('\n');
+    const chars = Math.max(...lines.map((l) => l.length), 1);
+    // largeur d'un caractère gras ≈ 0,6 em ; hauteur d'une ligne 1,2 em (+ ligne de surface, plus petite)
+    const fitW = (w * 0.85) / (chars * 0.6);
+    const fitH = (h * 0.8) / (lines.length * 1.2 + (r.showArea ? 0.9 : 0));
+    const size = Math.max(Math.min(target, fitW, fitH), Math.min(r.labelSize, fitW, fitH), 0.2 * m);
+    r.labelSize = round(size);
+    r.labelBold = true;
+    r.labelColor = '#1d2630';
+  }
 }
 
 /** Mur en cours de mise au propre ; `v` : morceau né d'une porte ou d'une fenêtre (sans mur dessiné). */
