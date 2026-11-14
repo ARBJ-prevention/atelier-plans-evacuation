@@ -540,6 +540,7 @@ export function recognizePlan(flat: FlatDxf, opt: RecognizeOptions): Recognized 
     if (count(-1) > count(1)) w.flipY = true;
   }
   markFireDoors(doors, texts, m);
+  flushEnds(walls, m);
   const finalWalls = walls.filter((w) => dist(w.a, w.b) >= 0.5 * m); // pas de petits morceaux dans le plan final
   const wallEls: WallElement[] = finalWalls
     .map((w) => makeElement('wall', { points: [rp(w.a), rp(w.b)], thickness: round(w.t), wallStyle: 'solid' }) as WallElement);
@@ -837,6 +838,35 @@ function glazedEntrances(segs: Seg[], walls: RawWall[], openings: Opening[], m: 
   return out;
 }
 
+/**
+ * Bouts de murs au nu : un mur s'arrête sur l'axe du mur qu'il rejoint en équerre, et son bout carré déborde
+ * d'une demi-épaisseur. Quand le mur rejoint est plus fin, ce bout dépasserait de l'autre côté : il est
+ * raccourci pour s'arrêter exactement sur la face extérieure du mur rejoint.
+ */
+function flushEnds(walls: RawWall[], m: number) {
+  const ends = walls.map((W) => {
+    const u = unit(sub(W.b, W.a));
+    return (['a', 'b'] as const).map((end) => {
+      const E = W[end];
+      let thinnest: number | null = null;
+      for (const V of walls) {
+        if (V === W || angleDiff(dirAngle(u), dirAngle(unit(sub(V.b, V.a)))) < 60) continue;
+        if (distToSeg(E, V.a, V.b) > 0.02 * m) continue;
+        if (V.t < W.t - 0.005 * m && (thinnest === null || V.t < thinnest)) thinnest = V.t;
+      }
+      return thinnest;
+    });
+  });
+  walls.forEach((W, i) => {
+    const u = unit(sub(W.b, W.a));
+    const [ta, tb] = ends[i];
+    let { a, b } = W;
+    if (ta !== null) a = add(a, mulv(u, (W.t - ta) / 2));
+    if (tb !== null) b = sub(b, mulv(u, (W.t - tb) / 2));
+    if (dot(sub(b, a), u) > 0.1 * m) walls[i] = { ...W, a, b };
+  });
+}
+
 /** Morceau de mur sous chaque ouverture, de l'épaisseur du mur aligné voisin (sinon 15 cm ou la profondeur de la fenêtre). */
 function openingWalls(openings: Opening[], walls: RawWall[], m: number): RawWall[] {
   return openings.map((o) => {
@@ -1018,6 +1048,27 @@ function normalizeThickness(walls: RawWall[], openings: Opening[], rawSegs: Seg[
     if (exterior[i]) w.t = tExt;
     else w.t = w.t >= 0.12 * m ? 0.15 * m : cm(w.t);
   });
+  // Un court morceau de façade (3 m au plus) dans le prolongement d'un mur intérieur plus long (bout de mur
+  // qui ressort à un angle du bâtiment) est traité comme ce mur intérieur : même épaisseur, même ligne.
+  walls.forEach((E, i) => {
+    if (!exterior[i]) return;
+    const u = unit(sub(E.b, E.a)), LE = dist(E.a, E.b);
+    if (LE > 3 * m) return;
+    for (let j = 0; j < walls.length; j++) {
+      const V = walls[j];
+      if (exterior[j] || dist(V.a, V.b) <= LE || angleDiff(dirAngle(u), dirAngle(unit(sub(V.b, V.a)))) > 3) continue;
+      const v = unit(sub(V.b, V.a)), n = perp(v), LV = dist(V.a, V.b);
+      const oa = dot(sub(E.a, V.a), n), ob = dot(sub(E.b, V.a), n);
+      if (Math.abs(oa) > 0.35 * m || Math.abs(ob) > 0.35 * m) continue;
+      const s0 = dot(sub(E.a, V.a), v), s1 = dot(sub(E.b, V.a), v);
+      const lo = Math.min(s0, s1), hi = Math.max(s0, s1);
+      const gap = lo > LV ? lo - LV : hi < 0 ? -hi : 0, overlap = Math.min(LV, hi) - Math.max(0, lo);
+      if (gap > 0.6 * m || overlap > 0.6 * m) continue;
+      walls[i] = { ...E, a: sub(E.a, mulv(n, oa)), b: sub(E.b, mulv(n, ob)), t: V.t };
+      exterior[i] = false;
+      return;
+    }
+  });
   // Contour uniforme : un mur posé dans le prolongement d'un mur de façade (cloison sur la ligne de façade,
   // morceau décalé de moins d'une épaisseur) devient un mur de façade, sur le même axe. Les morceaux alignés
   // sont ensuite réunis en un seul mur.
@@ -1043,7 +1094,60 @@ function normalizeThickness(walls: RawWall[], openings: Opening[], rawSegs: Seg[
       }
     }
   }
+  alignInteriorRuns(walls, exterior, m);
   return isOut;
+}
+
+/**
+ * Murs intérieurs d'une même ligne : les morceaux parallèles posés bout à bout mais décalés de moins de 35 cm
+ * (parties du mur dessinées plus épaisses, petits retours, doublons) sont ramenés sur un axe commun, celui qui
+ * cumule le plus de longueur ; ils sont ensuite réunis en un seul mur.
+ */
+function alignInteriorRuns(walls: RawWall[], exterior: boolean[], m: number) {
+  const ids = walls.map((_, i) => i).filter((i) => !exterior[i]);
+  const parent = new Map(ids.map((i) => [i, i]));
+  const find = (i: number): number => { const p = parent.get(i)!; if (p === i) return i; const r = find(p); parent.set(i, r); return r; };
+  const reach = 0.35 * m;
+  for (const i of ids) {
+    const A = walls[i], u = unit(sub(A.b, A.a)), n = perp(u), LA = dist(A.a, A.b);
+    for (const j of ids) {
+      if (j <= i) continue;
+      const B = walls[j];
+      if (angleDiff(dirAngle(u), dirAngle(unit(sub(B.b, B.a)))) > 3) continue;
+      if (Math.abs(dot(sub(B.a, A.a), n)) > reach || Math.abs(dot(sub(B.b, A.a), n)) > reach) continue;
+      const s0 = dot(sub(B.a, A.a), u), s1 = dot(sub(B.b, A.a), u);
+      const lo = Math.min(s0, s1), hi = Math.max(s0, s1);
+      const gap = lo > LA ? lo - LA : hi < 0 ? -hi : 0;
+      const overlap = Math.min(LA, hi) - Math.max(0, lo);
+      // bout à bout (60 cm d'écart ou de recouvrement au plus) : deux murs parallèles côte à côte restent séparés
+      if (gap > 0.6 * m || overlap > 0.6 * m) continue;
+      parent.set(find(i), find(j));
+    }
+  }
+  const groups = new Map<number, number[]>();
+  for (const i of ids) (groups.get(find(i)) ?? groups.set(find(i), []).get(find(i))!).push(i);
+  for (const g of groups.values()) {
+    if (g.length < 2) continue;
+    const ref = g.reduce((a, b) => (dist(walls[b].a, walls[b].b) > dist(walls[a].a, walls[a].b) ? b : a));
+    const R = walls[ref], n = perp(unit(sub(R.b, R.a)));
+    const offOf = (w: RawWall) => dot(sub(mulv(add(w.a, w.b), 0.5), R.a), n);
+    // axe retenu : décalage (à 2 cm près) qui cumule le plus de longueur
+    const weight = new Map<number, number>();
+    for (const i of g) { const k = Math.round(offOf(walls[i]) / (0.02 * m)); weight.set(k, (weight.get(k) ?? 0) + dist(walls[i].a, walls[i].b)); }
+    const bestK = [...weight.entries()].sort((a, b) => b[1] - a[1])[0][0];
+    const axis = (bestK * 0.02 * m + g.filter((i) => Math.round(offOf(walls[i]) / (0.02 * m)) === bestK)
+      .reduce((acc, i) => acc + offOf(walls[i]) - bestK * 0.02 * m, 0) / g.filter((i) => Math.round(offOf(walls[i]) / (0.02 * m)) === bestK).length);
+    // épaisseur commune : celle qui cumule le plus de longueur dans la ligne
+    const byT = new Map<number, number>();
+    for (const i of g) byT.set(walls[i].t, (byT.get(walls[i].t) ?? 0) + dist(walls[i].a, walls[i].b));
+    const t = [...byT.entries()].sort((a, b) => b[1] - a[1])[0][0];
+    for (const i of g) {
+      const w = walls[i];
+      const oa = dot(sub(w.a, R.a), n) - axis, ob = dot(sub(w.b, R.a), n) - axis;
+      if (Math.abs(oa) > reach || Math.abs(ob) > reach) continue;
+      walls[i] = { ...w, a: sub(w.a, mulv(n, oa)), b: sub(w.b, mulv(n, ob)), t };
+    }
+  }
 }
 
 /** Portes et fenêtres calées dans leur mur : centrées sur son axe, orientées comme lui, fenêtre à l'épaisseur du mur. */

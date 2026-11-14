@@ -276,7 +276,7 @@ export function ThemeThumb({ theme, accent, active, onClick }: { theme: PageThem
         <rect x="4" y={ed ? 13 : 11} width="36" height={ed ? 22 : 24} rx={T.planRadius ? Math.min(2.2, T.planRadius * 0.6) : 0}
           fill={cardFill === '#ffffff' ? '#f7f8f9' : cardFill} stroke={themeColor(T.planStroke || T.cardBorder, accent) || (ed ? T.ink : '#eceff2')} strokeWidth={ed ? 0.3 : 0.4} />
         <path d="M9 30 L18 22 L26 26 L34 16" fill="none" stroke="#00843d" strokeWidth="1.6" />
-        {(T.extras ? [[11, 5.5], [17.8, 5.5], [24.6, 4.6], [30.4, 4.6]] : ed ? [[13, 10], [25, 10]] : [[11, 11], [24, 11]]).map(([y, h], i) => (
+        {(T.extras === true ? [[11, 5.5], [17.8, 5.5], [24.6, 4.6], [30.4, 4.6]] : ed ? [[13, 10], [25, 10]] : [[11, 11], [24, 11]]).map(([y, h], i) => (
           <g key={i}>
             <rect x="43" y={y} width="13" height={h} rx={T.cardRadius ? Math.min(1.6, T.cardRadius * 0.45) : 0} fill={cardFill}
               stroke={themeColor(T.cardBorder, accent) || (cardFill === '#ffffff' && !ed ? '#eceff2' : 'none')} strokeWidth={T.cardStyle === 'tab' ? 0.7 : 0.4} />
@@ -292,8 +292,8 @@ export function ThemeThumb({ theme, accent, active, onClick }: { theme: PageThem
             )}
           </g>
         ))}
-        {!T.extras && !ed && !grad && <rect x="45" y="26" width="7" height="1.6" fill="#d52b1e" />}
-        {T.extras && <path d="M45 26 h5 v3 h4" fill="none" stroke={T.ink} strokeWidth="0.5" />}
+        {T.extras !== true && !ed && !grad && <rect x="45" y="26" width="7" height="1.6" fill="#d52b1e" />}
+        {T.extras === true && <path d="M45 26 h5 v3 h4" fill="none" stroke={T.ink} strokeWidth="0.5" />}
         {T.footer === 'capsule'
           ? <rect x="4" y="36.6" width="52" height="2.6" rx="1.3" fill={themeColor('tint', accent)} />
           : T.footer === 'rule'

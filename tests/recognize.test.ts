@@ -51,7 +51,10 @@ describe('reconnaissance du plan d’exemple (24 × 14 m)', () => {
     const thick = rec.walls.map((w) => Math.round((w.thickness / UPM) * 100));
     expect(thick).toContain(30);
     expect(thick).toContain(10);
-    expect(thick).toContain(7); // cloison en simple trait
+    // la cloison en simple trait prolonge une cloison double : elles ne forment plus qu'un mur de 10 cm (9,10 m → 19 m)
+    expect(thick).not.toContain(7);
+    expect(rec.walls.some((w) => Math.round((w.thickness / UPM) * 100) === 10 && Math.abs(w.points[0][1] - w.points[1][1]) < 1
+      && Math.abs(w.points[1][0] - w.points[0][0]) / UPM > 9.5)).toBe(true);
     // le mur du bas (axe à y = 14 - 0,15 m) va d'un angle à l'autre : 23,70 m entre axes
     const bottom = rec.walls.find((w) => Math.abs(w.points[0][1] - (14 - 0.15) * UPM) < 1 && Math.abs(w.points[1][1] - w.points[0][1]) < 1);
     expect(bottom).toBeTruthy();

@@ -390,6 +390,79 @@ describe('entrée vitrée (sas)', () => {
   });
 });
 
+/** Même bâtiment, mais le sas est en retrait de 1 m : ses murs latéraux vont jusqu'à la ligne de façade (x = 10 m). */
+function recessedEntrancePlan(): FlatDxf {
+  const prims: DxfPrim[] = [
+    line(WALL, [[1000, 200], [1000, 0], [0, 0], [0, 600], [1000, 600], [1000, 450]]),
+    line(WALL, [[980, 190], [980, 20], [20, 20], [20, 580], [980, 580], [980, 460]]),
+    // murs latéraux du sas, de la façade jusqu'à l'intérieur (x = 7 m)
+    line(WALL, [[1000, 200], [700, 200]]), line(WALL, [[1000, 190], [700, 190]]),
+    line(WALL, [[1000, 450], [700, 450]]), line(WALL, [[1000, 460], [700, 460]]),
+    line(DOORS, [[890, 200], [890, 450]]),
+    line(DOORS, [[898, 200], [898, 280]]), line(DOORS, [[898, 370], [898, 450]]),
+    line(DOORS, [[882, 280], [882, 370]]),
+    text('TEXTES COTES', [400, 300], '55,00 m²'),
+  ];
+  const layers = [...new Set(prims.map((p) => p.layer))].map((name) => ({
+    name, count: prims.filter((p) => p.layer === name).length, color: '#000000', defaultVisible: true,
+  }));
+  return { prims, layers, insUnits: 5, skipped: {} };
+}
+
+describe('sas en retrait de la façade', () => {
+  const flat = recessedEntrancePlan();
+  const rec = recognizeArchitect(flat, 'cm');
+  const { origin } = renderDxfSvg(flat, { visibleLayers: new Set(flat.layers.map((l) => l.name)), metersPerUnit: 0.01, unitsPerMeter: UPM, monochrome: true });
+  const xOf = (x: number) => (x - origin.minX) * origin.k;
+  const yOf = (y: number) => (origin.maxY - y) * origin.k;
+
+  it('garde les murs latéraux jusqu’à la façade et arrête le mur de l’entrée au nu de ces murs', () => {
+    expect(rec.doors.filter((d) => d.doorType === 'slidingDouble')).toHaveLength(1);
+    const sides = rec.walls.filter((w) => Math.abs(w.points[0][1] - w.points[1][1]) < 1
+      && w.points[0][1] > yOf(500) && w.points[0][1] < yOf(100) && Math.min(w.points[0][0], w.points[1][0]) < xOf(800));
+    expect(sides).toHaveLength(2);
+    for (const w of sides) expect(Math.max(w.points[0][0], w.points[1][0])).toBeGreaterThan(xOf(980));
+    // mur de l'entrée : bout carré (demi-épaisseur) au ras de la face extérieure de chaque mur latéral
+    const entry = rec.walls.find((w) => Math.abs(w.points[0][0] - w.points[1][0]) < 1 && Math.abs(w.points[0][0] - xOf(890)) < 10)!;
+    expect(entry).toBeTruthy();
+    const ys = entry.points.map((p) => p[1]).sort((p, q) => p - q);
+    const sideYs = sides.map((w) => w.points[0][1]).sort((p, q) => p - q);
+    expect(ys[0] - entry.thickness / 2).toBeCloseTo(sideYs[0] - sides[0].thickness / 2, 0);
+    expect(ys[1] + entry.thickness / 2).toBeCloseTo(sideYs[1] + sides[1].thickness / 2, 0);
+  });
+});
+
+/**
+ * Bâtiment de 12 m × 8 m (dessin en cm) traversé par un mur de couloir à y = 4 m : 15 cm d'épaisseur,
+ * sauf entre x = 4 m et x = 8 m où il est dessiné épais (45 cm, côté bas seulement décalé).
+ */
+function corridorPlan(): FlatDxf {
+  const prims: DxfPrim[] = [
+    rect(WALL, 0, 0, 1200, 800), rect(WALL, 30, 30, 1170, 770),
+    line(WALL, [[30, 392], [400, 392]]), line(WALL, [[30, 408], [400, 408]]),
+    line(WALL, [[400, 392], [800, 392]]), line(WALL, [[400, 437], [800, 437]]),
+    line(WALL, [[400, 408], [400, 437]]), line(WALL, [[800, 408], [800, 437]]),
+    line(WALL, [[800, 392], [1170, 392]]), line(WALL, [[800, 408], [1170, 408]]),
+    text('TEXTES COTES', [600, 200], '40,00 m²'), text('TEXTES COTES', [600, 600], '40,00 m²'),
+  ];
+  const layers = [...new Set(prims.map((p) => p.layer))].map((name) => ({
+    name, count: prims.filter((p) => p.layer === name).length, color: '#000000', defaultVisible: true,
+  }));
+  return { prims, layers, insUnits: 5, skipped: {} };
+}
+
+describe('murs intérieurs d’une même ligne', () => {
+  const rec = recognizeArchitect(corridorPlan(), 'cm');
+  it('réunit les morceaux décalés ou plus épais en un seul mur droit d’épaisseur intérieure', () => {
+    const horiz = rec.walls.filter((w) => Math.abs(w.points[0][1] - w.points[1][1]) < 1);
+    const inner = horiz.filter((w) => w.thickness < 0.2 * UPM);
+    expect(inner).toHaveLength(1);
+    const L = Math.abs(inner[0].points[1][0] - inner[0].points[0][0]) / UPM;
+    expect(L).toBeGreaterThan(11);
+    expect(inner[0].thickness / UPM).toBeCloseTo(0.15, 2);
+  });
+});
+
 describe('pictogrammes de volets', () => {
   it('propose un volet roulant et des volets battants dans « Structure du bâtiment »', () => {
     const sas = getBuiltinSymbol('door-sliding-double');

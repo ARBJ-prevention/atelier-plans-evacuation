@@ -5,7 +5,7 @@ import {
   boxOf, constrain45, elementBounds, floorContentBounds, isVisibleInVariant, openingWallFit, resizeBoxElement, rotateElementAround, rotatePoint, snapSymbolToWalls, translateElement, usedSymbolIds, windowFrameWidth, windowGlassWallFit, windowResizeWallFit,
 } from '../src/model/geometry';
 import { canonicalJson, cloneFloorWithNewIds, cloneProjectWithNewIds, parseProject, ProjectFormatError, serializeProject } from '../src/model/serialize';
-import { computeLayout, niceScaleBarMeters, wrapText } from '../src/render/layout';
+import { computeLayout, niceScaleBarMeters, themePatch, wrapText } from '../src/render/layout';
 import { FORMAT_VERSION } from '../src/model/types';
 import { PRINT_ISSUE_LABEL, printIssues, renderPageSvg } from '../src/render/PrintPage';
 import { buildBatchPrintHtml } from '../src/services/exporter';
@@ -245,6 +245,24 @@ it('affiche les deux rubriques colorées dans le plan Le Quartz en Horizon A4 pa
     expect(svg.includes('fill="#a1261e"') && svg.includes('fill="#00663a"')).toBe(true);
     expect(svg).toContain('ÉVACUATION</text>');
   }
+});
+
+it('Horizon : croquis de situation dès le premier choix, sans vue aérienne, agrandi sous des consignes ajustées', () => {
+  const project = buildSampleProject();
+  const building = project.buildings[0];
+  const floor = building.floors[0];
+  floor.elements = floor.elements.filter((e) => e.type !== 'symbol' && e.type !== 'route');
+  // depuis un thème sans cadres (aucune vue aérienne ni croquis activés auparavant)
+  const before = { ...floor.page, theme: 'moderne', showAerial: false, showSketch: false } as typeof floor.page;
+  const page = { ...before, ...themePatch('horizon'), paper: 'A4', orientation: 'landscape' } as typeof floor.page;
+  expect(page.showSketch).toBe(true);
+  expect(page.showAerial).toBe(false);
+  const svg = renderPageSvg({ building, floor, variantId: floor.variants[0].id, customSymbols: [], page });
+  expect(svg).toContain('Plan de situation');
+  expect(svg).not.toContain('Vue aérienne');
+  expect(printIssues(floor, floor.variants[0].id, page)).not.toContain('instructions-clipped');
+  // les thèmes « à cadres » gardent vue aérienne et croquis
+  expect(themePatch('encadre')).toMatchObject({ showAerial: true, showSketch: true });
 });
 
 describe('parcours de création et d’export des affiches', () => {

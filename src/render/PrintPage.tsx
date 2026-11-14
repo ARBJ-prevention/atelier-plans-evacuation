@@ -473,9 +473,14 @@ function sideLayout(L: PageLayout, page: PageSetup, floor: Floor, variantId: str
       rowH = legendBudget - Math.min(baseExtraH, 18) >= 11 + Math.ceil(items / 2) * 7.6 + 0.1 ? 7.6 : 6.6;
     }
     const legendNeed = page.showLegend ? 11 + Math.ceil(items / legendCols) * rowH + 0.1 : 0;
-    const extraH = instrNeed
-      ? Math.min(baseExtraH, Math.max(18, legendBudget - legendNeed))
-      : baseExtraH;
+    // Légende et consignes à la hauteur de leur contenu : la place restante agrandit la vue aérienne / le croquis
+    // (sans dépasser les proportions d'un cadre d'image), au lieu de laisser du blanc sous les consignes.
+    const spare = mainH - legendNeed - instrNeed - (cards.length === 2 ? G : 0);
+    const extraCap = ew * (extras.length === 2 ? 1.2 : 0.9);
+    const extraH = !extras.length ? 0
+      : instrNeed
+        ? Math.max(Math.min(baseExtraH, Math.max(18, legendBudget - legendNeed)), Math.min(extraCap, spare))
+        : Math.max(baseExtraH, Math.min(extraCap, spare));
     const ey = S.y + S.h - numsH - (showNums ? G : 0) - extraH;
     extras.forEach((k, i) => { rects[k] = { x: S.x + i * (ew + G), y: ey, w: ew, h: extraH }; });
     const avail = mainH - extraH;

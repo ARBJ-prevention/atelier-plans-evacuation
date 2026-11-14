@@ -57,8 +57,11 @@ export interface ThemeTokens {
   numbersInHeader?: boolean;
   /** Titres des cartes et cadre d'urgence en dégradé avec reflets (thème Horizon). */
   gradients?: boolean;
-  /** Thème pensé avec vue aérienne + croquis de situation (activés à la sélection). */
-  extras?: boolean;
+  /**
+   * Cadres activés à la sélection du thème : true = vue aérienne + croquis de situation ;
+   * 'sketch' = croquis de situation seul (la vue aérienne est retirée).
+   */
+  extras?: boolean | 'sketch';
 }
 
 export const THEMES: Record<PageTheme, ThemeTokens> = {
@@ -117,7 +120,7 @@ export const THEMES: Record<PageTheme, ThemeTokens> = {
     headerH: 31, fullBleedHeader: true, footerH: 13, gap: 4.5,
     headerBg: 'gradient', headerFg: '#ffffff', headerSub: '#d3dde8', titleFont: 'Segoe UI Variable Display', titleWeight: 600, titleUpper: false,
     cardBg: 'tint', cardBorder: 'soft', cardRadius: 3.6, planRadius: 3.6, frame: 'none', footer: 'capsule', ink: '#14202e', muted: '#66768a',
-    cardStyle: 'pill', cardStrokeW: 0.5, planStroke: 'soft', planStrokeW: 0.55, numbersInHeader: true, gradients: true,
+    cardStyle: 'pill', cardStrokeW: 0.5, planStroke: 'soft', planStrokeW: 0.55, numbersInHeader: true, gradients: true, extras: 'sketch',
   },
   editorial: {
     name: 'Éditorial', description: 'Style magazine : grand titre noir, filets épais, rubriques numérotées, beaucoup de blanc',
@@ -139,9 +142,14 @@ export function mixHex(a: string, b: string, t: number): string {
   return '#' + A.map((v, i) => Math.round(v + (B[i] - v) * t).toString(16).padStart(2, '0')).join('');
 }
 
-/** Changement de thème : les thèmes « à cadres » activent aussi la vue aérienne et le croquis. */
+/**
+ * Changement de thème : les thèmes « à cadres » activent aussi la vue aérienne et le croquis ;
+ * Horizon active le croquis de situation seul (dès le premier choix, quel que soit le thème précédent).
+ */
 export function themePatch(theme: PageTheme): Partial<PageSetup> {
-  return THEMES[theme]?.extras ? { theme, showAerial: true, showSketch: true } : { theme };
+  const extras = THEMES[theme]?.extras;
+  if (extras === 'sketch') return { theme, showAerial: false, showSketch: true };
+  return extras ? { theme, showAerial: true, showSketch: true } : { theme };
 }
 
 /**

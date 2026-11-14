@@ -379,7 +379,7 @@ export async function runSelfTest(outDir: string): Promise<void> {
     });
     const f = currentFloor(S())!;
     const n = (t: string) => f.elements.filter((e) => e.type === t).length;
-    assert(n('area') === 5 && n('door') === 5 && n('window') === 4 && n('stairs') === 1 && n('wall') >= 10, `reconnus : ${n('area')} pièces, ${n('wall')} murs, ${n('door')} portes, ${n('window')} fenêtres, ${n('stairs')} escaliers`);
+    assert(n('area') === 5 && n('door') === 5 && n('window') === 4 && n('stairs') === 1 && n('wall') >= 9, `reconnus : ${n('area')} pièces, ${n('wall')} murs, ${n('door')} portes, ${n('window')} fenêtres, ${n('stairs')} escaliers`);
     const job = A.currentExportJob('current')!;
     const png = await renderPagePng(job, f.variants[0].id, 150);
     await api().saveBinary({ data: png.data, suggestedName: 'plan-redessine.png', filterName: 'PNG', ext: 'png', path: out('plan-redessine.png') });
