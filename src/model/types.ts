@@ -90,7 +90,7 @@ export interface DoorElement extends BaseElement {
   y: number;
   width: number;
   swing: 'left' | 'right';
-  doorType: 'single' | 'double' | 'sliding' | 'revolving' | 'opening';
+  doorType: 'single' | 'double' | 'sliding' | 'slidingDouble' | 'revolving' | 'opening';
   /** Issue de secours : marquage vert sur le seuil. */
   emergency: boolean;
   /** Porte coupe-feu : marquage rouge sur le seuil et libellé. */

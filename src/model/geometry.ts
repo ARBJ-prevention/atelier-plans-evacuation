@@ -80,6 +80,11 @@ function doorBox(el: DoorElement, wallDepth?: number) {
       top = Math.min(top, -stroke * 2.5);
       bottom = Math.max(bottom, stroke * 2.5);
       break;
+    case 'slidingDouble':
+      halfWidth += stroke * 0.3;
+      top = Math.min(top, -Math.max(stroke * 2.5, w * 0.2));
+      bottom = Math.max(bottom, stroke * 2.5);
+      break;
     case 'revolving':
       halfWidth += stroke * 0.3;
       top = Math.min(top, -halfWidth);

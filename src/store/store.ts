@@ -30,7 +30,7 @@ function normalizeSymbolWallGap(value: unknown): number {
 
 /** Préréglages des outils (choisis dans le ruban). */
 export interface ToolPresets {
-  doorType: 'single' | 'double' | 'sliding' | 'revolving' | 'opening';
+  doorType: 'single' | 'double' | 'sliding' | 'slidingDouble' | 'revolving' | 'opening';
   /** Nouvelles portes coupe-feu. */
   doorFire: boolean;
   stairType: 'straight' | 'landing' | 'escalator';

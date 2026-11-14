@@ -9,6 +9,8 @@
  *    cloisons dessinées en simple trait : murs de 7 cm ;
  *  - portes : arcs de 70° à 110° de 50 cm à 1,60 m de rayon (battant), portes doubles regroupées ;
  *  - fenêtres : groupes de traits courts parallèles, recalés dans l'épaisseur du mur ;
+ *  - volets : baie de 1,50 m à 8 m fermée par un trait de menuiserie sans battant (rideau, porte sectionnelle,
+ *    volet roulant), entre deux murs alignés : fenêtre avec volet roulant, coffre côté extérieur ;
  *  - pièces : contours fermés des calques « pièces », sinon remplissage depuis chaque nom de pièce
  *    jusqu'aux murs (portes refermées).
  * Toutes les coordonnées produites sont en unités plan.
@@ -38,6 +40,8 @@ export function guessLayerRole(name: string): LayerRole {
   if (has(/(^|[^A-Z])SAN([^A-Z]|$)|DIFFUS|SEUIL|THRESH|DREMPEL|SCHWELLE|CACHE|HIDDEN|VERBORGEN|VERDECKT/)) return 'ignore';
   if (has(/CLOIS|PARTITION|DOUBLAGE|PLACO|SCHEIDINGS|ZWISCHENW/)) return 'partitions';
   if (has(/ESCAL|STAIR|TRAP|TREPP|MARCHE|EMMARCH|RAMPE|STEP/)) return 'stairs';
+  // volets, rideaux métalliques, portes sectionnelles : menuiseries sans battant, reconnues comme baies à volet
+  if (has(/VOLET|RIDEAU|SHUTTER|ROLLUIK|ROLLADEN|ROLLTOR|SECTION+ELLE|SECTIONAL/)) return 'doors';
   if (has(/FENET|WINDOW|WIND|GLAZ|VITR|RAAM|FENST|CHASSIS|\bBAIE/)) return 'windows';
   // menuiseries : intérieures = portes ; extérieures = surtout des fenêtres (les portes sont reconnues par leur battant)
   if (has(/MENUIS|JOINER|SCHRIJNW|TISCHLER/)) return has(/EXT/) ? 'windows' : 'doors';
@@ -498,6 +502,13 @@ export function recognizePlan(flat: FlatDxf, opt: RecognizeOptions): Recognized 
   // poteaux et petits retours supprimés, murs extérieurs plus épais que les murs intérieurs,
   // ouvertures calées dans leur mur (comme si elles avaient été posées à la main).
   pruneWindows(windows, doors, m);
+  const freeSegs = segs.filter((s) => !used.has(s.id) && (s.group == null || !doorGroups.has(s.group)));
+  // 5 ter. Entrées vitrées (sas) : façade en menuiserie avec des vantaux au milieu → mur de façade et grande porte
+  const entrances = glazedEntrances(freeSegs, walls, [...doors, ...windows], m);
+  for (const e of entrances) { walls.push(e.wall); doors.push(e.door); }
+  // 5 quater. Baies fermées par un volet (trait de menuiserie sans battant dans un trou de mur)
+  const bays = shutterBays(freeSegs, walls, [...doors, ...windows], m);
+  windows.push(...bays);
   const openings: Opening[] = [...doors, ...windows];
   const obstacleSegs = segs.filter((s) => isWallRole(s.role) || s.role === 'windows' || s.role === 'doors');
   wallsUnderWindowRuns(walls, windows, m);
@@ -507,7 +518,7 @@ export function recognizePlan(flat: FlatDxf, opt: RecognizeOptions): Recognized 
   for (let i = walls.length - 1; i >= 0; i--) if (dist(walls[i].a, walls[i].b) < 0.5 * m) walls.splice(i, 1);
   extendToOpenings(walls, openings, m);
   joinCorners(walls, m);
-  normalizeThickness(walls, openings, obstacleSegs, m);
+  const isOut = normalizeThickness(walls, openings, obstacleSegs, m);
   mergeAcrossOpenings(walls, openings, m); // les morceaux d'une même façade ont maintenant la même épaisseur
   // raccord final : chaque extrémité rejoint l'axe du mur voisin (jusqu'à 60 cm), comme un mur tracé à l'aimant
   joinCorners(walls, m, 0.6 * m, openings);
@@ -516,6 +527,18 @@ export function recognizePlan(flat: FlatDxf, opt: RecognizeOptions): Recognized 
   const hosted = snapOpenings(openings, walls, m);
   // une fenêtre qui ne repose sur aucun mur (battant ou appui mal interprété) n'est pas gardée
   for (let i = windows.length - 1; i >= 0; i--) if (!hosted.has(windows[i])) windows.splice(i, 1);
+  // la porte d'une entrée vitrée s'ouvre vers l'extérieur (sens de l'évacuation)
+  if (isOut) for (const { door: d } of entrances) {
+    const u = openingDir(d), sideA: P = [u[1], -u[0]], c: P = [d.x, d.y];
+    const count = (side: number) => [-0.3, 0, 0.3].filter((f) => isOut(add(add(c, mulv(u, d.width * f)), mulv(sideA, side * 0.5 * m)))).length;
+    if (count(-1) > count(1)) d.flipY = true; else delete d.flipY;
+  }
+  // le coffre du volet se place du côté extérieur de la façade (côté A, sinon côté B)
+  if (isOut) for (const w of bays) {
+    const u = openingDir(w), sideA: P = [u[1], -u[0]], c: P = [w.x, w.y];
+    const count = (side: number) => [-0.3, 0, 0.3].filter((f) => isOut(add(add(c, mulv(u, w.width * f)), mulv(sideA, side * (w.depth / 2 + 0.3 * m))))).length;
+    if (count(-1) > count(1)) w.flipY = true;
+  }
   markFireDoors(doors, texts, m);
   const finalWalls = walls.filter((w) => dist(w.a, w.b) >= 0.5 * m); // pas de petits morceaux dans le plan final
   const wallEls: WallElement[] = finalWalls
@@ -673,6 +696,147 @@ function pruneWindows(windows: WindowElement[], doors: DoorElement[], m: number)
   }
 }
 
+/**
+ * Baies fermées par un volet : un trait de menuiserie de 1,50 m à 8 m, sans battant de porte, tendu dans un trou
+ * de mur (ses deux bouts rejoignent un mur, une porte ou une fenêtre alignés) : rideau métallique, porte
+ * sectionnelle, volet roulant. Chaque baie devient une fenêtre avec volet roulant.
+ */
+function shutterBays(segs: Seg[], walls: RawWall[], openings: Opening[], m: number): WindowElement[] {
+  const bays: WindowElement[] = [];
+  const cand = segs.filter((s) => s.role === 'doors' && s.L >= 1.5 * m && s.L <= 8 * m).sort((a, b) => b.L - a.L);
+  if (!cand.length) return bays;
+  // appuis possibles : murs, portes et fenêtres déjà reconnues
+  const supports: RawWall[] = [
+    ...walls.filter((w) => dist(w.a, w.b) >= 0.2 * m),
+    ...openings.map((o) => {
+      const u = openingDir(o), c: P = [o.x, o.y];
+      return { a: sub(c, mulv(u, o.width / 2)), b: add(c, mulv(u, o.width / 2)), t: o.type === 'window' ? o.depth : 0.15 * m };
+    }),
+  ];
+  for (const s of cand) {
+    const mid = mulv(add(s.a, s.b), 0.5), n = perp(s.u);
+    // déjà une porte, une fenêtre ou une baie à cet endroit
+    const taken = [...openings, ...bays].some((o) => {
+      if (angleDiff(dirAngle(openingDir(o)), dirAngle(s.u)) > 15) return false;
+      const rel = sub([o.x, o.y], mid);
+      if (Math.abs(dot(rel, n)) > 0.5 * m) return false;
+      const along = dot(rel, s.u);
+      return Math.min(s.L / 2, along + o.width / 2) - Math.max(-s.L / 2, along - o.width / 2) > 0.3 * Math.min(s.L, o.width);
+    });
+    if (taken) continue;
+    // un trait posé le long d'un mur plein (cadre, doublage) n'est pas une baie
+    const k = Math.max(4, Math.round(s.L / (0.25 * m)));
+    let covered = 0;
+    for (let i = 1; i < k; i++) {
+      const p = add(s.a, mulv(s.u, (s.L * i) / k));
+      if (walls.some((w) => dist(w.a, w.b) >= 0.5 * m && distToSeg(p, w.a, w.b) <= w.t / 2 + 0.05 * m)) covered++;
+    }
+    if (covered / (k - 1) > 0.25) continue;
+    // chaque bout rejoint un appui aligné qui se poursuit au-delà (à 80 cm près : poteau, tableau de la baie)
+    const anchor = (E: P, out: P): RawWall | null => {
+      let best: RawWall | null = null, bestD = Infinity;
+      for (const w of supports) {
+        const wu = unit(sub(w.b, w.a)), L = dist(w.a, w.b);
+        if (angleDiff(dirAngle(wu), dirAngle(s.u)) > 5) continue;
+        const rel = sub(E, w.a), sE = dot(rel, wu);
+        if (Math.abs(dot(rel, perp(wu))) > w.t / 2 + 0.15 * m) continue;
+        const beyond = sE < 0 ? -sE : sE > L ? sE - L : 0;
+        if (beyond > 0.8 * m) continue;
+        if (Math.max(dot(sub(w.a, E), out), dot(sub(w.b, E), out)) < 0.1 * m) continue;
+        if (beyond < bestD) { best = w; bestD = beyond; }
+      }
+      return best;
+    };
+    const A = anchor(s.a, mulv(s.u, -1)), B = anchor(s.b, s.u);
+    if (!A || !B) continue;
+    // axe et épaisseur : ceux de l'appui le plus long
+    const host = dist(A.a, A.b) >= dist(B.a, B.b) ? A : B;
+    const hn = perp(unit(sub(host.b, host.a)));
+    const c = sub(mid, mulv(hn, dot(sub(mid, host.a), hn)));
+    bays.push(makeElement('window', {
+      x: round(c[0]), y: round(c[1]), width: round(s.L), depth: round(Math.max(0.1 * m, host.t)), panes: 1,
+      rotation: round(deg(Math.atan2(s.u[1], s.u[0]))), shutter: 'rolling',
+    }) as WindowElement);
+  }
+  return bays;
+}
+
+/**
+ * Entrée vitrée (sas) : une façade dessinée en menuiserie (traits parallèles de 1,50 m à 8 m, sans battant),
+ * dont les deux bouts reposent sur des murs et dont une partie est en retrait (les vantaux de la porte).
+ * Elle devient un mur de façade sur toute sa largeur, avec une porte coulissante double à la place des vantaux.
+ */
+function glazedEntrances(segs: Seg[], walls: RawWall[], openings: Opening[], m: number): { wall: RawWall; door: DoorElement }[] {
+  const out: { wall: RawWall; door: DoorElement }[] = [];
+  const cand = segs.filter((s) => s.role === 'doors' && s.L >= 0.3 * m);
+  const consumed = new Set<Seg>();
+  for (const seed of [...cand].sort((a, b) => b.L - a.L)) {
+    if (consumed.has(seed) || seed.L < 0.8 * m) continue;
+    const u = seed.u, n = perp(u), off = (p: P) => dot(sub(p, seed.a), n), at = (p: P) => dot(sub(p, seed.a), u);
+    // traits parallèles proches qui se suivent le long de la façade
+    const cl = [seed];
+    let lo = Math.min(at(seed.a), at(seed.b)), hi = Math.max(at(seed.a), at(seed.b));
+    for (let grown = true; grown;) {
+      grown = false;
+      for (const s of cand) {
+        if (cl.includes(s) || consumed.has(s) || angleDiff(dirAngle(s.u), dirAngle(u)) > 5) continue;
+        if (Math.abs(off(s.a)) > 0.35 * m || Math.abs(off(s.b)) > 0.35 * m) continue;
+        const a = Math.min(at(s.a), at(s.b)), b = Math.max(at(s.a), at(s.b));
+        if (a > hi + 0.1 * m || b < lo - 0.1 * m) continue;
+        cl.push(s); lo = Math.min(lo, a); hi = Math.max(hi, b); grown = true;
+      }
+    }
+    const span = hi - lo;
+    if (span < 1.5 * m || span > 8 * m) continue;
+    // vantaux : un trait dessiné seulement au milieu de la façade (en retrait ou en saillie des châssis fixes)
+    const byOff = new Map<number, [number, number][]>();
+    for (const s of cl) {
+      const k = Math.round(off(mulv(add(s.a, s.b), 0.5)) / (0.02 * m));
+      (byOff.get(k) ?? byOff.set(k, []).get(k)!).push([Math.min(at(s.a), at(s.b)), Math.max(at(s.a), at(s.b))]);
+    }
+    let d0 = 0, d1 = 0;
+    for (const list of byOff.values()) {
+      list.sort((a, b) => a[0] - b[0]);
+      const runs: [number, number][] = [];
+      for (const [a, b] of list) {
+        const last = runs[runs.length - 1];
+        if (last && a <= last[1] + 0.1 * m) last[1] = Math.max(last[1], b); else runs.push([a, b]);
+      }
+      if (runs.length !== 1) continue;
+      const [a, b] = runs[0];
+      if (a > lo + 0.2 * m && b < hi - 0.2 * m && b - a > d1 - d0) { d0 = a; d1 = b; }
+    }
+    if (d1 - d0 < 0.8 * m || d1 - d0 > 4 * m) continue;
+    // axe de la façade : milieu de l'ensemble des traits
+    const offs = cl.flatMap((s) => [off(s.a), off(s.b)]);
+    const axis = (Math.min(...offs) + Math.max(...offs)) / 2;
+    const P0 = add(add(seed.a, mulv(u, lo)), mulv(n, axis)), P1 = add(add(seed.a, mulv(u, hi)), mulv(n, axis));
+    // les deux bouts reposent sur un mur
+    const onWall = (p: P) => walls.some((w) => dist(w.a, w.b) >= 0.5 * m && distToSeg(p, w.a, w.b) <= w.t / 2 + 0.2 * m);
+    if (!onWall(P0) || !onWall(P1)) continue;
+    // ni porte ni fenêtre déjà reconnue, ni mur plein à cet endroit
+    const mid = mulv(add(P0, P1), 0.5);
+    const taken = openings.some((o) => angleDiff(dirAngle(openingDir(o)), dirAngle(u)) <= 15
+      && Math.abs(dot(sub([o.x, o.y], mid), n)) <= 0.5 * m && Math.abs(dot(sub([o.x, o.y], mid), u)) <= span / 2);
+    const k = Math.max(4, Math.round(span / (0.25 * m)));
+    let covered = 0;
+    for (let i = 1; i < k; i++) {
+      const p = add(P0, mulv(u, (span * i) / k));
+      if (walls.some((w) => dist(w.a, w.b) >= 0.5 * m && distToSeg(p, w.a, w.b) <= w.t / 2 + 0.05 * m)) covered++;
+    }
+    if (taken || covered / (k - 1) > 0.25) continue;
+    cl.forEach((s) => consumed.add(s));
+    const c = add(add(seed.a, mulv(u, (d0 + d1) / 2)), mulv(n, axis));
+    out.push({
+      wall: { a: P0, b: P1, t: 0.2 * m },
+      door: makeElement('door', {
+        x: round(c[0]), y: round(c[1]), width: round(d1 - d0), rotation: round(deg(Math.atan2(u[1], u[0]))), swing: 'left', doorType: 'slidingDouble',
+      }) as DoorElement,
+    });
+  }
+  return out;
+}
+
 /** Morceau de mur sous chaque ouverture, de l'épaisseur du mur aligné voisin (sinon 15 cm ou la profondeur de la fenêtre). */
 function openingWalls(openings: Opening[], walls: RawWall[], m: number): RawWall[] {
   return openings.map((o) => {
@@ -811,10 +975,10 @@ function extendToOpenings(walls: RawWall[], openings: Opening[], m: number) {
  * Épaisseurs lisibles : les murs de l'enveloppe (en contact avec l'extérieur) reçoivent tous la même épaisseur,
  * celle de la façade (28 à 45 cm) ; les murs intérieurs passent à 15 cm, les cloisons gardent la leur.
  */
-function normalizeThickness(walls: RawWall[], openings: Opening[], rawSegs: Seg[], m: number) {
-  if (!walls.length) return;
+function normalizeThickness(walls: RawWall[], openings: Opening[], rawSegs: Seg[], m: number): ((p: P) => boolean) | null {
+  if (!walls.length) return null;
   const g = obstacleGrid(walls, openings, rawSegs, m, []);
-  if (!g) return;
+  if (!g) return null;
   const { grid, W, H, x0, y0, res } = g;
   const outside = new Uint8Array(W * H);
   const queue: number[] = [];
@@ -854,6 +1018,32 @@ function normalizeThickness(walls: RawWall[], openings: Opening[], rawSegs: Seg[
     if (exterior[i]) w.t = tExt;
     else w.t = w.t >= 0.12 * m ? 0.15 * m : cm(w.t);
   });
+  // Contour uniforme : un mur posé dans le prolongement d'un mur de façade (cloison sur la ligne de façade,
+  // morceau décalé de moins d'une épaisseur) devient un mur de façade, sur le même axe. Les morceaux alignés
+  // sont ensuite réunis en un seul mur.
+  for (let grown = true; grown;) {
+    grown = false;
+    for (let i = 0; i < walls.length; i++) {
+      if (!exterior[i]) continue;
+      const E = walls[i], u = unit(sub(E.b, E.a)), n = perp(u), L1 = dist(E.a, E.b);
+      for (let j = 0; j < walls.length; j++) {
+        const V = walls[j];
+        if (j === i || angleDiff(dirAngle(u), dirAngle(unit(sub(V.b, V.a)))) > 3) continue;
+        const LV = dist(V.a, V.b);
+        if (exterior[j] ? LV > L1 : LV > 3 * m) continue; // le plus court rejoint le plus long
+        const oa = dot(sub(V.a, E.a), n), ob = dot(sub(V.b, E.a), n);
+        if (Math.abs(oa) > tExt || Math.abs(ob) > tExt || (Math.abs(oa) < 0.01 * m && Math.abs(ob) < 0.01 * m && exterior[j])) continue;
+        const s0 = dot(sub(V.a, E.a), u), s1 = dot(sub(V.b, E.a), u);
+        const lo = Math.min(s0, s1), hi = Math.max(s0, s1);
+        // bout à bout : à 60 cm près, sans se superposer de plus de 60 cm
+        const touches = (lo >= L1 - 0.6 * m && lo <= L1 + 0.6 * m) || (hi <= 0.6 * m && hi >= -0.6 * m);
+        if (!touches) continue;
+        walls[j] = { ...V, a: sub(V.a, mulv(n, oa)), b: sub(V.b, mulv(n, ob)), t: tExt };
+        if (!exterior[j]) { exterior[j] = true; grown = true; }
+      }
+    }
+  }
+  return isOut;
 }
 
 /** Portes et fenêtres calées dans leur mur : centrées sur son axe, orientées comme lui, fenêtre à l'épaisseur du mur. */

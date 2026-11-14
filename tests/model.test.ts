@@ -119,6 +119,16 @@ describe('accrochage des fenêtres pendant le redimensionnement', () => {
     expect(svg).toMatch(/<rect x="-28\.8" y="-8\.8" width="57\.6" height="17\.6"[^>]*stroke-width="2\.4"/);
   });
 
+  it('dessine la porte coulissante double : deux vantaux et deux flèches qui s’écartent', () => {
+    const project = newProject('Site', 'BE');
+    const building = project.buildings[0], floor = building.floors[0];
+    floor.elements.push(makeElement('door', { x: 100, y: 100, width: 120, doorType: 'slidingDouble' }));
+    const svg = renderPageSvg({ building, floor, variantId: floor.variants[0].id, customSymbols: [] });
+    expect(svg.match(/<rect x="(-60|1\.7999+\d*)" y="-9\.24\d*" width="58\.2"[^>]*fill="#fff"/g)).toHaveLength(2);
+    expect(svg).toMatch(/M -7\.19\d* -16\.8 H -43\.19\d*/);
+    expect(elementBounds(floor.elements[0]).h).toBeGreaterThan(24);
+  });
+
   it('dessine le volet roulant ou battant côté extérieur de la fenêtre', () => {
     const project = newProject('Site', 'BE');
     const building = project.buildings[0], floor = building.floors[0];

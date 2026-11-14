@@ -381,7 +381,7 @@ export function Canvas({ onCalibrate }: CanvasProps) {
         const at = { x: p[0], y: p[1] };
         const opening = (s.tool === 'window'
           ? makeElement('window', { ...at, depth: s.presets.wallThickness, shutter: s.presets.windowShutter ?? 'none' })
-          : makeElement('door', { ...at, doorType: dt, fireRated: !!s.presets.doorFire, width: dt === 'double' || dt === 'opening' ? 160 : dt === 'revolving' ? 140 : 90 })) as DoorElement | WindowElement;
+          : makeElement('door', { ...at, doorType: dt, fireRated: !!s.presets.doorFire, width: dt === 'double' || dt === 'opening' ? 160 : dt === 'slidingDouble' ? 180 : dt === 'revolving' ? 140 : 90 })) as DoorElement | WindowElement;
         placeOne(snapOpening(opening, e.altKey) ?? { ...opening, x: sp[0], y: sp[1] }, e.shiftKey);
         return;
       }
@@ -421,10 +421,11 @@ export function Canvas({ onCalibrate }: CanvasProps) {
   const placeSymbol = (symbolId: string, at: Pt, e: { altKey: boolean }, keepTool = false) => {
     const s = useStore.getState();
     if (!symbolId) { s.toast('Choisissez d’abord un pictogramme dans la bibliothèque.', 'info'); return; }
-    if (symbolId === 'door-double-fire') {
-      const opening = makeElement('door', {
-        x: at[0], y: at[1], doorType: 'double', fireRated: true, width: 160,
-      }) as DoorElement;
+    if (symbolId === 'door-double-fire' || symbolId === 'door-sliding-double') {
+      // posée comme une vraie porte, calée dans le mur visé
+      const opening = makeElement('door', symbolId === 'door-double-fire'
+        ? { x: at[0], y: at[1], doorType: 'double', fireRated: true, width: 160 }
+        : { x: at[0], y: at[1], doorType: 'slidingDouble', width: 180 }) as DoorElement;
       const [x, y] = snap(at, e);
       placeOne(snapOpening(opening, e.altKey) ?? { ...opening, x, y }, keepTool);
       return;
@@ -593,7 +594,21 @@ export function Canvas({ onCalibrate }: CanvasProps) {
           const scale = (kx * r.w ** 2 + ky * r.h ** 2) / (r.w ** 2 + r.h ** 2);
           kx = scale; ky = scale;
         }
-        const pts = d.orig.points.map(([x, y]): Pt => [ax + (x - ax) * kx, ay + (y - ay) * ky]);
+        let pts = d.orig.points.map(([x, y]): Pt => [ax + (x - ax) * kx, ay + (y - ay) * ky]);
+        if (d.orig.type === 'wall' && !e.altKey) {
+          // mur étiré par sa poignée : l'extrémité tirée s'aimante aux murs voisins (Alt : étirement libre)
+          const along = (q: Pt) => q[0] * xs + q[1] * ys;
+          const tip = pts.reduce((best, q) => (along(q) > along(best) ? q : best), pts[0]);
+          const hit = snapPointToWalls(floor, variantId, tip, 10 / s.view.zoom, new Set([d.id]), d.orig.thickness);
+          setWallHint(hit ? hit.point : null);
+          setWallFaceGuides(hit ? hit.faces : []);
+          if (hit) {
+            const i = pts.indexOf(tip), o = d.orig.points[i];
+            if (xs && Math.abs(o[0] - ax) > 1e-6) kx = (hit.point[0] - ax) / (o[0] - ax);
+            if (ys && Math.abs(o[1] - ay) > 1e-6) ky = (hit.point[1] - ay) / (o[1] - ay);
+            pts = d.orig.points.map(([x, y]): Pt => [ax + (x - ax) * kx, ay + (y - ay) * ky]);
+          }
+        }
         s.mutateFloor((f) => {
           const el = f.elements.find((item) => item.id === d.id);
           if (el && 'points' in el) el.points = pts;

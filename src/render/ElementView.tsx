@@ -366,6 +366,15 @@ function Inner({ el, ctx }: { el: Element; ctx: RenderCtx }): React.ReactElement
           parts.push(<rect key="s2" x={-w * 0.05} y={sw * 0.8} width={w * 0.55} height={sw * 1.4} fill="#fff" stroke={el.color} strokeWidth={sw * 0.6} />);
           parts.push(<path key="sa" d={`M ${-w * 0.3} ${-w * 0.2} H ${w * 0.3} M ${w * 0.22} ${-w * 0.26} L ${w * 0.3} ${-w * 0.2} L ${w * 0.22} ${-w * 0.14}`} fill="none" stroke={el.color} strokeWidth={sw * 0.5} />);
           break;
+        case 'slidingDouble': {
+          // deux vantaux qui se rejoignent au milieu et s'écartent (flèches vers les côtés)
+          const pw = w / 2 - w * 0.015, ay = -Math.max(sw * 3.5, w * 0.14), ah = Math.max(sw, w * 0.045);
+          parts.push(<rect key="d1" x={-w / 2} y={-sw * 2.2} width={pw} height={sw * 1.4} fill="#fff" stroke={el.color} strokeWidth={sw * 0.6} />);
+          parts.push(<rect key="d2" x={w / 2 - pw} y={-sw * 2.2} width={pw} height={sw * 1.4} fill="#fff" stroke={el.color} strokeWidth={sw * 0.6} />);
+          parts.push(<path key="da" d={`M ${-w * 0.06} ${ay} H ${-w * 0.36} M ${-w * 0.36 + ah} ${ay - ah} L ${-w * 0.36} ${ay} L ${-w * 0.36 + ah} ${ay + ah} M ${w * 0.06} ${ay} H ${w * 0.36} M ${w * 0.36 - ah} ${ay - ah} L ${w * 0.36} ${ay} L ${w * 0.36 - ah} ${ay + ah}`}
+            fill="none" stroke={el.color} strokeWidth={sw * 0.5} />);
+          break;
+        }
         case 'revolving':
           parts.push(<circle key="r" cx={0} cy={0} r={w / 2} fill="#fff" stroke={el.color} strokeWidth={sw * 0.6} strokeDasharray={`${w * 0.05} ${w * 0.035}`} />);
           parts.push(<path key="x" d={`M ${-w * 0.45} 0 H ${w * 0.45} M 0 ${-w * 0.45} V ${w * 0.45}`} stroke={el.color} strokeWidth={sw} />);

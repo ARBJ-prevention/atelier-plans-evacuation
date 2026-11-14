@@ -181,7 +181,7 @@ export function Ribbon({ onPrintPreview, onQuickExport }: { onPrintPreview(): vo
             </Group>
             <Group title="Portes" cols>
               {([['single', 'Battante', 'door', 'Porte à un vantail qui pivote'], ['double', 'Double', 'doorDouble', 'Porte à deux vantaux'],
-                ['sliding', 'Coulissante', 'doorSliding', 'Porte qui glisse le long du mur'], ['revolving', 'Tambour', 'doorRevolving', 'Porte tournante'],
+                ['sliding', 'Coulissante', 'doorSliding', 'Porte qui glisse le long du mur'], ['slidingDouble', 'Coulis. double', 'doorSlidingDouble', 'Porte coulissante à deux vantaux qui s’écartent (sas, entrée automatique)'], ['revolving', 'Tambour', 'doorRevolving', 'Porte tournante'],
                 ['opening', 'Baie libre', 'doorOpening', 'Ouverture sans porte']] as const).map(([k, l, icon, tip]) => (
                 <Small key={k} icon={icon} label={l} title={`${tip} — cliquez sur un mur`} active={tool === 'door' && presets.doorType === k} onClick={() => use('door', { doorType: k })} />
               ))}

@@ -232,6 +232,26 @@ describe('complétion de l’intérieur du bâtiment', () => {
     expect(covered(550, 500)).toBe(true); // sas
   });
 
+  it('redessine le portail sans battant comme une baie à volet roulant, coffre côté extérieur', () => {
+    expect(guessLayerRole('160_AR_Volets roulants')).toBe('doors');
+    expect(rec.doors).toHaveLength(0);
+    expect(rec.windows).toHaveLength(1);
+    const bay = rec.windows[0];
+    expect(bay.shutter).toBe('rolling');
+    expect(bay.width / UPM).toBeCloseTo(3, 1);
+    // dans l'axe de la façade (y = 590 dans le dessin), qui devient continue sous la baie
+    const [cx, cy] = toPlan(550, 590);
+    expect(Math.abs(bay.x - cx)).toBeLessThan(2);
+    expect(Math.abs(bay.y - cy)).toBeLessThan(2);
+    // côté A (y local négatif) tourné vers l'extérieur, sinon flipY
+    const th = (bay.rotation * Math.PI) / 180;
+    const sideA = [Math.sin(th), -Math.cos(th)];
+    const probe = (k: number) => [bay.x + sideA[0] * k, bay.y + sideA[1] * k] as [number, number];
+    const out = bay.flipY ? probe(-40) : probe(40);
+    expect(rec.rooms.some((r) => inPoly(out, r.points))).toBe(false);
+    expect(rec.rooms.some((r) => inPoly(bay.flipY ? probe(40) : probe(-40), r.points))).toBe(true);
+  });
+
   it('ne laisse aucun vide à l’intérieur', () => {
     const holes: string[] = [];
     for (let x = 50; x < 1000; x += 50) for (let y = 50; y < 580; y += 50) {
@@ -277,11 +297,104 @@ describe.skipIf(!realPlan || !existsSync(realPlan))('plan d’architecte réel (
     expect(thick[thick.length - 1]).toBeGreaterThanOrEqual(28); // façade
     expect(thick.filter((t) => t > 15 && t < 28)).toHaveLength(0); // intérieur : 15 cm au plus
     expect(rec.doors.filter((d) => d.fireRated).length).toBeGreaterThanOrEqual(3);
+    // les deux grandes baies sans battant (rideau, porte sectionnelle) reçoivent un volet roulant
+    expect(rec.windows.filter((w) => w.shutter === 'rolling')).toHaveLength(2);
+    // le sas d'entrée vitré reçoit une porte coulissante double de 2,40 m dans un mur de façade
+    expect(rec.doors.filter((d) => d.doorType === 'slidingDouble' &&Math.abs(d.width / UPM - 2.4) < 0.05)).toHaveLength(1);
+  });
+});
+
+/**
+ * Bâtiment de 10 m × 6 m (dessin en cm) dont la façade gauche est en double trait sauf ses deux derniers mètres,
+ * tracés d'un seul trait sur la face intérieure (annexe accolée), et dont la façade droite fait une marche de 15 cm.
+ */
+function facadePlan(): FlatDxf {
+  const prims: DxfPrim[] = [
+    line(WALL, [[0, 400], [0, 0], [1000, 0], [1000, 300]]),
+    line(WALL, [[985, 300], [985, 600], [0, 600], [0, 600]]),
+    line(WALL, [[20, 400], [20, 20], [980, 20], [980, 300]]),
+    line(WALL, [[965, 300], [965, 580], [20, 580], [20, 400]]),
+    line(WALL, [[0, 400], [20, 400]]),
+    text('TEXTES COTES', [500, 300], '55,00 m²'),
+  ];
+  const layers = [...new Set(prims.map((p) => p.layer))].map((name) => ({
+    name, count: prims.filter((p) => p.layer === name).length, color: '#000000', defaultVisible: true,
+  }));
+  return { prims, layers, insUnits: 5, skipped: {} };
+}
+
+describe('contour uniforme du bâtiment', () => {
+  const rec = recognizeArchitect(facadePlan(), 'cm');
+  const vertical = (w: { points: number[][] }) => Math.abs(w.points[0][0] - w.points[1][0]) < 1;
+  const length = (w: { points: number[][] }) => Math.hypot(w.points[1][0] - w.points[0][0], w.points[1][1] - w.points[0][1]) / UPM;
+
+  it('donne à tout le contour la même épaisseur, sans cloison sur la ligne de façade', () => {
+    const left = rec.walls.filter((w) => vertical(w) && w.points[0][0] / UPM < 1);
+    expect(left).toHaveLength(1);
+    expect(length(left[0])).toBeGreaterThan(5.5);
+    const t = left[0].thickness;
+    expect(rec.walls.filter((w) => length(w) > 2).every((w) => Math.abs(w.thickness - t) < 0.01)).toBe(true);
+  });
+
+  it('réaligne un morceau de façade décalé de moins d’une épaisseur', () => {
+    const right = rec.walls.filter((w) => vertical(w) && w.points[0][0] / UPM > 9);
+    expect(right).toHaveLength(1);
+    expect(length(right[0])).toBeGreaterThan(5.5);
+  });
+});
+
+/**
+ * Bâtiment de 10 m × 6 m (dessin en cm) dont la façade droite s'interrompt entre y = 2 m et y = 4,5 m :
+ * entrée vitrée dessinée en menuiserie, châssis fixes sur les côtés et vantaux en retrait au milieu (90 cm).
+ */
+function entrancePlan(): FlatDxf {
+  const prims: DxfPrim[] = [
+    line(WALL, [[1000, 200], [1000, 0], [0, 0], [0, 600], [1000, 600], [1000, 450]]),
+    line(WALL, [[980, 200], [980, 20], [20, 20], [20, 580], [980, 580], [980, 450]]),
+    line(WALL, [[980, 200], [1000, 200]]), line(WALL, [[980, 450], [1000, 450]]),
+    line(DOORS, [[990, 200], [990, 450]]),
+    line(DOORS, [[998, 200], [998, 280]]), line(DOORS, [[998, 370], [998, 450]]),
+    line(DOORS, [[982, 280], [982, 370]]),
+    line(DOORS, [[982, 280], [998, 280]]), line(DOORS, [[982, 370], [998, 370]]),
+    text('TEXTES COTES', [500, 300], '55,00 m²'),
+  ];
+  const layers = [...new Set(prims.map((p) => p.layer))].map((name) => ({
+    name, count: prims.filter((p) => p.layer === name).length, color: '#000000', defaultVisible: true,
+  }));
+  return { prims, layers, insUnits: 5, skipped: {} };
+}
+
+describe('entrée vitrée (sas)', () => {
+  const flat = entrancePlan();
+  const rec = recognizeArchitect(flat, 'cm');
+  const { origin } = renderDxfSvg(flat, { visibleLayers: new Set(flat.layers.map((l) => l.name)), metersPerUnit: 0.01, unitsPerMeter: UPM, monochrome: true });
+  const toPlan = (x: number, y: number): [number, number] => [(x - origin.minX) * origin.k, (origin.maxY - y) * origin.k];
+
+  it('pose une porte coulissante double à la place des vantaux', () => {
+    expect(rec.doors).toHaveLength(1);
+    const d = rec.doors[0];
+    expect(d.doorType).toBe('slidingDouble');
+    expect(d.width / UPM).toBeCloseTo(0.9, 1);
+    const [cx, cy] = toPlan(990, 325);
+    expect(Math.abs(d.x - cx)).toBeLessThan(15);
+    expect(Math.abs(d.y - cy)).toBeLessThan(2);
+    const th = (d.rotation * Math.PI) / 180, open = d.flipY ? -1 : 1;
+    expect(open * Math.sin(th)).toBeGreaterThan(0.9); // côté A (−y local) ou B selon flipY : vers x croissant, l'extérieur
+  });
+
+  it('ferme la façade d’un mur continu de la même épaisseur que les autres', () => {
+    const right = rec.walls.filter((w) => Math.abs(w.points[0][0] - w.points[1][0]) < 1 && w.points[0][0] > toPlan(900, 0)[0]);
+    expect(right).toHaveLength(1);
+    expect(Math.abs(right[0].points[1][1] - right[0].points[0][1]) / UPM).toBeGreaterThan(5.5);
+    expect(rec.walls.every((w) => Math.abs(w.thickness - right[0].thickness) < 0.01)).toBe(true);
   });
 });
 
 describe('pictogrammes de volets', () => {
   it('propose un volet roulant et des volets battants dans « Structure du bâtiment »', () => {
+    const sas = getBuiltinSymbol('door-sliding-double');
+    expect(sas?.category).toBe('Structure du bâtiment');
+    expect(sas?.name).toBe('Porte coulissante double (sas)');
     for (const id of ['shutter-rolling', 'shutter-hinged']) {
       const sym = getBuiltinSymbol(id);
       expect(sym?.category).toBe('Structure du bâtiment');

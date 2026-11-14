@@ -196,6 +196,10 @@ export const DRAWN_SYMBOLS: SymbolDef[] = [
     <path d="M4 58 H28 M72 58 H96" stroke-width="7"/>
     <rect x="22" y="46" width="44" height="7"/>
     <path d="M38 34 H70 M63 28 L70 34 L63 40" fill="none" stroke-width="3"/>`),
+  plan('door-sliding-double', 'Porte coulissante double (sas)', CAT.structure, `
+    <path d="M2 62 H14 M86 62 H98" stroke-width="7"/>
+    <rect x="14" y="50" width="35" height="7"/><rect x="51" y="50" width="35" height="7"/>
+    <path d="M44 34 H16 M23 28 L16 34 L23 40 M56 34 H84 M77 28 L84 34 L77 40" fill="none" stroke-width="3"/>`),
   plan('window', 'Fenêtre', CAT.structure, `<rect x="4" y="40" width="92" height="20"/><path d="M4 50 H96" stroke-width="2"/>`),
   // volets : la fenêtre dans le mur (en bas), le volet côté extérieur (en haut)
   plan('shutter-rolling', 'Volet roulant', CAT.structure, `

@@ -306,7 +306,7 @@ function ElementProps({ el, floor }: { el: Element; floor: Floor }) {
               <Section title="Porte" icon="door">
                 <Row label="Type">
                   <select value={e.doorType} onChange={(ev) => upd({ doorType: ev.target.value })}>
-                    <option value="single">Battante simple</option><option value="double">Double battant</option><option value="sliding">Coulissante</option>
+                    <option value="single">Battante simple</option><option value="double">Double battant</option><option value="sliding">Coulissante</option><option value="slidingDouble">Coulissante double</option>
                     <option value="revolving">Tambour</option><option value="opening">Baie libre</option>
                   </select>
                 </Row>
