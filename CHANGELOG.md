@@ -1,5 +1,11 @@
 # Journal des versions
 
+## 2.0.17 — novembre 2026
+- **Thème Horizon** : le plan de situation s'affiche dès le premier choix du thème (il fallait passer par un autre thème) ; la vue aérienne n'est plus ajoutée.
+- Mise en page : la légende et les consignes prennent juste la hauteur de leur contenu ; la place restante agrandit le plan de situation et la vue aérienne au lieu de laisser du blanc sous les consignes.
+- Import DWG / DXF : les morceaux d'une même ligne de mur intérieur (parties dessinées plus épaisses, petits décalages, bouts de façade dans l'alignement) forment un seul mur droit, de l'épaisseur du mur intérieur.
+- Import DWG / DXF : un mur épais qui rejoint un mur plus fin s'arrête au ras de celui-ci, sans dépasser (mur de l'entrée vitrée d'un sas, par exemple).
+
 ## 2.0.16 — novembre 2026
 - **Porte coulissante double** (onglet Bâtiment › Portes › Coulis. double, bibliothèque › Structure du bâtiment, ou type de porte dans les propriétés) : deux vantaux qui s'écartent, pour les sas et les entrées automatiques ; posée sur un mur, elle s'y cale comme une vraie porte.
 - Import DWG / DXF : les grandes baies sans battant (rideau métallique, porte sectionnelle, volet roulant) deviennent des fenêtres avec volet roulant, coffre côté extérieur.
