@@ -1,5 +1,5 @@
 import { floorContentBounds, isVisibleInVariant, usedSymbolIds, type Rect } from '../model/geometry';
-import type { FrameKey, Floor, PageSetup, PageTheme } from '../model/types';
+import type { FrameKey, Floor, PageSetup, PageTheme, PrintBlock, PrintBlockPosition } from '../model/types';
 import { getBuiltinSymbol } from '../symbols/library';
 
 export const PAPER_MM: Record<string, [number, number]> = { A4: [210, 297], A3: [297, 420], A2: [420, 594] };
@@ -20,6 +20,10 @@ export function pageSizeMm(page: PageSetup): { w: number; h: number } {
 /** Jetons graphiques de chaque thème de mise en page. */
 export interface ThemeTokens {
   name: string;
+  printStyle?: 'indigo' | 'sienne' | 'petrole';
+  blockPosition?: PrintBlockPosition;
+  paperBg?: string;
+  accent?: string;
   description: string;
   headerH: number;
   fullBleedHeader: boolean;
@@ -130,6 +134,30 @@ export const THEMES: Record<PageTheme, ThemeTokens> = {
     cardBg: '#ffffff', cardBorder: '', cardRadius: 0, planRadius: 0, frame: 'none', footer: 'rule', ink: '#0b0b0c', muted: '#6e737a',
     cardStyle: 'index', planStroke: '#0b0b0c', planStrokeW: 0.25, numbersInHeader: true,
   },
+  indigo: {
+    name: 'Indigo', description: 'Bandeau indigo, cartes lavande et colonne à droite',
+    printStyle: 'indigo', blockPosition: 'right', accent: '#303566',
+    headerH: 32, fullBleedHeader: false, footerH: 12, gap: 4,
+    headerBg: '#303566', headerFg: '#ffffff', headerSub: '#e4e2ff', titleFont: 'Segoe UI', titleWeight: 750, titleUpper: false,
+    cardBg: '#eeedfa', cardBorder: '', cardRadius: 2.6, planRadius: 3, frame: 'none', footer: 'cells',
+    ink: '#23284d', muted: '#51577b', planStroke: '#c6c8e1', numbersInHeader: true,
+  },
+  sienne: {
+    name: 'Sienne', description: 'Papier ivoire, titre à empattements et rubriques sous le plan',
+    printStyle: 'sienne', blockPosition: 'bottom', paperBg: '#fffdf9', accent: '#a35a4f',
+    headerH: 31, fullBleedHeader: false, footerH: 12, gap: 3.5,
+    headerBg: '#fffdf9', headerFg: '#4e2c35', headerSub: '#663b40', titleFont: 'Georgia', titleWeight: 700, titleUpper: false,
+    cardBg: '#f5eae0', cardBorder: '', cardRadius: 0, planRadius: 0, frame: 'none', footer: 'cells',
+    ink: '#4e2c35', muted: '#6e4a47', planStroke: '#e6d8cf', numbersInHeader: true,
+  },
+  petrole: {
+    name: 'Pétrole', description: 'Bandeau bleu grisé, cartouche bleu pétrole et colonne à gauche',
+    printStyle: 'petrole', blockPosition: 'left', accent: '#1b626b',
+    headerH: 30, fullBleedHeader: false, footerH: 12, gap: 3.5,
+    headerBg: '#e8f3f3', headerFg: '#153e45', headerSub: '#23545a', titleFont: 'Segoe UI', titleWeight: 800, titleUpper: false,
+    cardBg: '#e8f3f3', cardBorder: '', cardRadius: 1.2, planRadius: 1.4, frame: 'none', footer: 'cells',
+    ink: '#153e45', muted: '#3a6167', planStroke: '#a4c6c7', numbersInHeader: true,
+  },
 };
 
 /** Mélange une couleur #rrggbb avec une autre (t = part de la seconde, 0–1). */
@@ -148,7 +176,9 @@ export function mixHex(a: string, b: string, t: number): string {
  * Horizon active le croquis de situation seul (dès le premier choix, quel que soit le thème précédent).
  */
 export function themePatch(theme: PageTheme): Partial<PageSetup> {
-  const extras = THEMES[theme]?.extras;
+  const tokens = THEMES[theme];
+  if (tokens.accent) return { theme, accentColor: tokens.accent };
+  const extras = tokens.extras;
   if (extras === 'sketch') return { theme, showAerial: false, showSketch: true };
   return extras ? { theme, showAerial: true, showSketch: true } : { theme };
 }
@@ -200,6 +230,7 @@ export interface PageLayout {
   header: Rect | null;
   footer: Rect | null;
   side: Rect | null;                 // légende + consignes
+  blocks?: Partial<Record<PrintBlock, Rect>>;
   drawing: Rect;                     // zone du plan (mm)
   world: Rect;                       // zone du plan (unités plan)
   k: number;                         // mm par unité plan
@@ -283,6 +314,112 @@ function sideContentWidth(floor: Floor, variantId: string, page: PageSetup): num
   return need;
 }
 
+export const PRINT_BLOCKS = [
+  ['legend', 'Légende', 'showLegend'],
+  ['instructions', 'Consignes', 'showInstructions'],
+  ['aerial', 'Vue aérienne', 'showAerial'],
+  ['sketch', 'Croquis de situation', 'showSketch'],
+  ['numbers', "Numéros d’urgence", 'showEmergencyNumbers'],
+] as const;
+
+export const PRINT_POSITIONS = [
+  ['left', 'À gauche'], ['right', 'À droite'], ['top', 'En haut'], ['bottom', 'En bas'],
+] as const;
+
+export function preferredBlockPosition(page: PageSetup): PrintBlockPosition {
+  return THEMES[page.theme]?.blockPosition ?? page.sidePosition;
+}
+
+export function instructionColumns(text: string, width: number, horizontal: boolean): string[] {
+  const sections = text.trim().split(/\n\s*\n(?=\S)/);
+  return horizontal && width >= 132 && sections.length === 2
+    && sections.every((section) => instructionLines(section, width / 2)[0]?.startsSection)
+    ? sections : [text];
+}
+
+export function legendColumnLimit(width: number): number {
+  return Math.max(1, Math.min(3, Math.floor((width - 6) / 29)));
+}
+
+function positionedBlocks(
+  floor: Floor, variantId: string, page: PageSetup, area: Rect, gap: number, numbersInHeader: boolean,
+) {
+  const positions = page.blockPositions?.[page.theme];
+  const groups = { left: [], right: [], top: [], bottom: [] } as Record<PrintBlockPosition, PrintBlock[]>;
+  const tb = floor.titleBlock;
+  for (const [key, , flag] of PRINT_BLOCKS) {
+    if (!page[flag] || (key === 'instructions' && !tb.instructions.trim())
+      || (key === 'numbers' && (numbersInHeader || !tb.emergencyNumbers.trim()))) continue;
+    const pos = positions?.[key];
+    groups[pos && Object.hasOwn(groups, pos) ? pos : preferredBlockPosition(page)].push(key);
+  }
+
+  const visible = new Set(floor.layers.filter((layer) => layer.visible).map((layer) => layer.id));
+  const items = usedSymbolIds(floor, variantId).length + new Set(floor.elements.flatMap((e) =>
+    e.type === 'route' && visible.has(e.layer) && isVisibleInVariant(e, variantId) ? [e.kind] : [])).size;
+  const rects: Partial<Record<PrintBlock, Rect>> = {};
+  const drawing = { ...area };
+  function height(key: PrintBlock, width: number, row: boolean) {
+    switch (key) {
+      case 'legend': return 11 + Math.ceil(items / legendColumnLimit(width)) * 7 + 1;
+      case 'instructions': {
+        const cols = instructionColumns(tb.instructions, width, row);
+        return Math.max(...cols.map((col) => instructionsHeight(col, width / cols.length))) + 0.2;
+      }
+      case 'numbers': return 14 + tb.emergencyNumbers.split(/\s*[·|]\s*/).reduce((n, part) =>
+        n + wrapText(part, width - 6, 3).length * 3.9, 0);
+      default: return row ? 29 : clamp(width * 0.48, 19, 42);
+    }
+  }
+
+  for (const edge of ['top', 'bottom'] as const) {
+    const keys = groups[edge];
+    if (!keys.length) continue;
+    const available = area.w - gap * (keys.length - 1);
+    const weight = (key: PrintBlock) => key === 'instructions' ? 2.2 : key === 'legend' ? 1.45 : 1;
+    const total = keys.reduce((sum, key) => sum + weight(key), 0);
+    const widths = keys.map((key) => available * weight(key) / total);
+    const h = Math.min(area.h * (groups.top.length && groups.bottom.length ? 0.31 : 0.58),
+      Math.max(...keys.map((key, i) => height(key, widths[i], true))));
+    const y = edge === 'top' ? area.y : area.y + area.h - h;
+    let x = area.x;
+    keys.forEach((key, i) => {
+      rects[key] = { x, y, w: widths[i], h };
+      x += widths[i] + gap;
+    });
+    drawing.h -= h + gap;
+    if (edge === 'top') drawing.y += h + gap;
+  }
+
+  for (const edge of ['left', 'right'] as const) {
+    const keys = groups[edge];
+    if (!keys.length) continue;
+    const limit = Math.min(area.w * (groups.left.length && groups.right.length ? 0.31 : 0.42), 100);
+    const width = clamp(Math.max(...keys.map((key) => {
+      if (key === 'legend') return items > 7 ? 72 : 48;
+      if (key === 'instructions') return Math.min(86, sideContentWidth(floor, variantId, { ...page, showLegend: false }));
+      return key === 'numbers' ? 48 : 43;
+    })), Math.min(limit, 47), limit);
+    const x = edge === 'left' ? area.x : area.x + area.w - width;
+    const natural = keys.map((key) => height(key, width, false));
+    const available = drawing.h - gap * (keys.length - 1);
+    const total = natural.reduce((sum, h) => sum + h, 0);
+    const minHeight = (key: PrintBlock) => key === 'legend' || key === 'instructions' ? 17 : key === 'numbers' ? 16 : 14;
+    const minimum = keys.reduce((sum, key) => sum + minHeight(key), 0);
+    const fit = total <= available ? 1 : clamp((available - minimum) / Math.max(1, total - minimum), 0, 1);
+    let y = drawing.y;
+    keys.forEach((key, i) => {
+      const min = minHeight(key);
+      const h = Math.max(1, available < minimum ? min * available / minimum : min + (natural[i] - min) * fit);
+      rects[key] = { x, y, w: width, h };
+      y += h + gap;
+    });
+    drawing.w -= width + gap;
+    if (edge === 'left') drawing.x += width + gap;
+  }
+  return { rects, drawing };
+}
+
 export function computeLayout(floor: Floor, variantId: string, page: PageSetup = floor.page): PageLayout {
   const paper = pageSizeMm(page);
   const s = PAPER_SCALE[page.paper] ?? 1;
@@ -309,13 +446,19 @@ export function computeLayout(floor: Floor, variantId: string, page: PageSetup =
     footer = { x: x0, y: y1 - T.footerH, w: x1 - x0, h: T.footerH };
     y1 -= T.footerH + G;
   }
+  const positions = page.blockPositions?.[page.theme];
+  const hasPlacement = !!T.blockPosition || Object.values(positions ?? {}).some(Boolean);
   const hasSide = page.showLegend || page.showInstructions || page.showAerial || page.showSketch;
   const tb = floor.titleBlock;
   const numbers = page.showEmergencyNumbers ? tb.emergencyNumbers.trim() : '';
   // Numéros dans l'en-tête seulement s'ils y tiennent ; sans cadre latéral pour les accueillir, ils restent dans l'en-tête.
   const numbersInHeader = !!numbers && !!T.numbersInHeader && !!header
-    && (!hasSide || numbersFitInHeader(page, T, w, header.w, hs, tb.title || 'Plan d’évacuation', numbers, !!tb.logo));
+    && (hasPlacement ? !positions?.numbers && (T.printStyle
+      ? numbers.length <= Math.max(24, Math.floor(header.w * 0.55))
+      : numbersFitInHeader(page, T, w, header.w, hs, tb.title, numbers, !!tb.logo))
+      : !hasSide || numbersFitInHeader(page, T, w, header.w, hs, tb.title || 'Plan d’évacuation', numbers, !!tb.logo));
   const numsInSide = !!numbers && !numbersInHeader;
+  const positioned = hasPlacement || (!hasSide && numsInSide);
 
   const world = page.area === 'custom' && page.customArea.w > 0 && page.customArea.h > 0
     ? page.customArea
@@ -326,7 +469,7 @@ export function computeLayout(floor: Floor, variantId: string, page: PageSetup =
   const reserveH = 2 * pad + (page.showScaleBar && floor.unitsPerMeter > 0 ? 10 : 0);
   const kFixed = floor.unitsPerMeter > 0 && page.scaleMode === 'fixed' && page.scale > 0 ? 1000 / page.scale / floor.unitsPerMeter / s : 0;
 
-  if (hasSide) {
+  if (hasSide && !positioned) {
     const W = x1 - x0, H = y1 - y0;
     const extra = page.showAerial || page.showSketch;
     const nCards = (page.showLegend ? 1 : 0) + (page.showInstructions && tb.instructions.trim() ? 1 : 0);
@@ -378,7 +521,9 @@ export function computeLayout(floor: Floor, variantId: string, page: PageSetup =
       else { side = { x: x1 - sw, y: y0, w: sw, h: H }; x1 -= sw + G; }
     }
   }
-  const drawing: Rect = { x: x0, y: y0, w: Math.max(10, x1 - x0), h: Math.max(10, y1 - y0) };
+  const content = { x: x0, y: y0, w: Math.max(10, x1 - x0), h: Math.max(10, y1 - y0) };
+  const placement = positioned ? positionedBlocks(floor, variantId, page, content, G, numbersInHeader) : undefined;
+  const drawing = placement?.drawing ?? content;
 
   const inner = { x: drawing.x + pad, y: drawing.y + pad, w: drawing.w - 2 * pad, h: drawing.h - 2 * pad };
   // Place réservée à la flèche du nord (coin haut droit) et à la barre d'échelle (bas).
@@ -396,7 +541,7 @@ export function computeLayout(floor: Floor, variantId: string, page: PageSetup =
   }
   const tx = inner.x + (inner.w - world.w * k) / 2 - world.x * k;
   const ty = inner.y + (inner.h - world.h * k) / 2 - world.y * k;
-  return { w, h, paperW: paper.w, paperH: paper.h, s, m, theme: T, header, footer, side, drawing, world, k, tx, ty, scaleDenominator, hs, numbersInHeader };
+  return { w, h, paperW: paper.w, paperH: paper.h, s, m, theme: T, header, footer, side, blocks: placement?.rects, drawing, world, k, tx, ty, scaleDenominator, hs, numbersInHeader };
 }
 
 /** Longueur « ronde » de barre d'échelle (m) pour viser ~30 mm. */

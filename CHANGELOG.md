@@ -1,5 +1,10 @@
 # Journal des versions
 
+## 2.0.20 - novembre 2026
+- **Nouveaux thèmes d'impression** : Indigo à droite, Sienne en bas et Pétrole à gauche. Les neuf thèmes précédents restent disponibles.
+- **Placement des blocs** : positionnez la légende, les consignes, la vue aérienne, le croquis de situation et les numéros d'urgence autour du plan. Les choix sont mémorisés par thème et par étage et s'appliquent à l'aperçu et aux exports.
+- En mode **Ajuster à la page**, le plan est redimensionné en fonction de la place laissée par les blocs.
+
 ## 2.0.19 — novembre 2026
 - **Progression de la mise à jour** : après « Installer maintenant », une fenêtre « Installation en cours » montre l'avancement, puis le logiciel se rouvre tout seul (avant, rien ne s'affichait entre la fermeture et la réouverture). Aucune question n'est posée : le dossier et le mode d'installation existants sont repris.
 - Même fenêtre quand on lance l'installateur à la main sur un poste déjà équipé d'une version plus ancienne.
