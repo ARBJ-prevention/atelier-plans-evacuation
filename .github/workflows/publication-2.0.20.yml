@@ -1,0 +1,45 @@
+name: Publication Windows 2.0.20
+
+on:
+  push:
+    branches: [publication-2.0.20]
+    paths: [.github/workflows/publication-2.0.20.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: b74fc8a377cd5f716373d3b072789264166aff18
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run dist
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      - name: Publier l'installateur Windows
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ((Get-Content package.json -Raw | ConvertFrom-Json).version -ne '2.0.20') {
+            throw 'Version inattendue'
+          }
+          $installer = 'release/Atelier-Plans-Evacuation-Setup-2.0.20.exe'
+          if (!(Test-Path -LiteralPath $installer)) { throw 'Installateur introuvable' }
+          $notes = (Get-Content CHANGELOG.md -Raw) -split '(?m)^## 2\.0\.20[^\r\n]*\r?\n', 2
+          if ($notes.Count -ne 2) { throw 'Notes de version introuvables' }
+          $notesPath = 'release/notes-2.0.20.md'
+          (($notes[1] -split '(?m)^## ', 2)[0]).Trim() | Set-Content -Encoding utf8 $notesPath
+          gh release create v2.0.20 $installer --target b74fc8a377cd5f716373d3b072789264166aff18 --title 'Version 2.0.20' --notes-file $notesPath
+          exit $LASTEXITCODE
