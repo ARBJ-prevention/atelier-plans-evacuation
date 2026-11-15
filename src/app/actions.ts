@@ -680,7 +680,7 @@ export async function checkForUpdates(manual: boolean): Promise<void> {
   const date = info.date ? ` du ${new Date(info.date).toLocaleDateString('fr-BE')}` : '';
   const r = await ask({
     title: 'Mise à jour disponible',
-    message: `La version ${info.version}${date} est disponible (version installée : ${info.current})${info.source === 'github' ? ', publiée sur GitHub. Elle sera téléchargée puis installée' : ''}.${info.notes ? `\n\nNouveautés :\n${info.notes}` : ''}\n\nL’installation ferme le logiciel puis lance l’installateur ; vos projets ne sont pas modifiés.`,
+    message: `La version ${info.version}${date} est disponible (version installée : ${info.current})${info.source === 'github' ? ', publiée sur GitHub. Elle sera téléchargée puis installée' : ''}.${info.notes ? `\n\nNouveautés :\n${info.notes}` : ''}\n\nL’installation ferme le logiciel ; une fenêtre montre la progression, puis le logiciel se rouvre tout seul. Vos projets ne sont pas modifiés.`,
     buttons: [
       { label: 'Ignorer cette version', value: 'skip' },
       { label: 'Plus tard', value: 'later' },
@@ -691,6 +691,7 @@ export async function checkForUpdates(manual: boolean): Promise<void> {
   if (r.button !== 'install') return;
   if (!(await confirmDiscardChanges())) return;
   try {
+    S().toast(info.source === 'github' ? 'Téléchargement de la mise à jour…' : 'Préparation de la mise à jour…', 'info');
     await api().updateInstall();
   } catch (e) {
     await alertDialog('Mise à jour impossible', errMsg(e));

@@ -586,8 +586,9 @@ ipcMain.handle('update:install', async () => {
     if (hash.toLowerCase() !== String(res.sha256).toLowerCase()) throw new Error('L’installateur ne correspond pas à l’empreinte attendue (fichier incomplet ou modifié). Mise à jour annulée.');
   }
   const { spawn } = require('node:child_process');
-  // Mise à jour rapide : sans assistant (le contrôle UAC reste demandé si besoin), puis relance du programme.
-  spawn(res.installer, ['/S', '--updated', '--force-run'], { detached: true, stdio: 'ignore' }).unref();
+  // Mise à jour rapide : l'assistant saute toutes ses questions (--updated) et n'affiche que
+  // la barre de progression, puis relance le programme (voir build/installer.nsh).
+  spawn(res.installer, ['--updated', '--force-run'], { detached: true, stdio: 'ignore' }).unref();
   forceClosing = true;
   setTimeout(() => app.quit(), 300);
   return true;
