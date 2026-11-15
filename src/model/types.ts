@@ -307,7 +307,11 @@ export type PaperSize = 'A4' | 'A3' | 'A2';
 /** Zones de la page qui peuvent être entourées d'un cadre. */
 export type FrameKey = 'plan' | 'legend' | 'instructions' | 'aerial' | 'sketch' | 'footer';
 
-export type PageTheme = 'moderne' | 'epure' | 'institutionnel' | 'signaletique' | 'encadre' | 'bandeaux' | 'technique' | 'horizon' | 'editorial';
+export type PageTheme = 'moderne' | 'epure' | 'institutionnel' | 'signaletique' | 'encadre' | 'bandeaux' | 'technique' | 'horizon' | 'editorial' | 'indigo' | 'sienne' | 'petrole';
+
+export type PrintBlock = 'legend' | 'instructions' | 'aerial' | 'sketch' | 'numbers';
+export type PrintBlockPosition = 'left' | 'right' | 'top' | 'bottom';
+export type PrintBlockPositions = Partial<Record<PrintBlock, PrintBlockPosition>>;
 
 export interface PageSetup {
   paper: PaperSize;
@@ -322,6 +326,7 @@ export interface PageSetup {
   accentColor: string;
   planBackground: string;
   sidePosition: 'right' | 'left' | 'bottom';
+  blockPositions?: Partial<Record<PageTheme, PrintBlockPositions>>;
   /** En-tête (titre, adresse, numéros d'urgence). */
   showTitleBlock: boolean;
   /** Cartouche en pied de page (auteur, date, version, statut…). Absent des anciens fichiers : suit `showTitleBlock`. */

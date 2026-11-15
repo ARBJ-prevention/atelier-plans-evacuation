@@ -320,6 +320,34 @@ export function ThemeThumb({ theme, accent, active, onClick }: { theme: PageThem
   const head = grad ? `url(#${gid})` : T.headerBg === 'accent' ? accent : T.headerBg;
   const ed = theme === 'editorial';
   const cardFill = themeColor(T.cardBg, accent);
+  if (T.printStyle) {
+    const left = T.blockPosition === 'left';
+    const bottom = T.blockPosition === 'bottom';
+    const planX = left ? 19 : 4;
+    const cardX = left || bottom ? 4 : 42;
+    const swatch = T.accent || accent;
+    return (
+      <button className={active ? 'theme-card on' : 'theme-card'} onClick={onClick} title={T.description}>
+        <svg viewBox="0 0 60 42" width={60} height={42} aria-hidden="true">
+          <rect width="60" height="42" fill={T.paperBg || '#fff'} />
+          <rect x="4" y="2" width="52" height="9" rx={theme === 'indigo' ? 1.2 : 0} fill={head} />
+          {theme === 'sienne' && <path d="M4 2v9h52" fill="none" stroke={swatch} strokeWidth="0.6" />}
+          {left && <path d="M4 2h52" stroke={swatch} strokeWidth="0.8" />}
+          <rect x="7" y="5.4" width="28" height="2.3" fill={T.headerFg} />
+          <rect x="48" y="4" width="6" height="5" rx="0.7" fill="#faebe7" />
+          <rect x="49" y="6" width="4" height="1.1" fill="#a1261e" />
+          <rect x={planX} y="13" width={bottom ? 52 : 37} height={bottom ? 15 : 23} rx={T.planRadius * 0.28}
+            fill="#fff" stroke={T.planStroke} strokeWidth="0.45" />
+          <path d={bottom ? 'M19 23l8-6 8 5 8-6' : `M${planX + 5} 30l8-8 8 4 10-9`} fill="none" stroke="#00843d" strokeWidth="1.2" />
+          <rect x={cardX} y={bottom ? 30 : 13} width="14" height={bottom ? 6 : 7} rx="0.5" fill={cardFill} />
+          <rect x={cardX + (bottom ? 16 : 0)} y={bottom ? 30 : 21} width={bottom ? 17 : 14} height={bottom ? 6 : 7} rx="0.5" fill="#faebe7" />
+          <rect x={cardX + (bottom ? 35 : 0)} y={bottom ? 30 : 29} width={bottom ? 17 : 14} height={bottom ? 6 : 7} rx="0.5" fill="#e7f5ed" />
+          <rect x="4" y="38" width="52" height={bottom ? 0.7 : 2} fill={left ? T.ink : bottom ? swatch : cardFill} />
+        </svg>
+        <span>{T.name}</span>
+      </button>
+    );
+  }
   return (
     <button className={active ? 'theme-card on' : 'theme-card'} onClick={onClick} title={T.description}>
       <svg viewBox="0 0 60 42" width={60} height={42} aria-hidden="true">
@@ -415,11 +443,7 @@ function PageTab({ page, onPreview }: { page: PageSetup; onPreview(): void }) {
         </div>
       </Group>
       <Group title="Disposition" cols>
-        <label className="rb-field" title={page.orientation === 'portrait' ? 'En portrait, « à droite » et « à gauche » ne s’appliquent que si le plan est en hauteur ; sinon la légende passe en bas.' : undefined}>Légende
-          <select value={page.sidePosition} onChange={(e) => set({ sidePosition: e.target.value as any })}>
-            <option value="right">à droite</option><option value="left">à gauche</option><option value="bottom">en bas</option>
-          </select>
-        </label>
+        <button className="btn small" onClick={() => runAppCommand('layout-settings')}>Placer les blocs…</button>
         <label className="rb-field">Marges <input type="number" min={0} max={40} value={page.marginMm} onChange={(e) => set({ marginMm: Math.max(0, Math.min(40, Number(e.target.value) || 0)) })} /> mm</label>
       </Group>
       <Group title="Éléments de la page">

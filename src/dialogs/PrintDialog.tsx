@@ -1,11 +1,11 @@
 import { useState } from 'react';
 import * as A from '../app/actions';
 import { floorContentBounds } from '../model/geometry';
-import type { PageSetup, PageTheme } from '../model/types';
+import type { PageSetup, PageTheme, PrintBlockPosition } from '../model/types';
 import { PageScopeNote } from '../panels/PropertiesPanel';
 import { ThemeThumb } from '../panels/Ribbon';
 import { printIssues } from '../render/PrintPage';
-import { FRAME_ZONES, frameOn, THEMES, themePatch } from '../render/layout';
+import { FRAME_ZONES, frameOn, preferredBlockPosition, PRINT_BLOCKS, PRINT_POSITIONS, THEMES, themePatch } from '../render/layout';
 import { currentBuilding, currentFloor, currentVariantId, useStore } from '../store/store';
 import { Icon } from '../ui/icons';
 import { BuildingExport } from './BuildingExport';
@@ -27,6 +27,7 @@ export function PrintDialog({ onClose, onEdit, currentOnly = false, focusScale =
   const [batch, setBatch] = useState(back?.mode === 'building');
   const backdrop = usePrintEscape(onClose, !!busy);
   const page = floor.page;
+  const positions = page.blockPositions?.[page.theme];
 
   const set = (patch: Partial<PageSetup>) =>
     useStore.getState().mutateFloor((f) => { Object.assign(f.page, patch); }, { keepValidation: true, coalesce: `page:${Object.keys(patch).join(',')}` });
@@ -141,11 +142,37 @@ export function PrintDialog({ onClose, onEdit, currentOnly = false, focusScale =
           <label className="field inline"><span>Marges (mm)</span>
             <input type="number" min={0} max={40} value={page.marginMm} onChange={(e) => set({ marginMm: Math.max(0, Math.min(40, Number(e.target.value) || 0)) })} />
           </label>
-          <label className="field inline"><span>Légende</span>
-            <select value={page.sidePosition} onChange={(e) => set({ sidePosition: e.target.value as PageSetup['sidePosition'] })}>
-              <option value="right">à droite</option><option value="left">à gauche</option><option value="bottom">en bas</option>
-            </select>
-          </label>
+          <h3>Placement des blocs</h3>
+          <p className="muted tiny">Déplace les blocs autour du plan pour ajuster la place disponible. Les choix sont mémorisés pour ce thème.</p>
+          {!THEMES[page.theme]?.blockPosition && (
+            <label className="field inline"><span>Disposition générale</span>
+              <select value={page.sidePosition} onChange={(e) => set({ sidePosition: e.target.value as PageSetup['sidePosition'] })}>
+                <option value="right">À droite</option><option value="left">À gauche</option><option value="bottom">En bas</option>
+              </select>
+            </label>
+          )}
+          {PRINT_BLOCKS.filter(([, , flag]) => page[flag]).map(([key, label]) => {
+            const fallback = key === 'numbers' ? 'Automatique' : PRINT_POSITIONS.find(([pos]) => pos === preferredBlockPosition(page))?.[1];
+            return (
+              <label className="field inline" key={key}><span>{label}</span>
+                <select value={positions?.[key] ?? ''} onChange={(e) => {
+                  const next = { ...positions };
+                  const value = e.target.value as PrintBlockPosition | '';
+                  if (value) next[key] = value;
+                  else delete next[key];
+                  set({ blockPositions: { ...page.blockPositions, [page.theme]: next } });
+                }}>
+                  <option value="">{key === 'numbers' ? fallback : `Par défaut · ${fallback}`}</option>
+                  {PRINT_POSITIONS.map(([position, name]) => <option key={position} value={position}>{name}</option>)}
+                </select>
+              </label>
+            );
+          })}
+          {Object.values(positions ?? {}).some(Boolean) && (
+            <button className="btn small full" onClick={() => set({ blockPositions: { ...page.blockPositions, [page.theme]: {} } })}>
+              Rétablir les placements du thème
+            </button>
+          )}
 
           <h3>Échelle</h3>
           <div className="seg full">
