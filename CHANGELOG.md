@@ -1,5 +1,10 @@
 # Journal des versions
 
+## 2.0.19 — novembre 2026
+- **Progression de la mise à jour** : après « Installer maintenant », une fenêtre « Installation en cours » montre l'avancement, puis le logiciel se rouvre tout seul (avant, rien ne s'affichait entre la fermeture et la réouverture). Aucune question n'est posée : le dossier et le mode d'installation existants sont repris.
+- Même fenêtre quand on lance l'installateur à la main sur un poste déjà équipé d'une version plus ancienne.
+- Un message « Téléchargement… » ou « Préparation de la mise à jour… » s'affiche avant la fermeture du logiciel.
+
 ## 2.0.18 — novembre 2026
 - **Un seul mot : « affiche »** partout (barre au-dessus du plan, panneau Projet, aperçu, guide) à la place de « version » et « emplacement d'affichage ». Les anciens fichiers s'ouvrent sans changement.
 - **Portée explicite** : en haut des Propriétés, « S'applique à » montre et règle en un clic si la sélection est sur toutes les affiches de l'étage ou sur cette affiche uniquement ; retirer un élément des autres affiches demande confirmation. Une pastille jaune marque sur le plan les éléments propres à l'affiche affichée.
