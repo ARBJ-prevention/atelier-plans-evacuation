@@ -1,8 +1,10 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { PRINT_ISSUE_LABEL, PrintPage, type PrintIssue, type PrintPageProps } from '../render/PrintPage';
+import { PRINT_ISSUE_LABEL, PRINT_ISSUE_LEVEL, PrintPage, type PrintIssue, type PrintPageProps } from '../render/PrintPage';
 import { computeLayout } from '../render/layout';
 
-export type EditPrintIssue = (floorId: string, variantId: string, issue: PrintIssue) => void;
+/** Où revenir après la correction d'une alerte : l'aperçu de l'étage, ou l'export du bâtiment avec ses pages cochées. */
+export type ReviewReturn = { mode: 'preview' } | { mode: 'building'; selected: string[]; previewKey: string };
+export type EditPrintIssue = (floorId: string, variantId: string, issue: PrintIssue, back?: ReviewReturn) => void;
 
 export function usePrintEscape(onClose: () => void, busy: boolean) {
   const backdrop = useRef<HTMLDivElement>(null);
@@ -28,18 +30,22 @@ export interface PageAlert {
 
 export function PrintReview({ alerts, onEdit }: { alerts: PageAlert[]; onEdit(alert: PageAlert, issue: PrintIssue): void }) {
   const flagged = alerts.filter((alert) => alert.issues.length);
+  const checks = alerts.reduce((n, a) => n + a.issues.filter((i) => PRINT_ISSUE_LEVEL[i] === 'check').length, 0);
   return (
     <section className="print-review" aria-label="Vérification avant export">
       <h3>Vérification avant export</h3>
       {!alerts.length && <p className="muted small">Sélectionnez les pages à vérifier.</p>}
       {!!alerts.length && !flagged.length && <p className="print-review-ok small">Aucun point à signaler sur les pages sélectionnées.</p>}
       {!!flagged.length && (
+        <p className="muted tiny">{checks ? `${checks} point(s) à vérifier` : 'Rien à corriger sur les pages'} · ces alertes guident la relecture ; elles ne bloquent pas l’export et ne valident pas le plan.</p>
+      )}
+      {!!flagged.length && (
         <ul className="print-review-list">
           {flagged.map((alert) => (
             <li key={`${alert.floorId}:${alert.variantId}`}>
               <strong>{alert.label}</strong>
               {alert.issues.map((issue) => (
-                <button key={issue} className="print-issue" onClick={() => onEdit(alert, issue)}>{PRINT_ISSUE_LABEL[issue]} <span aria-hidden="true">→</span></button>
+                <button key={issue} className={PRINT_ISSUE_LEVEL[issue] === 'info' ? 'print-issue info' : 'print-issue'} onClick={() => onEdit(alert, issue)}>{PRINT_ISSUE_LABEL[issue]} <span aria-hidden="true">→</span></button>
               ))}
             </li>
           ))}

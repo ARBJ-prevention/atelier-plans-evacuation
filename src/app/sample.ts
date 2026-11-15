@@ -197,7 +197,7 @@ EN CAS D'ÉVACUATION
   return p;
 }
 
-// ——— 3. Hôtel — thème Épuré — trois versions ———
+// ——— 3. Hôtel — thème Épuré — trois affiches ———
 export function sampleHotel(): Project {
   const p = newProject('Exemple — Hôtel du Parc', 'FR');
   const b = p.buildings[0];
@@ -327,9 +327,9 @@ export function sampleWarehouse(): Project {
 export interface SampleInfo { id: string; title: string; subtitle: string; theme: string; build(): Project }
 
 export const SAMPLES: SampleInfo[] = [
-  { id: 'offices', title: 'Bureaux Le Quartz', subtitle: 'Thème Moderne · 2 versions', theme: 'moderne', build: sampleOffices },
-  { id: 'school', title: 'École des Tilleuls', subtitle: 'Thème Signalétique · 2 versions', theme: 'signaletique', build: sampleSchool },
-  { id: 'hotel', title: 'Hôtel du Parc', subtitle: 'Thème Épuré · 3 versions', theme: 'epure', build: sampleHotel },
+  { id: 'offices', title: 'Bureaux Le Quartz', subtitle: 'Thème Moderne · 2 affiches', theme: 'moderne', build: sampleOffices },
+  { id: 'school', title: 'École des Tilleuls', subtitle: 'Thème Signalétique · 2 affiches', theme: 'signaletique', build: sampleSchool },
+  { id: 'hotel', title: 'Hôtel du Parc', subtitle: 'Thème Épuré · 3 affiches', theme: 'epure', build: sampleHotel },
   { id: 'warehouse', title: 'Plateforme logistique', subtitle: 'Thème Institutionnel · A3', theme: 'institutionnel', build: sampleWarehouse },
 ];
 

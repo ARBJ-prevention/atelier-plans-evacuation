@@ -39,23 +39,23 @@ export async function runSelfTest(outDir: string): Promise<void> {
   const out = (f: string) => `${outDir}${sep}${f}`;
 
   // 1. Création du projet + pictogramme importé + image
-  await check('Création d’un projet (bâtiment, étage, 2 versions)', async () => {
+  await check('Création d’un projet (bâtiment, étage, 2 affiches)', async () => {
     const p = buildSampleProject();
     const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect width="10" height="10" fill="#1f5fbf"/><circle cx="5" cy="5" r="3" fill="#fff"/></svg>';
     p.customSymbols.push({ id: 'sym_test', name: 'Pictogramme importé (test)', category: 'Mes pictogrammes', src: `data:image/svg+xml;base64,${btoa(svg)}` });
     p.buildings[0].floors[0].elements.push(makeElement('symbol', { x: 300, y: 120, symbolId: 'sym_test' }));
     S().loadProject(p, null);
     const f = currentFloor(S())!;
-    assert(f.variants.length === 2, 'deux versions attendues');
-    return `${f.elements.length} éléments, ${f.variants.length} versions`;
+    assert(f.variants.length === 2, 'deux affiches attendues');
+    return `${f.elements.length} éléments, ${f.variants.length} affiches`;
   });
 
-  // 2. Export PDF de toutes les versions
+  // 2. Export PDF de toutes les affiches
   let pdfPath = '';
   await check('Export PDF A4 paysage (une page par version)', async () => {
     const job = A.currentExportJob('all')!;
     const start = performance.now();
-    pdfPath = (await A.exportPdfAction(job, out('plan-A4-toutes-versions.pdf')))!;
+    pdfPath = (await A.exportPdfAction(job, out('plan-A4-toutes-affiches.pdf')))!;
     const exportMs = Math.round(performance.now() - start);
     assert(pdfPath, 'aucun fichier produit');
     const bytes = new Uint8Array(await api().readBinary(pdfPath));
@@ -161,7 +161,7 @@ export async function runSelfTest(outDir: string): Promise<void> {
     const bytes = new Uint8Array(await api().readBinary(pdfPath));
     const img = await renderPdfPage(bytes, 1);
     assert(img.width >= 3000 && img.height >= 2000, `résolution trop faible ${img.width}×${img.height}`);
-    A.applyBackground(img.src, img.width, img.height, 'plan-A4-toutes-versions.pdf');
+    A.applyBackground(img.src, img.width, img.height, 'plan-A4-toutes-affiches.pdf');
     S().mutateFloor((f) => { f.background!.x = -200; f.background!.y = -150; f.background!.opacity = 0.25; });
     const bg = currentFloor(S())!.background!;
     assert(bg.naturalWidth === img.width, 'fond non appliqué');

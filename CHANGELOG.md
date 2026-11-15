@@ -1,5 +1,25 @@
 # Journal des versions
 
+## 2.0.18 — novembre 2026
+- **Un seul mot : « affiche »** partout (barre au-dessus du plan, panneau Projet, aperçu, guide) à la place de « version » et « emplacement d'affichage ». Les anciens fichiers s'ouvrent sans changement.
+- **Portée explicite** : en haut des Propriétés, « S'applique à » montre et règle en un clic si la sélection est sur toutes les affiches de l'étage ou sur cette affiche uniquement ; retirer un élément des autres affiches demande confirmation. Une pastille jaune marque sur le plan les éléments propres à l'affiche affichée.
+- **Nouveaux éléments** (au-dessus du plan, étage à plusieurs affiches) : choisir si ce que l'on dessine ou pose va sur toutes les affiches ou sur l'affiche active ; la première création commune est signalée.
+- La mise en page, commune à toutes les affiches d'un étage, le rappelle dans l'aperçu et l'onglet Page.
+- **Revenir à la vérification** : après un clic sur une alerte, un bandeau rouvre l'aperçu, ou l'export du bâtiment avec les mêmes pages cochées.
+- **Export du bâtiment** : progression fichier par fichier, Annuler (un PDF par page), durée et Ouvrir le dossier à la fin ; chaque page montre son statut et ses points à vérifier.
+- **Vérification avant export étendue** : itinéraire absent, sortie de secours non signalée, numéros d'urgence vides, plan pas encore validé (rappel). Les alertes guident la relecture ; elles ne bloquent pas l'export et ne valident rien.
+- **Comparer deux affiches** côte à côte dans l'aperçu.
+- **Menu Fichier** dans le ruban (nouveau, ouvrir, récents, enregistrer sous, dupliquer, importer, exporter le bâtiment, guide).
+- **Panneaux repliables** : Ctrl+B pour le panneau gauche, Ctrl+Maj+B pour les propriétés (préférence mémorisée sur le poste).
+- Panneau Projet : les affiches apparaissent sous chaque étage (Bâtiment › Étage › Affiche).
+- Canevas : cliquer dans l'arc d'une porte la sélectionne (au lieu de la pièce) ; cliquer dans un blanc du tireté sélectionne l'itinéraire. Largeur de porte arrondie au centimètre (5 cm avec le magnétisme), montant opposé fixe, saisie en centimètres une fois l'échelle étalonnée. Les sommets d'un itinéraire, d'un mur ou d'une zone ne sont plus recouverts par le cadre d'étirement. Les pictogrammes n'ont plus que leurs 4 coins.
+- À propos et guide : provenance exacte des 97 signaux ISO 7010 (tracés domaine public / CC0), thèmes à jour.
+- **Ruban réorganisé dans l'ordre du travail** : Plan (import, étalonnage, murs, portes, escaliers, pièces, textes, formes) · Évacuation (affiches, « Vous êtes ici », itinéraires, flèches, pictogrammes, légende, circulations) · Édition (pastille quand une sélection existe) · Mise en page · Vérifier et exporter (statut et Valider…, points à vérifier par affiche, exports) · Affichage. Raccourcis inchangés.
+- **Assistant d'import** (ruban Plan, menu Fichier, ou « Nouveau projet depuis un plan » sur l'accueil) : étage actif ou nouvel étage, page du PDF choisie sur vignettes, fond en gris et opacité avec aperçu, étalonnage enchaîné. Un nouvel étage resté vide après annulation est retiré.
+- **Mise en page en un seul endroit** : tous les réglages dans l'aperçu (couleurs, légende, vue aérienne, croquis, cadre, angle du nord ajoutés) ; l'onglet Page des propriétés en montre le résumé, le ruban garde les réglages courants.
+- **Circulations probables** (Évacuation ou Affichage › Circulations) : chemin le plus court de chaque repère vers une issue de secours et zones sans accès à une sortie, calculés sur les murs et les portes ; aide à la vérification affichée dans l'éditeur, jamais imprimée.
+- **Export du bâtiment avec fonds de plan** : un lot de pages portant un fond PDF converti en image saturait la mémoire et fermait le logiciel ; chaque image n'est plus transmise qu'une fois et le document est envoyé par morceaux (16 pages avec fond de 8 Mo : 3,3 s).
+
 ## 2.0.17 — novembre 2026
 - **Thème Horizon** : le plan de situation s'affiche dès le premier choix du thème (il fallait passer par un autre thème) ; la vue aérienne n'est plus ajoutée.
 - Mise en page : la légende et les consignes prennent juste la hauteur de leur contenu ; la place restante agrandit le plan de situation et la vue aérienne au lieu de laisser du blanc sous les consignes.

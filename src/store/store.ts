@@ -96,6 +96,10 @@ export interface EditorState {
   clipboard: Element[];
   toasts: Toast[];
   fitRequest: number;
+  /** Portée des éléments créés quand l'étage a plusieurs affiches : toutes, ou seulement l'affiche active. */
+  newScope: 'all' | 'variant';
+  /** Aide à la vérification : circulations probables affichées dans l'éditeur (jamais imprimées). */
+  showCirculation: boolean;
 
   loadProject(p: Project, path: string | null): void;
   closeProject(): void;
@@ -122,6 +126,8 @@ export interface EditorState {
   setPreset(p: Partial<ToolPresets>): void;
   toast(msg: string, kind?: Toast['kind']): void;
   dismissToast(id: number): void;
+  setNewScope(scope: 'all' | 'variant'): void;
+  toggleCirculation(): void;
 
   addElements(els: Element[], select?: boolean): void;
   deleteSelection(): void;
@@ -145,6 +151,8 @@ export interface EditorState {
 }
 
 let toastSeq = 1;
+/** Étages pour lesquels la portée d'une création commune a déjà été signalée (une fois par session). */
+const scopeNoticeShown = new Set<string>();
 let lastCoalesce = { key: '', t: 0 };
 /** Saisie d'épaisseur de murs en cours : plan de départ, et dernier résultat (pour savoir si rien d'autre n'a changé). */
 let wallEdit: { key: string; floorId: string; t: number; base: readonly Element[]; result: readonly Element[] } | null = null;
@@ -171,6 +179,8 @@ export const useStore = create<EditorState>((set, get) => ({
   clipboard: [],
   toasts: [],
   fitRequest: 0,
+  newScope: 'all',
+  showCirculation: false,
 
   loadProject(p, path) {
     const b = p.buildings[0];
@@ -345,9 +355,24 @@ export const useStore = create<EditorState>((set, get) => ({
   },
   dismissToast(id) { set({ toasts: get().toasts.filter((t) => t.id !== id) }); },
 
+  setNewScope(newScope) { set({ newScope }); },
+  toggleCirculation() { set({ showCirculation: !get().showCirculation }); },
+
   addElements(els, select = true) {
-    get().mutateFloor((f) => { f.elements.push(...(els as Draft<Element>[])); });
-    if (select) set({ selection: els.map((e) => e.id) });
+    const state = get();
+    const floor = currentFloor(state);
+    const variants = floor?.variants ?? [];
+    const variantId = currentVariantId(state);
+    const own = variants.length > 1 && state.newScope === 'variant';
+    const placed = own ? els.map((e) => (e.variantId || e.excludedVariantIds?.length ? e : { ...e, variantId })) : els;
+    get().mutateFloor((f) => { f.elements.push(...(placed as Draft<Element>[])); });
+    if (select) set({ selection: placed.map((e) => e.id) });
+    // Première création commune sur un étage à plusieurs affiches : dire où l'élément apparaît.
+    if (floor && variants.length > 1 && !own && placed.some((e) => !e.variantId) && !scopeNoticeShown.has(floor.id)) {
+      scopeNoticeShown.add(floor.id);
+      const name = variants.find((v) => v.id === variantId)?.name ?? '';
+      get().toast(`Ajouté aux ${variants.length} affiches de cet étage. Pour n’ajouter qu’à « ${name} », choisissez « Nouveaux éléments : cette affiche » au-dessus du plan.`, 'info');
+    }
   },
 
   deleteSelection() {

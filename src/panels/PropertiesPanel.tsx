@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import * as A from '../app/actions';
+import { scopeLabel, scopeOf, selectionScope, setScopeAction } from '../app/scope';
 import { COUNTRIES, getCountry } from '../model/countries';
 import { defaultShadow, EMERGENCY_NUMBERS, FONTS, LAYER_NAMES } from '../model/defaults';
 import { boxOf, polygonArea, polylineLength } from '../model/geometry';
@@ -37,6 +38,38 @@ function Num({ value, onChange, min, max, step = 1, suffix, width }: { value: nu
         }} />
       {suffix && <em>{suffix}</em>}
     </span>
+  );
+}
+
+/** Largeur d'une porte ou d'une fenêtre : en centimètres réels une fois le plan étalonné, sinon en unités du plan. */
+function WidthRow({ value, u, max, onChange }: { value: number; u: number; max: number; onChange(v: number): void }) {
+  if (u > 0) {
+    return <Row label="Largeur"><Num value={Math.round((value / u) * 100)} min={Math.ceil((20 / u) * 100)} max={Math.floor((max / u) * 100)}
+      onChange={(cm) => onChange((cm * u) / 100)} suffix="cm" /></Row>;
+  }
+  return <Row label="Largeur" hint="Unités du plan : étalonnez l’échelle pour saisir des centimètres"><Num value={value} min={20} max={max} onChange={onChange} suffix="u" /></Row>;
+}
+
+/** Portée explicite : toutes les affiches de l'étage, ou l'affiche active uniquement. */
+function ScopeControl({ els, floor }: { els: Element[]; floor: Floor }) {
+  const variantId = useStore((s) => currentVariantId(s));
+  if (floor.variants.length <= 1) return null;
+  const n = floor.variants.length;
+  const kind = selectionScope(els, floor);
+  const active = floor.variants.find((v) => v.id === variantId)?.name ?? '';
+  const ids = els.map((e) => e.id);
+  const locked = els.some((e) => e.locked);
+  const note = els.length === 1 ? scopeLabel(scopeOf(els[0], floor), floor)
+    : kind === 'mixed' ? 'Portées différentes dans la sélection' : kind === 'all' ? `Communs aux ${n} affiches` : kind === 'own' ? `Uniquement sur « ${active} »` : 'Communs avec exceptions';
+  return (
+    <div className={`scope-box scope-${kind}`} role="group" aria-label="Portée de la sélection">
+      <div className="scope-title">S’applique à</div>
+      <div className="seg full">
+        <button disabled={locked} className={kind === 'all' ? 'on' : ''} aria-pressed={kind === 'all'} onClick={() => kind !== 'all' && setScopeAction(ids, 'all')}>Toutes les affiches ({n})</button>
+        <button disabled={locked} className={kind === 'own' ? 'on' : ''} aria-pressed={kind === 'own'} onClick={() => kind !== 'own' && setScopeAction(ids, 'own')}>Cette affiche uniquement</button>
+      </div>
+      <p className="scope-note">{note}</p>
+    </div>
   );
 }
 
@@ -144,6 +177,7 @@ function MultiProps({ els }: { els: Element[] }) {
   return (
     <div className="panel-body">
       <div className="props-head"><Icon name="group" size={18} /><div><h2>{els.length} éléments</h2><p className="muted small">{grouped ? 'Groupe' : 'Sélection multiple'}</p></div></div>
+      {(() => { const f = currentFloor(S()); return f ? <ScopeControl els={els} floor={f} /> : null; })()}
       <Section title="Aligner et répartir" icon="alignLeft">
         <div className="btn-grid">
           {([['left', 'alignLeft', 'À gauche'], ['hcenter', 'alignHCenter', 'Centrer horizontalement'], ['right', 'alignRight', 'À droite'], ['hdist', 'distH', 'Répartir horizontalement'],
@@ -344,7 +378,6 @@ function ElementProps({ el, floor }: { el: Element; floor: Floor }) {
     }, { coalesce: `${el.id}:${key}` });
   const e = el as any;
   const u = floor.unitsPerMeter;
-  const variant = floor.variants.find((v) => v.id === variantId);
   const locked = !!el.locked;
   const shadow = el.shadow ?? defaultShadow();
   const setShadow = (p: Partial<typeof shadow>) => upd({ shadow: { ...shadow, ...p } }, `shadow:${Object.keys(p).join(',')}`);
@@ -358,12 +391,9 @@ function ElementProps({ el, floor }: { el: Element; floor: Floor }) {
         <div>
           <h2>{title}</h2>
           <p className="muted small">{el.type === 'symbol' ? symbolName(e.symbolId, customSymbols) : LAYER_NAMES[el.layer]}{locked ? ' · verrouillé' : ''}</p>
-          <button className="scope-link" onClick={() => setTab('layout')}>
-            {el.variantId ? `Uniquement « ${floor.variants.find((v) => v.id === el.variantId)?.name ?? variant?.name} »`
-              : el.excludedVariantIds?.length ? 'Commun · exceptions selon l’affiche' : 'Commun à toutes les versions'}
-          </button>
         </div>
       </div>
+      <ScopeControl els={[el]} floor={floor} />
       <div className="ptabs" role="tablist">
         <button className={tab === 'style' ? 'on' : ''} onClick={() => setTab('style')}><Icon name="fill" size={14} /> Style</button>
         {hasText && <button className={tab === 'text' ? 'on' : ''} onClick={() => setTab('text')}><Icon name="textIcon" size={14} /> Texte</button>}
@@ -436,7 +466,7 @@ function ElementProps({ el, floor }: { el: Element; floor: Floor }) {
                   </select>
                 </Row>
                 {e.doorType === 'single' && <Row label="Ouverture"><Seg value={e.swing} options={[['left', 'Gauche'], ['right', 'Droite']]} onChange={(v) => upd({ swing: v })} /></Row>}
-                <Row label="Largeur"><Num value={e.width} min={20} max={800} onChange={(v) => upd({ width: v })} suffix={u > 0 ? `${((e.width / u) * 100).toFixed(0)} cm` : 'u'} /></Row>
+                <WidthRow value={e.width} u={u} max={800} onChange={(v) => upd({ width: v })} />
                 <Row label="Côté du débattement"><Seg value={e.flipY ? 'b' : 'a'} options={[['a', 'Côté A'], ['b', 'Côté B']]} onChange={(v) => upd({ flipY: v === 'b' })} /></Row>
                 <Row label="Issue de secours" hint="Marquage vert sur le seuil"><Toggle checked={e.emergency} onChange={(v) => upd({ emergency: v })} /></Row>
                 <Row label="Porte coupe-feu" hint="Marquage rouge sur le seuil, ajoutée à la légende"><Toggle checked={!!e.fireRated} onChange={(v) => upd({ fireRated: v })} /></Row>
@@ -445,7 +475,7 @@ function ElementProps({ el, floor }: { el: Element; floor: Floor }) {
             )}
             {el.type === 'window' && (
               <Section title="Fenêtre" icon="window">
-                <Row label="Largeur"><Num value={e.width} min={20} max={1000} onChange={(v) => upd({ width: v })} suffix={u > 0 ? `${((e.width / u) * 100).toFixed(0)} cm` : 'u'} /></Row>
+                <WidthRow value={e.width} u={u} max={1000} onChange={(v) => upd({ width: v })} />
                 <Row label="Épaisseur"><Num value={e.depth} min={2} max={80} onChange={(v) => upd({ depth: v })} /></Row>
                 <Row label="Vantaux"><Num value={e.panes} min={1} max={8} onChange={(v) => upd({ panes: Math.round(v) })} /></Row>
                 <Row label="Volet"><Seg value={e.shutter ?? 'none'} options={[['none', 'Aucun'], ['rolling', 'Roulant'], ['hinged', 'Battants']]} onChange={(v) => upd({ shutter: v })} /></Row>
@@ -585,14 +615,7 @@ function ElementProps({ el, floor }: { el: Element; floor: Floor }) {
                   {(Object.keys(LAYER_NAMES) as LayerId[]).filter((l) => l !== 'background').map((l) => <option key={l} value={l}>{LAYER_NAMES[l]}</option>)}
                 </select>
               </Row>
-              <Row label="Versions">
-                <select value={el.variantId ? 'own' : el.excludedVariantIds?.length ? 'shared' : 'all'}
-                  onChange={(ev) => upd({ variantId: ev.target.value === 'own' ? variantId : undefined, excludedVariantIds: undefined })}>
-                  <option value="all">Toutes les versions</option>
-                  <option value="own">Uniquement « {variant?.name} »</option>
-                  {!!el.excludedVariantIds?.length && <option value="shared" disabled>Commun avec exceptions</option>}
-                </select>
-              </Row>
+              {floor.variants.length > 1 && <p className="muted small">Portée : {scopeLabel(scopeOf(el, floor), floor)} (réglable en haut du panneau).</p>}
             </Section>
           </>
         )}
@@ -717,7 +740,7 @@ function FloorProps({ floor }: { floor: Floor }) {
         <button className={tab === 'bg' ? 'on' : ''} onClick={() => setTab('bg')}><Icon name="image" size={14} /> Fond</button>
       </div>
       {tab === 'plan' && <PlanTab floor={floor} />}
-      {tab === 'page' && <PageSettings page={floor.page} />}
+      {tab === 'page' && <PageSummary page={floor.page} />}
       {tab === 'bg' && <BackgroundTab floor={floor} />}
     </div>
   );
@@ -736,7 +759,7 @@ function PlanTab({ floor }: { floor: Floor }) {
   };
   return (
     <>
-      <section className={`status-box status-${tb.status}`}>
+      <section id="floor-status" className={`status-box status-${tb.status}`}>
         <div className="row between"><span className="small">Statut du plan</span><span className={`chip status-${tb.status}`}>{STATUS_LABEL[tb.status]}</span></div>
         {tb.status === 'to_validate' && tb.validationReason && <p className="small">{tb.validationReason}.</p>}
         {tb.status === 'validated' ? (
@@ -788,7 +811,7 @@ function PlanTab({ floor }: { floor: Floor }) {
         </Row>
       </Section>
       <Section title="Numéros d’urgence" icon="phone">
-        <input className="full-input" type="text" value={tb.emergencyNumbers} onChange={(e) => setTb({ emergencyNumbers: e.target.value })} />
+        <input id="floor-numbers" className="full-input" type="text" value={tb.emergencyNumbers} onChange={(e) => setTb({ emergencyNumbers: e.target.value })} />
         <button className="btn small" onClick={() => setTb({ emergencyNumbers: EMERGENCY_NUMBERS[project.country] ?? EMERGENCY_NUMBERS.INT })}>Numéros du pays</button>
       </Section>
       <Section title="Consignes" icon="textIcon">
@@ -810,45 +833,37 @@ function PlanTab({ floor }: { floor: Floor }) {
   );
 }
 
-export function PageSettings({ page }: { page: PageSetup }) {
-  const set = (patch: Partial<PageSetup>) =>
-    useStore.getState().mutateFloor((f) => { Object.assign(f.page, patch); }, { keepValidation: true, coalesce: `page:${Object.keys(patch).join(',')}` });
+/** La mise en page est stockée sur l'étage : la rappeler quand il porte plusieurs affiches. */
+export function PageScopeNote() {
+  const floor = useStore((s) => currentFloor(s));
+  if (!floor || floor.variants.length <= 1) return null;
+  return (
+    <p className="page-scope" role="note">
+      <Icon name="layers" size={14} /> Mise en page commune aux {floor.variants.length} affiches de « {floor.name} » : {floor.variants.map((v) => v.name).join(', ')}.
+    </p>
+  );
+}
+
+/** Onglet Page : résumé de la mise en page ; tous les réglages sont dans l'aperçu (un seul endroit). */
+function PageSummary({ page }: { page: PageSetup }) {
+  const items = ([['showLegend', 'légende'], ['showInstructions', 'consignes'], ['showEmergencyNumbers', 'numéros d’urgence'], ['showScaleBar', 'échelle'], ['showNorth', 'nord']] as const)
+    .filter(([k]) => page[k]).map(([, l]) => l);
   return (
     <>
-      <Section title="Thème graphique" icon="theme">
-        <div className="theme-grid">
-          {(Object.keys(THEMES) as PageTheme[]).map((t) => <ThemeThumb key={t} theme={t} accent={page.accentColor} active={page.theme === t} onClick={() => set(themePatch(t))} />)}
+      <PageScopeNote />
+      <Section title="Mise en page" icon="paper">
+        <div className="page-summary">
+          <ThemeThumb theme={page.theme} accent={page.accentColor} active />
+          <div>
+            <b>{THEMES[page.theme].name}</b>
+            <p className="small">{page.paper} {page.orientation === 'portrait' ? 'portrait' : 'paysage'} · marges {page.marginMm} mm · {page.scaleMode === 'fixed' ? `échelle 1:${page.scale}` : 'ajustée à la page'}</p>
+            <p className="muted tiny">{items.length ? `Affiche : ${items.join(', ')}` : 'Aucun bloc affiché'}</p>
+          </div>
         </div>
-        <Row label="Accent"><Color value={page.accentColor} onChange={(v) => set({ accentColor: v })} /></Row>
-        <Row label="Fond du plan"><Color value={page.planBackground} onChange={(v) => set({ planBackground: v })} /></Row>
-      </Section>
-      <Section title="Format" icon="paper">
-        <Row label="Papier"><Seg value={page.paper} options={[['A4', 'A4'], ['A3', 'A3'], ['A2', 'A2']]} onChange={(v) => set({ paper: v })} /></Row>
-        <Row label="Orientation"><Seg value={page.orientation} options={[['portrait', 'Portrait'], ['landscape', 'Paysage']]} onChange={(v) => set({ orientation: v })} /></Row>
-        <Row label="Marges"><Num value={page.marginMm} min={0} max={40} onChange={(v) => set({ marginMm: v })} suffix="mm" /></Row>
-        <Row label="Légende"><Seg value={page.sidePosition} options={[['left', 'Gauche'], ['right', 'Droite'], ['bottom', 'Bas']]} onChange={(v) => set({ sidePosition: v })} /></Row>
-        <p className="muted tiny">
-          {page.orientation === 'portrait'
-            ? 'En portrait, « Gauche » et « Droite » placent la légende à côté du plan seulement s’il est en hauteur ; sinon elle passe en bas. Les tailles s’ajustent à la forme du plan.'
-            : 'Les tailles de la légende et du plan s’ajustent automatiquement à la forme du plan.'}
-        </p>
-      </Section>
-      <Section title="Contenu" icon="legendIcon">
-        {([['showTitleBlock', 'En-tête'], ['showFooter', 'Cartouche (auteur, date, version)'], ['showLegend', 'Légende'], ['showInstructions', 'Consignes'], ['showEmergencyNumbers', 'Numéros d’urgence'],
-          ['showAerial', 'Vue aérienne du site'], ['showSketch', 'Croquis de situation (miniature du plan)'],
-          ['showScaleBar', 'Barre d’échelle'], ['showNorth', 'Flèche du nord'], ['showWatermark', 'Filigrane Brouillon / À valider'], ['showFrame', 'Cadre de page (thèmes encadrés)']] as const).map(([k, l]) => (
-          <div key={k} className="toggle-line"><Toggle checked={!!page[k]} onChange={(v) => set({ [k]: v } as any)} label={l} /></div>
-        ))}
-        {page.showNorth && <Row label="Angle du nord"><Num value={page.northAngle} min={-360} max={360} onChange={(v) => set({ northAngle: v })} suffix="°" /></Row>}
-      </Section>
-      <Section title="Cadres" icon="layout">
-        <p className="muted tiny">Cochez les zones à entourer d’un cadre. Sans choix de votre part, chaque thème applique le sien.</p>
-        {FRAME_ZONES.map(([k, l]) => (
-          <div key={k} className="toggle-line"><Toggle checked={frameOn(page, k)} onChange={(v) => set({ frames: { ...page.frames, [k]: v } })} label={l} /></div>
-        ))}
-        {page.frames && Object.keys(page.frames).length > 0 && (
-          <button className="btn small" onClick={() => set({ frames: undefined })}>Revenir aux cadres du thème</button>
-        )}
+        <button className="btn primary full" onClick={() => window.dispatchEvent(new CustomEvent('evac:command', { detail: { action: 'layout-settings' } }))}>
+          <Icon name="print" size={15} /> Régler la mise en page…
+        </button>
+        <p className="muted tiny">Thème, papier, échelle, zone imprimée, blocs et cadres se règlent dans l’aperçu, page sous les yeux (Ctrl+P). Le ruban <i>Mise en page</i> garde les réglages courants.</p>
       </Section>
     </>
   );

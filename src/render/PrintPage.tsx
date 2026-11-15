@@ -93,7 +93,7 @@ export function PrintPage({ building, floor, variantId, customSymbols, page = fl
   const clipId = `clip-${uniqueKey}`;
   const status = tb.status;
   // Un sous-titre saisi dans le cartouche remplace entièrement le sous-titre automatique.
-  // Avec plusieurs versions, le nom de la version reste toujours affiché pour distinguer les pages.
+  // Avec plusieurs affiches, le nom de l’affiche reste toujours affiché pour distinguer les pages.
   const variantName = floor.variants.length > 1 ? variant?.name ?? '' : '';
   const subtitle = tb.subtitle.trim()
     ? [tb.subtitle.trim(), variantName].filter(Boolean).join('  ·  ')
@@ -521,13 +521,27 @@ function instructionLayout(text: string, rect: { y: number; w: number; h: number
   return { entries, clipped: false };
 }
 
-export type PrintIssue = 'marker-missing' | 'marker-multiple' | 'plan-clipped' | 'instructions-clipped';
+export type PrintIssue = 'marker-missing' | 'marker-multiple' | 'plan-clipped' | 'instructions-clipped'
+  | 'route-missing' | 'exit-missing' | 'numbers-missing' | 'not-validated';
 
 export const PRINT_ISSUE_LABEL: Record<PrintIssue, string> = {
   'marker-missing': 'Repère « Vous êtes ici » absent de la page',
   'marker-multiple': 'Plusieurs repères « Vous êtes ici » sur la page',
   'plan-clipped': 'Plan rogné à l’échelle fixe',
   'instructions-clipped': 'Consignes tronquées',
+  'route-missing': 'Aucun itinéraire d’évacuation sur la page',
+  'exit-missing': 'Aucune sortie de secours signalée (pictogramme ou porte « issue de secours »)',
+  'numbers-missing': 'Numéros d’urgence vides alors qu’ils sont affichés',
+  'not-validated': 'Plan pas encore validé',
+};
+
+/** Pictogrammes qui signalent une sortie de secours (ISO 7010 E001, E002, E026, E030 et panneau texte). */
+const EXIT_SYMBOLS = new Set(['iso-E001', 'iso-E002', 'iso-E026', 'iso-E030', 'exit-text']);
+
+/** Gravité d'une alerte : « check » = à vérifier sur la page ; « info » = rappel (n'empêche rien). */
+export const PRINT_ISSUE_LEVEL: Record<PrintIssue, 'check' | 'info'> = {
+  'marker-missing': 'check', 'marker-multiple': 'check', 'plan-clipped': 'check', 'instructions-clipped': 'check',
+  'route-missing': 'check', 'exit-missing': 'check', 'numbers-missing': 'check', 'not-validated': 'info',
 };
 
 export function printIssues(floor: Floor, variantId: string, page = floor.page): PrintIssue[] {
@@ -549,6 +563,13 @@ export function printIssues(floor: Floor, variantId: string, page = floor.page):
     const { rects } = sideLayout(L, page, floor, variantId);
     if (rects.instr && instructionLayout(floor.titleBlock.instructions, rects.instr).clipped) issues.push('instructions-clipped');
   }
+  // Contenu attendu sur une affiche d'évacuation (aide à la relecture, ne bloque pas l'export)
+  const shown = floor.elements.filter((e) => (e.opacity ?? 1) > 0 && isVisibleInVariant(e, variantId)
+    && floor.layers.some((layer) => layer.id === e.layer && layer.visible));
+  if (!shown.some((e) => e.type === 'route' && e.points.length > 1)) issues.push('route-missing');
+  if (!shown.some((e) => (e.type === 'symbol' && EXIT_SYMBOLS.has(e.symbolId)) || (e.type === 'door' && e.emergency))) issues.push('exit-missing');
+  if (page.showEmergencyNumbers && !floor.titleBlock.emergencyNumbers.trim()) issues.push('numbers-missing');
+  if (floor.titleBlock.status !== 'validated') issues.push('not-validated');
   return issues;
 }
 

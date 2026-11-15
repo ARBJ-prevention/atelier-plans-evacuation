@@ -3,12 +3,13 @@ import { makeElement } from '../model/defaults';
 import { getCountry } from '../model/countries';
 import {
   boxOf, constrain45, distance, distToSegment, elementBounds, floorContentBounds, isVisibleInVariant,
-  openingWallFit, polylineLength, raiseOpeningAboveWalls, snapPointToWalls, wallJoints, rectContains, rectFromPoints, rectsIntersect, RESIZE_DIRECTIONS, resizeBoxElement, rotatePoint, snapSymbolToWalls, snapToGrid, translateElement,
+  openingWallFit, polylineLength, raiseOpeningAboveWalls, snapPointToWalls, wallJoints, rectContains, rectFromPoints, rectsIntersect, RESIZE_DIRECTIONS, resizeBoxElement, rotatePoint, roundDoorWidth, snapSymbolToWalls, snapToGrid, translateElement,
   unionRects, windowGlassWallFit, windowResizeWallFit, type Rect,
 } from '../model/geometry';
 import type { DoorElement, Element, Floor, Pt, SymbolElement, WindowElement } from '../model/types';
 import { ElementView, legendCount, polygonCentroid } from '../render/ElementView';
 import { FloorDrawing } from '../render/FloorDrawing';
+import { computeCirculation, type Circulation } from '../services/circulation';
 import { getBuiltinSymbol } from '../symbols/library';
 import { currentFloor, currentVariantId, useStore, type Tool } from '../store/store';
 
@@ -33,6 +34,9 @@ const ZONE_STYLE = (points: Pt[]) => ({
   strokeWidth: 2.5, dash: 'dashed', label: 'Zone', labelColor: '#d52b1e', labelBold: true,
 });
 const RULER = 22;
+
+/** Écart (pixels écran) entre le tracé et le cadre d'étirement d'un itinéraire, d'un mur ou d'une zone. */
+const STRETCH_GAP = 22;
 
 function resizeHandle(key: string, [x, y]: Pt, [sx, sy]: Pt, zoom: number, rotation = 0) {
   const angle = Math.atan2(sy, sx) * 180 / Math.PI + rotation;
@@ -72,6 +76,15 @@ export function Canvas({ onCalibrate }: CanvasProps) {
   const project = useStore((s) => s.project)!;
   const floor = useStore((s) => currentFloor(s))!;
   const variantId = useStore((s) => currentVariantId(s));
+  const showCirculation = useStore((s) => s.showCirculation);
+  const [circulation, setCirculation] = useState<Circulation | null>(null);
+  useEffect(() => {
+    if (!showCirculation) { setCirculation(null); return; }
+    // recalcul différé : pas de calcul à chaque image pendant un déplacement
+    const t = setTimeout(() => setCirculation(computeCirculation(floor, variantId)), circulation ? 250 : 0);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showCirculation, floor, variantId]);
   const selection = useStore((s) => s.selection);
   const tool = useStore((s) => s.tool);
   const pendingSymbol = useStore((s) => s.pendingSymbol);
@@ -447,7 +460,7 @@ export function Canvas({ onCalibrate }: CanvasProps) {
     if (keepTool) s.addElements([el], false);
     else { s.setTool('select'); s.addElements([el]); }
     if (isYah && floor.variants.length > 1) {
-      s.toast('« Vous êtes ici » ajouté uniquement à la version active du plan.', 'info');
+      s.toast(`« Vous êtes ici » ajouté uniquement à l’affiche « ${floor.variants.find((v) => v.id === variantId)?.name ?? ''} ».`, 'info');
     }
   };
 
@@ -563,8 +576,11 @@ export function Canvas({ onCalibrate }: CanvasProps) {
           s.beginLive();
         }
         if (d.kind === 'resize') {
-          const resized = resizeBoxElement(d.orig, d.direction, delta, e.shiftKey, lc, d.wallDepth);
+          let resized = resizeBoxElement(d.orig, d.direction, delta, e.shiftKey, lc, d.wallDepth);
           const [sx, sy] = d.direction;
+          if (resized.type === 'door' && floor.unitsPerMeter > 0 && sx) {
+            resized = roundDoorWidth(resized, sx, floor.unitsPerMeter, s.grid.snap && !e.altKey ? 5 : 1);
+          }
           const canAlign = (s.grid.snap || s.guides) && !e.altKey && !(sx && sy && e.shiftKey);
           const tolerance = 8 / s.view.zoom;
           const fit = resized.type === 'window' && canAlign
@@ -745,13 +761,11 @@ export function Canvas({ onCalibrate }: CanvasProps) {
           handles.push(<circle key={`m${i}`} data-handle={`m:${i}`} className="handle-mid" cx={(pt[0] + nx[0]) / 2} cy={(pt[1] + nx[1]) / 2} r={hs * 0.45} />);
         }
       });
-      el.points.forEach((pt, i) => handles.push(
-        <rect key={`v${i}`} data-handle={`v:${i}`} className="handle" x={pt[0] - hs / 2} y={pt[1] - hs / 2} width={hs} height={hs} />,
-      ));
-      // Cadre d'étirement : 4 coins + 4 côtés (le côté opposé reste fixe).
+      // Cadre d'étirement : 4 coins + 4 côtés (le côté opposé reste fixe). Écarté des sommets
+      // pour qu'une poignée du cadre ne recouvre jamais une extrémité du tracé.
       const r = rectFromPoints(el.points);
-      const padX = Math.max(10 / z, (40 / z - r.w) / 2);
-      const padY = Math.max(10 / z, (40 / z - r.h) / 2);
+      const padX = Math.max(STRETCH_GAP / z, (40 / z - r.w) / 2);
+      const padY = Math.max(STRETCH_GAP / z, (40 / z - r.h) / 2);
       const x0 = r.x - padX, y0 = r.y - padY, x1 = r.x + r.w + padX, y1 = r.y + r.h + padY;
       handles.push(<rect key="pbox" className="sel-box" x={x0} y={y0} width={x1 - x0} height={y1 - y0} />);
       RESIZE_DIRECTIONS.forEach(([sx, sy], i) => {
@@ -759,6 +773,10 @@ export function Canvas({ onCalibrate }: CanvasProps) {
         const at: Pt = [(x0 + x1) / 2 + sx * (x1 - x0) / 2, (y0 + y1) / 2 + sy * (y1 - y0) / 2];
         handles.push(resizeHandle(`pb:${i}`, at, [sx, sy], z));
       });
+      // sommets en dernier : toujours au-dessus des autres poignées
+      el.points.forEach((pt, i) => handles.push(
+        <rect key={`v${i}`} data-handle={`v:${i}`} className="handle" x={pt[0] - hs / 2} y={pt[1] - hs / 2} width={hs} height={hs} />,
+      ));
     } else {
       const b = selectionBox(el)!;
       const pivot: Pt = el.type === 'text' || el.type === 'door' ? [el.x, el.y] : [b.cx, b.cy];
@@ -768,8 +786,11 @@ export function Canvas({ onCalibrate }: CanvasProps) {
       handles.push(<polygon key="box" className="sel-box" points={corners.map((c) => c.join(',')).join(' ')} />);
       const handleW = Math.max(b.w, 40 / z), handleH = Math.max(b.h, 40 / z);
       const widthOnly = el.type === 'door' || (el.type === 'shape' && el.shape === 'line');
+      // pictogramme (toujours proportionnel) ou objet petit à l'écran : les 4 coins suffisent
+      const cornersOnly = !widthOnly && (el.type === 'symbol' || Math.max(b.w, b.h) * z < 48);
       RESIZE_DIRECTIONS.forEach(([sx, sy], i) => {
         if (widthOnly && sy) return;
+        if (cornersOnly && !(sx && sy)) return;
         const y = el.type === 'door' ? el.y : b.cy + sy * handleH / 2;
         handles.push(resizeHandle(`r:${i}`, rot([b.cx + sx * handleW / 2, y]), [sx, sy], z, rotation));
       });
@@ -896,10 +917,30 @@ export function Canvas({ onCalibrate }: CanvasProps) {
         {grid.show && <rect x={0} y={0} width={size.w} height={size.h} fill="url(#editor-grid)" pointerEvents="none" />}
         <g transform={`translate(${view.x} ${view.y}) scale(${z})`}>
           <FloorDrawing floor={floor} variantId={variantId} customSymbols={project.customSymbols} interactive />
+          {circulation && (
+            <g className="circulation" pointerEvents="none" aria-hidden="true">
+              {circulation.unreachable && <path d={circulation.unreachable} fill="#f59e0b" fillOpacity={0.3} />}
+              {circulation.paths.map((p, i) => (
+                <polyline key={i} points={p.points.map((q) => q.join(',')).join(' ')} fill="none" stroke="#16a34a" strokeOpacity={0.32}
+                  strokeWidth={(floor.unitsPerMeter > 0 ? floor.unitsPerMeter : 50) * 1.1} strokeLinecap="round" strokeLinejoin="round" />
+              ))}
+              {circulation.stranded.map(([x, y], i) => <circle key={`s${i}`} cx={x} cy={y} r={36 / z} fill="none" stroke="#dc2626" strokeWidth={4 / z} />)}
+            </g>
+          )}
           {rectDraft && <rect className="draft-rect" x={rectDraft.x} y={rectDraft.y} width={rectDraft.w} height={rectDraft.h} />}
           {preview}
           {calibPreview}
           <g className="overlay" style={{ ['--z' as any]: z }}>
+            {floor.variants.length > 1 && floor.elements.filter((x) => x.variantId === variantId && !(x.type === 'symbol' && x.symbolId === 'you-are-here')).map((x) => {
+              // repère « propre à cette affiche » (éditeur uniquement, jamais imprimé)
+              const r = elementBounds(x, lc);
+              return (
+                <g key={`own-${x.id}`} className="own-mark" transform={`translate(${r.x + r.w} ${r.y}) scale(${1 / z})`}>
+                  <title>Propre à cette affiche</title>
+                  <circle r={5} />
+                </g>
+              );
+            })}
             {selBoxes}
             {handles}
             {marquee && <rect className="marquee" x={marquee.x} y={marquee.y} width={marquee.w} height={marquee.h} />}
@@ -938,6 +979,7 @@ export function Canvas({ onCalibrate }: CanvasProps) {
       {hint && !editing && <div className="canvas-hint">{hint}</div>}
       {editing && <div className="canvas-hint">Entrée : valider{editing.field.multiline ? ' • Maj+Entrée : nouvelle ligne' : ''} • Échap : annuler</div>}
       <CoordReadout floor={floor} cursor={cursor} />
+      {circulation && <CirculationNote c={circulation} />}
       {useStore.getState().rulers && <Rulers w={size.w} h={size.h} view={view} upm={floor.unitsPerMeter} cursor={cursor} />}
     </div>
   );
@@ -1028,7 +1070,7 @@ const HINTS: Partial<Record<Tool, string>> = {
   route: 'Cliquez pour poser les points de passage • Maj : angles à 45° • Double-clic, Entrée, Échap ou clic droit : terminer',
   room: 'Cliquez les angles de la pièce • Cliquez sur le premier point, double-clic, Entrée, Échap ou clic droit pour fermer',
   zone: 'Cliquez les angles de la zone • Cliquez sur le premier point, double-clic, Entrée, Échap ou clic droit pour fermer',
-  door: 'Cliquez pour placer une porte (type choisi dans le ruban Bâtiment) • retour automatique à la sélection • Maj + clic : en placer plusieurs',
+  door: 'Cliquez pour placer une porte (type choisi dans le ruban Plan) • retour automatique à la sélection • Maj + clic : en placer plusieurs',
   window: 'Cliquez sur un mur pour placer une fenêtre • retour automatique à la sélection • Maj + clic : en placer plusieurs',
   shape: 'Tracez un rectangle pour dessiner la forme choisie dans le ruban Insérer',
   stairs: 'Tracez un rectangle (ou cliquez) pour placer un escalier • Maj : en placer plusieurs',
@@ -1038,6 +1080,26 @@ const HINTS: Partial<Record<Tool, string>> = {
   calibrate: 'Étalonnage : cliquez deux points dont vous connaissez la distance réelle (ex. une cote du plan)',
   pan: 'Glissez pour déplacer la vue • Molette : zoom',
 };
+
+/** Légende de l'aide « circulations probables » (rappel : aide à la vérification, non imprimée). */
+function CirculationNote({ c }: { c: Circulation }) {
+  const m = c.paths.map((p) => p.meters).filter((x): x is number => x != null);
+  return (
+    <div className="circulation-note" role="status">
+      <b>Circulations probables</b> · aide à la vérification, non imprimée
+      {!c.exits && <div>Aucune sortie trouvée : marquez une porte « issue de secours » ou posez un pictogramme de sortie.</div>}
+      {!!c.exits && !c.closedOutline && <div>Façade non fermée : l’intérieur n’a pas pu être distingué de l’extérieur.</div>}
+      {!!c.exits && (
+        <>
+          <div><span className="sw green" /> chemin le plus court du repère vers la sortie la plus proche{m.length ? ` (≈ ${m.map((x) => x.toFixed(0)).join(', ')} m)` : ''}</div>
+          {c.unreachable && <div><span className="sw orange" /> zones sans accès à une sortie ({Math.round(c.unreachableShare * 100)} % de l’intérieur) : porte manquante ou mal posée ?</div>}
+          {!!c.stranded.length && <div><span className="sw red" /> repère sans chemin vers une sortie</div>}
+        </>
+      )}
+      <div className="muted">Calcul sur les murs et les portes ; à confirmer par la lecture du plan.</div>
+    </div>
+  );
+}
 
 function CoordReadout({ floor, cursor }: { floor: Floor; cursor: Pt | null }) {
   if (!cursor) return null;

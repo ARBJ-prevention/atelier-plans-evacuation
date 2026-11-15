@@ -9,19 +9,35 @@ import { LibraryPanel } from './panels/LibraryPanel';
 import { ProjectPanel } from './panels/ProjectPanel';
 import { PropertiesPanel } from './panels/PropertiesPanel';
 import { Ribbon, TOOL_KEYS } from './panels/Ribbon';
-import { PrintPage, STATUS_LABEL, type PrintIssue } from './render/PrintPage';
+import type { ReviewReturn } from './dialogs/PrintReview';
+import { PRINT_ISSUE_LABEL, PrintPage, STATUS_LABEL, type PrintIssue } from './render/PrintPage';
 import { api } from './services/api';
 import { currentBuilding, currentFloor, currentVariantId, useStore } from './store/store';
 import { alertDialog, DialogHost } from './ui/dialogs';
 import { Icon } from './ui/icons';
 
 const AUTOSAVE_MS = 30_000;
+const PANELS_KEY = 'evac.panels';
+
+/** Panneaux gauche et droit repliés ou non (préférence du poste ; repli sans stockage disponible). */
+function loadPanels(): { left: boolean; right: boolean } {
+  try {
+    const v = JSON.parse(localStorage.getItem(PANELS_KEY) ?? '{}');
+    return { left: v.left !== false, right: v.right !== false };
+  } catch { return { left: true, right: true }; }
+}
 
 export function App() {
   const project = useStore((s) => s.project);
   const [leftTab, setLeftTab] = useState<'project' | 'library' | 'layers'>('library');
+  const [panels, setPanels] = useState(loadPanels);
+  useEffect(() => { try { localStorage.setItem(PANELS_KEY, JSON.stringify(panels)); } catch { /* stockage indisponible */ } }, [panels]);
+  const showLeft = (tab?: 'project' | 'library' | 'layers') => { setPanels((p) => ({ ...p, left: true })); if (tab) setLeftTab(tab); };
   const [printOpen, setPrintOpen] = useState<'' | 'preview' | 'current' | 'scale'>('');
   const [focusInstructions, setFocusInstructions] = useState(0);
+  /** Correction d'alerte en cours : de quoi rouvrir la vérification là où on l'a quittée. */
+  const [review, setReview] = useState<{ back: ReviewReturn; issue: PrintIssue; label: string } | null>(null);
+  const [reviewBack, setReviewBack] = useState<ReviewReturn | null>(null);
   const [help, setHelp] = useState<'' | 'guide' | 'shortcuts' | 'about'>('');
   const [version, setVersion] = useState('');
 
@@ -43,7 +59,7 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    const h = () => setLeftTab('library');
+    const h = () => showLeft('library');
     window.addEventListener('evac:show-library', h);
     return () => window.removeEventListener('evac:show-library', h);
   }, []);
@@ -65,6 +81,11 @@ export function App() {
 
   // ——— Menu de l'application ———
   useEffect(() => api().onMenu((action, arg) => runCommand(action, arg)), []);
+  useEffect(() => {
+    const h = (e: Event) => { const { action, arg } = (e as CustomEvent<{ action: string; arg?: string }>).detail; runCommand(action, arg); };
+    window.addEventListener('evac:command', h);
+    return () => window.removeEventListener('evac:command', h);
+  }, []);
 
   const runCommand = async (action: string, arg?: string) => {
     const s = useStore.getState();
@@ -72,6 +93,20 @@ export function App() {
     if (document.querySelector('.modal-backdrop') && action !== 'save-and-close' && action !== 'discard-and-close') return;
     switch (action) {
       case 'new': return A.newProjectAction();
+      case 'new-from-plan': {
+        // Créer un bâtiment depuis un plan : nouveau projet, puis assistant d'import sur son premier étage
+        const prev = s.project;
+        await A.newProjectAction();
+        const now = useStore.getState().project;
+        if (now && now !== prev) await A.importBackgroundAction();
+        return;
+      }
+      case 'layout-settings': {
+        if (!has) return;
+        setPrintOpen('preview');
+        setTimeout(() => document.getElementById('layout-settings')?.scrollIntoView({ block: 'start', behavior: 'smooth' }), 250);
+        return;
+      }
       case 'open': return A.openProjectAction();
       case 'open-recent': return A.openProjectAction(arg);
       case 'save': return has && A.saveProject(false);
@@ -81,6 +116,13 @@ export function App() {
       case 'import-symbol': return has && A.importSymbolAction();
       case 'print-preview': return has && setPrintOpen('preview');
       case 'export-pdf': case 'export-png': return has && setPrintOpen('current');
+      case 'export-building': {
+        const b = currentBuilding(s);
+        if (!b) return;
+        const keys = b.floors.flatMap((f) => f.variants.map((v) => `${f.id}:${v.id}`));
+        setReviewBack({ mode: 'building', selected: keys, previewKey: `${s.floorId}:${currentVariantId(s)}` });
+        return setPrintOpen('preview');
+      }
       case 'undo': return s.undo();
       case 'redo': return s.redo();
       case 'cut': return s.cutSelection();
@@ -125,16 +167,31 @@ export function App() {
     }
   };
 
-  const editPrintIssue = (floorId: string, variantId: string, issue: PrintIssue) => {
+  const editPrintIssue = (floorId: string, variantId: string, issue: PrintIssue, back?: ReviewReturn) => {
     const s = useStore.getState();
     const building = s.project?.buildings.find((b) => b.floors.some((f) => f.id === floorId));
     const floor = building?.floors.find((f) => f.id === floorId);
     if (!building || !floor) return;
+    if (issue !== 'plan-clipped' && back) {
+      const v = floor.variants.find((x) => x.id === variantId);
+      setReview({ back, issue, label: `${floor.name} · ${v?.name ?? ''}` });
+    }
     if (s.floorId !== floorId) s.setFloor(building.id, floorId);
     s.setVariant(variantId);
     s.setTool('select');
     setPrintOpen(issue === 'plan-clipped' ? 'scale' : '');
-    if (issue === 'instructions-clipped') {
+    if (issue === 'route-missing') {
+      s.select([]);
+      s.setTool('route');
+      s.toast('Cliquez les points de passage de l’itinéraire ; double-clic pour terminer.', 'info');
+    } else if (issue === 'exit-missing') {
+      s.select([]);
+      showLeft('library');
+      s.toast('Posez un pictogramme « Sortie de secours » (E001, E002…) ou cochez « Issue de secours » sur une porte.', 'info');
+    } else if (issue === 'numbers-missing' || issue === 'not-validated') {
+      s.select([]);
+      setFocusField(issue === 'numbers-missing' ? 'floor-numbers' : 'floor-status');
+    } else if (issue === 'instructions-clipped') {
       setFocusInstructions((value) => value + 1);
     } else if (issue !== 'plan-clipped') {
       const markers = floor.elements.filter((e) => e.type === 'symbol' && e.symbolId === 'you-are-here' && isVisibleInVariant(e, variantId));
@@ -143,12 +200,23 @@ export function App() {
         s.select(markers.map((e) => e.id));
         s.requestFit();
         if (issue === 'marker-missing') {
-          setLeftTab('layers');
+          showLeft('layers');
           s.toast('Vérifiez la visibilité du calque, l’opacité du repère et la zone imprimée.', 'info');
         }
       }
     }
   };
+  const [focusField, setFocusField] = useState('');
+  useEffect(() => {
+    if (!focusField) return;
+    const t = setTimeout(() => {
+      const el = document.getElementById(focusField);
+      el?.scrollIntoView({ block: 'center' });
+      (el?.querySelector('input, button, textarea') as HTMLElement | null ?? el)?.focus();
+      setFocusField('');
+    }, 60);
+    return () => clearTimeout(t);
+  }, [focusField]);
   useEffect(() => {
     if (!focusInstructions) return;
     const input = document.getElementById('floor-instructions');
@@ -172,6 +240,12 @@ export function App() {
           z: e.shiftKey ? 'redo' : 'undo', y: 'redo', c: 'copy', x: 'cut', v: 'paste', d: 'duplicate', a: 'select-all', g: e.shiftKey ? 'ungroup' : 'group',
         };
         if (map[k]) { e.preventDefault(); runCommand(map[k]); return; }
+        if (k === 'b' && useStore.getState().project) {
+          // Ctrl+B : replier / déplier le panneau gauche ; Ctrl+Maj+B : le panneau des propriétés
+          e.preventDefault();
+          setPanels((p) => (e.shiftKey ? { ...p, right: !p.right } : { ...p, left: !p.left }));
+          return;
+        }
         if (editMap[k] && !typing) { e.preventDefault(); runCommand(editMap[k]); return; }
         const st = useStore.getState();
         if (!typing && st.project && st.selection.length) {
@@ -225,26 +299,52 @@ export function App() {
   return (
     <div className="app">
       <Ribbon onPrintPreview={() => setPrintOpen('preview')} onQuickExport={() => setPrintOpen('current')} />
-      <div className="main">
-        <nav className="left">
+      <div className={`main${panels.left ? '' : ' no-left'}${panels.right ? '' : ' no-right'}`}>
+        {!panels.left && (
+          <nav className="rail left-rail" aria-label="Panneau gauche replié">
+            <button title="Déplier le panneau (Ctrl+B)" aria-label="Déplier le panneau gauche" onClick={() => showLeft()}><Icon name="panelLeft" size={17} /></button>
+            <button title="Projet" onClick={() => showLeft('project')}><Icon name="building" size={17} /></button>
+            <button title="Symboles" onClick={() => showLeft('library')}><Icon name="symbol" size={17} /></button>
+            <button title="Calques" onClick={() => showLeft('layers')}><Icon name="layers" size={17} /></button>
+          </nav>
+        )}
+        {panels.left && <nav className="left">
           <div className="tabs" role="tablist">
             <button role="tab" aria-selected={leftTab === 'project'} className={leftTab === 'project' ? 'on' : ''} onClick={() => setLeftTab('project')}><Icon name="building" size={16} /> Projet</button>
             <button role="tab" aria-selected={leftTab === 'library'} className={leftTab === 'library' ? 'on' : ''} onClick={() => setLeftTab('library')}><Icon name="symbol" size={16} /> Symboles</button>
             <button role="tab" aria-selected={leftTab === 'layers'} className={leftTab === 'layers' ? 'on' : ''} onClick={() => setLeftTab('layers')}><Icon name="layers" size={16} /> Calques</button>
+            <button className="panel-fold" title="Replier le panneau (Ctrl+B)" aria-label="Replier le panneau gauche" onClick={() => setPanels((p) => ({ ...p, left: false }))}><Icon name="panelLeft" size={15} /></button>
           </div>
           {leftTab === 'project' && <ProjectPanel />}
           {leftTab === 'library' && <LibraryPanel />}
           {leftTab === 'layers' && <LayersPanel />}
-        </nav>
+        </nav>}
         <main className="center">
           <FloorBar />
+          {review && (
+            <div className="review-return" role="status">
+              <Icon name="print" size={15} />
+              <span>Correction en cours · <b>{review.label}</b> : {PRINT_ISSUE_LABEL[review.issue]}</span>
+              <button className="btn small primary" onClick={() => { setReviewBack(review.back); setReview(null); setPrintOpen('preview'); }}>
+                ← Revenir à la vérification
+              </button>
+              <button className="icon-btn" title="Masquer" aria-label="Masquer" onClick={() => setReview(null)}><Icon name="close" size={14} /></button>
+            </div>
+          )}
           <Canvas onCalibrate={(d) => A.calibrateAction(d)} />
         </main>
-        <PropertiesPanel key={focusInstructions} />
+        {panels.right
+          ? <div className="props-wrap">
+              <button className="panel-fold right" title="Replier les propriétés (Ctrl+Maj+B)" aria-label="Replier le panneau des propriétés" onClick={() => setPanels((p) => ({ ...p, right: false }))}><Icon name="panelRight" size={15} /></button>
+              <PropertiesPanel key={focusInstructions} />
+            </div>
+          : <nav className="rail right-rail" aria-label="Propriétés repliées">
+              <button title="Déplier les propriétés (Ctrl+Maj+B)" aria-label="Déplier le panneau des propriétés" onClick={() => setPanels((p) => ({ ...p, right: true }))}><Icon name="panelRight" size={17} /></button>
+            </nav>}
       </div>
       <StatusBar />
       {printOpen && <PrintDialog key={`${printOpen}:${project.id}`} currentOnly={printOpen !== 'preview'} focusScale={printOpen === 'scale'}
-        onEdit={editPrintIssue} onClose={() => setPrintOpen('')} />}
+        back={reviewBack} onEdit={editPrintIssue} onClose={() => { setPrintOpen(''); setReviewBack(null); }} />}
       {help && <HelpDialog kind={help} onClose={() => setHelp('')} version={version} />}
       <DialogHost />
       <Toasts />
@@ -268,9 +368,26 @@ function FloorBar() {
           {floor.variants.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
         </select>
       </label>
-      <button className="btn small" onClick={() => A.createDisplayLocation()}><Icon name="plus" size={14} /> Emplacement d’affichage</button>
+      <button className="btn small" onClick={() => A.createDisplayLocation()} title="Nouvelle affiche (emplacement « Vous êtes ici »)"><Icon name="plus" size={14} /> Affiche</button>
+      {floor.variants.length > 1 && <NewScopePicker />}
       <span className={`badge status-${floor.titleBlock.status}`}>{STATUS_LABEL[floor.titleBlock.status]}</span>
     </div>
+  );
+}
+
+/** Portée des éléments que l'on crée : toutes les affiches de l'étage, ou seulement l'affiche active. */
+function NewScopePicker() {
+  const scope = useStore((s) => s.newScope);
+  const floor = useStore((s) => currentFloor(s));
+  const n = floor?.variants.length ?? 0;
+  return (
+    <label className={scope === 'variant' ? 'crumb new-scope own' : 'crumb new-scope'} title="Où apparaissent les éléments que vous dessinez ou posez">
+      Nouveaux éléments
+      <select value={scope} onChange={(e) => useStore.getState().setNewScope(e.target.value as 'all' | 'variant')}>
+        <option value="all">Toutes les affiches ({n})</option>
+        <option value="variant">Cette affiche uniquement</option>
+      </select>
+    </label>
   );
 }
 
@@ -361,6 +478,7 @@ function Welcome({ version, onHelp, onDemo }: { version: string; onHelp(): void;
         </div>
         <p className="welcome-tag">Des plans d’évacuation nets et professionnels, conçus et imprimés depuis votre poste — sans connexion, sans abonnement.</p>
         <div className="welcome-actions">
+          <button className="w-btn" onClick={() => window.dispatchEvent(new CustomEvent('evac:command', { detail: { action: 'new-from-plan' } }))}><Icon name="import" size={20} /><span><b>Nouveau projet depuis un plan</b><small>PDF, image, DXF ou DWG : étage, page, fond, échelle</small></span></button>
           <button className="w-btn" onClick={() => A.newProjectAction()}><Icon name="new" size={20} /><span><b>Nouveau projet</b><small>Partir d’un étage vide</small></span></button>
           <button className="w-btn" onClick={() => A.openProjectAction()}><Icon name="open" size={20} /><span><b>Ouvrir un projet</b><small>Fichier .planevac</small></span></button>
         </div>
@@ -401,15 +519,15 @@ function HelpDialog({ kind, onClose, version }: { kind: 'guide' | 'shortcuts' | 
           <>
             <h2>Guide d’utilisation rapide</h2>
             <ol>
-              <li><b>Créer un projet</b> (Accueil › Nouveau) ou partir d’un <b>plan d’exemple</b>, puis organiser bâtiments et étages dans l’onglet <i>Projet</i>.</li>
-              <li><b>Importer un plan de fond</b> : ruban <i>Insérer › Plan DXF / PDF</i>. Un fichier DXF (AutoCAD) est importé en vectoriel à l’échelle réelle, sans étalonnage. Opacité, niveaux de gris et taille dans l’onglet <i>Fond</i> des propriétés.</li>
+              <li><b>Créer un projet</b> (<i>Fichier › Nouveau projet</i>, ou <i>Nouveau projet depuis un plan</i> sur l’accueil) ou partir d’un <b>plan d’exemple</b>, puis organiser bâtiments, étages et affiches dans l’onglet <i>Projet</i>.</li>
+              <li><b>Importer un plan de fond</b> : ruban <i>Plan › Importer un plan</i> : l’assistant demande l’étage, la page d’un PDF (vignettes), la préparation du fond et enchaîne l’étalonnage. Un fichier DXF (AutoCAD) est importé en vectoriel à l’échelle réelle, sans étalonnage. Opacité, niveaux de gris et taille dans l’onglet <i>Fond</i> des propriétés.</li>
               <li><b>Étalonner l’échelle</b> (K) : cliquez deux points d’une cote connue et saisissez la distance réelle.</li>
-              <li><b>Dessiner</b> depuis le ruban <i>Bâtiment</i> : murs (M), portes (P), fenêtres (F), escaliers (E), pièces (R), zones (Z).</li>
+              <li><b>Dessiner</b> depuis le ruban <i>Plan</i> : murs (M), portes (P), fenêtres (F), escaliers (E), pièces (R), zones (Z).</li>
               <li><b>Placer les pictogrammes ISO 7010</b> depuis l’onglet <i>Symboles</i> (recherche par nom ou code, clic puis clic, ou glisser-déposer).</li>
-              <li><b>Tracer les itinéraires</b> (I) ou poser une <b>flèche d’évacuation</b> verte (<i>Insérer › Flèches d’évacuation</i> : demi-tour, virages, chicane…).</li>
-              <li><b>Créer un emplacement d’affichage</b> au-dessus du plan, puis placer le repère « Vous êtes ici ». Pour une deuxième affiche, choisissez si les itinéraires doivent être repris ou copiés pour être modifiés indépendamment.</li>
+              <li><b>Tracer les itinéraires</b> (I) ou poser une <b>flèche d’évacuation</b> verte (ruban <i>Évacuation › Flèches d’évacuation</i> : demi-tour, virages, chicane…). <i>Évacuation › Circulations</i> montre le chemin probable vers la sortie la plus proche (aide non imprimée).</li>
+              <li><b>Créer une affiche</b> (bouton <i>+ Affiche</i> au-dessus du plan), puis placer le repère « Vous êtes ici ». Pour une deuxième affiche, choisissez si les itinéraires doivent être repris ou copiés pour être modifiés indépendamment.</li>
               <li><b>Choisir un thème</b> de mise en page (<i>Mise en page</i>), compléter cartouche, numéros d’urgence et consignes, puis <b>valider</b> explicitement le plan.</li>
-              <li><b>Vérifier et exporter</b> depuis l’aperçu (Ctrl+P). Choisissez les versions de l’étage ou les pages à exporter pour tout le bâtiment. Les alertes indiquent les points à vérifier sur chaque affiche.</li>
+              <li><b>Vérifier et exporter</b> depuis l’aperçu (Ctrl+P). Choisissez les affiches de l’étage ou les pages à exporter pour tout le bâtiment. Les alertes indiquent les points à vérifier sur chaque affiche.</li>
             </ol>
             <p className="muted small">Le projet est sauvegardé automatiquement toutes les 30 secondes dans un fichier de secours ; après une fermeture inattendue, il vous sera proposé de le restaurer au prochain démarrage. Pensez à enregistrer (Ctrl+S) votre fichier .planevac.</p>
           </>
@@ -426,6 +544,7 @@ function HelpDialog({ kind, onClose, version }: { kind: 'guide' | 'shortcuts' | 
                 ['Flèches (Maj : ×5, Alt : fin)', 'Déplacer la sélection'], ['Maj pendant le tracé', 'Angles à 45°'], ['Alt pendant un déplacement', 'Sans magnétisme'],
                 ['Entrée / Échap / Retour arrière', 'Terminer / abandonner / retirer le dernier point'], ['Ctrl+S / Ctrl+Maj+S', 'Enregistrer / enregistrer sous'],
                 ['Ctrl+P / Ctrl+E', 'Aperçu et impression / export PDF'], ['Ctrl+0', 'Ajuster à la fenêtre'],
+                ['Ctrl+B / Ctrl+Maj+B', 'Replier le panneau gauche / les propriétés'],
               ].map(([k, v]) => <tr key={k}><td><kbd>{k}</kbd></td><td>{v}</td></tr>)}
             </tbody></table>
           </>
@@ -435,7 +554,7 @@ function HelpDialog({ kind, onClose, version }: { kind: 'guide' | 'shortcuts' | 
             <h2>À propos</h2>
             <p><b>Atelier Plans d’Évacuation</b>{version ? ` — version ${version}` : ''}</p>
             <p>Logiciel de bureau hors ligne : aucune connexion ni compte n’est nécessaire. Vos projets sont enregistrés localement au format ouvert <code>.planevac</code> (JSON documenté).</p>
-            <p>Les pictogrammes intégrés sont des dessins originaux sous licence CC0, inspirés des conventions ISO 7010 ; ils ne sont pas des reproductions officielles.</p>
+            <p>Les 97 signaux ISO 7010 intégrés sont des tracés publiés sur Wikimedia Commons en domaine public ou CC0 (licence vérifiée, source de chaque fichier dans le manifeste). Les autres pictogrammes sont des dessins originaux sous licence CC0. Voir LICENSES.md.</p>
             <p className="warn small">Ce logiciel ne certifie pas la conformité des plans. Le statut « Validé » reflète uniquement la décision explicite de l’utilisateur. Vérifiez les exigences applicables (réglementation, service d’incendie, assureur).</p>
           </>
         )}

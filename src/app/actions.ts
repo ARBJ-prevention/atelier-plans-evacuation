@@ -1,5 +1,5 @@
 import { COUNTRIES } from '../model/countries';
-import { makeElement, newProject, newVariant, uid } from '../model/defaults';
+import { makeElement, newFloor, newProject, newVariant, uid } from '../model/defaults';
 import { isVisibleInVariant } from '../model/geometry';
 import { applyOrganizationTemplate, organizationTemplates, templateFromFloor, writeOrganizationTemplates } from './organizationTemplates';
 import { cloneProjectWithNewIds, parseProject, ProjectFormatError, serializeProject } from '../model/serialize';
@@ -11,6 +11,7 @@ import { imageFromFile, pdfPageCount, renderPdfPage } from '../services/imports'
 import { decodeDxfBytes, DxfError, flattenDxf, parseDxf } from '../services/dxf';
 import { askDxfImport, type DxfImportChoice } from '../dialogs/DxfImport';
 import { askRecognition } from '../dialogs/Recognize';
+import { askImportPlan } from '../dialogs/ImportWizard';
 import { currentBuilding, currentFloor, currentVariantId, useStore } from '../store/store';
 import { alertDialog, ask, confirmDialog, promptDialog } from '../ui/dialogs';
 
@@ -69,16 +70,16 @@ export async function createDisplayLocation(): Promise<void> {
   const floor = currentFloor(s);
   if (!floor || !s.project) return;
   const sourceId = currentVariantId(s);
-  const reusable = floor.variants.length === 1 && floor.variants[0].name === 'Version 1'
+  const reusable = floor.variants.length === 1 && /^(Version|Affiche) 1$/.test(floor.variants[0].name)
     && !floor.elements.some((e) => e.variantId === sourceId || (e.type === 'symbol' && e.symbolId === 'you-are-here'));
   const routes = floor.elements.filter((e) => e.type === 'route' && isVisibleInVariant(e, sourceId));
   const r = await ask({
-    title: 'Créer un emplacement d’affichage',
+    title: 'Nouvelle affiche',
     message: 'Nommez l’affiche, puis cliquez sur le plan pour placer le repère « Vous êtes ici ».',
     fields: [
-      { key: 'name', label: 'Emplacement (ex. Hall d’entrée)', type: 'text', value: '', required: true },
+      { key: 'name', label: 'Nom de l’affiche (lieu d’affichage, ex. Hall d’entrée)', type: 'text', value: '', required: true },
       ...(routes.length && !reusable ? [{
-        key: 'routes', label: 'Itinéraires de la version active', type: 'select' as const, value: 'reuse',
+        key: 'routes', label: 'Itinéraires de l’affiche active', type: 'select' as const, value: 'reuse',
         options: [{ value: 'reuse', label: 'Reprendre les itinéraires' }, { value: 'adapt', label: 'Créer des copies modifiables pour cette affiche' }],
       }] : []),
     ],
@@ -208,33 +209,84 @@ export async function duplicateProjectAction(): Promise<void> {
   }
 }
 
+/**
+ * Import d'un plan avec l'assistant : choix du fichier, de l'étage (actif ou nouveau), de la page d'un PDF
+ * en vignettes, préparation du fond (gris, opacité) et étalonnage enchaîné.
+ */
 export async function importBackgroundAction(): Promise<void> {
   const s = S();
   const floor = currentFloor(s);
-  if (!floor) return;
-  if (floor.background && !(await confirmDialog('Remplacer le plan de fond', 'Cet étage possède déjà un plan de fond. Le remplacer ?', 'Remplacer'))) return;
+  const building = currentBuilding(s);
+  if (!floor || !building || !s.project) return;
   const file = await api().pickFile('plan');
   if (!file) return;
-  if (file.ext === 'dwg') { await importDwgBackground(file.name, file.data); return; }
-  if (file.ext === 'dxf') { await importDxfBackground(file.name, file.data); return; }
+  let pageCount = 1;
+  try {
+    if (file.ext === 'pdf') pageCount = await pdfPageCount(file.data);
+  } catch (e) {
+    await alertDialog('Import impossible', `Le PDF n’a pas pu être lu : ${errMsg(e)}`);
+    return;
+  }
+  const choice = await askImportPlan(file, pageCount, {
+    buildingId: building.id, buildingName: building.name, floorId: floor.id, floorName: floor.name,
+    hasBackground: !!floor.background, empty: !floor.background && floor.elements.length === 0,
+  }, S().project!.buildings.map((b) => ({ id: b.id, name: b.name, floors: b.floors.length })));
+  if (!choice) return;
+
+  // Étage de destination
+  const before = { buildingId: S().buildingId, floorId: S().floorId };
+  let createdFloorId: string | null = null;
+  if (choice.target.kind === 'new') {
+    const target = choice.target;
+    const b = S().project!.buildings.find((x) => x.id === target.buildingId) ?? building;
+    const f = newFloor(target.floorName, b.floors.length, S().project!.country);
+    const model = b.floors[0];
+    if (model) {
+      f.titleBlock.author = model.titleBlock.author;
+      f.titleBlock.organization = model.titleBlock.organization;
+      f.titleBlock.logo = model.titleBlock.logo;
+      f.page = structuredClone(model.page);
+    }
+    S().mutate((d) => { d.buildings.find((x) => x.id === b.id)!.floors.push(f); });
+    S().setFloor(b.id, f.id);
+    createdFloorId = f.id;
+  } else if (choice.target.floorName !== floor.name) {
+    const name = choice.target.floorName;
+    S().mutateFloor((f) => { f.name = name; }, { keepValidation: true });
+  }
+  // Annule la création de l'étage si l'import n'a finalement rien ajouté (fenêtre DXF annulée, erreur…)
+  const dropIfEmpty = () => {
+    if (!createdFloorId) return;
+    const f = currentFloor(S());
+    if (f?.id === createdFloorId && !f.background && !f.elements.length) {
+      S().mutate((d) => { for (const b of d.buildings) b.floors = b.floors.filter((x) => x.id !== createdFloorId); });
+      S().setFloor(before.buildingId, before.floorId);
+    }
+  };
+
+  if (file.ext === 'dwg' || file.ext === 'dxf') {
+    if (file.ext === 'dwg') await importDwgBackground(file.name, file.data);
+    else await importDxfBackground(file.name, file.data);
+    dropIfEmpty();
+    return;
+  }
   try {
     let img;
     if (file.ext === 'pdf') {
-      const n = await pdfPageCount(file.data);
-      let page = 1;
-      if (n > 1) {
-        const v = await promptDialog('Importer un PDF', `Numéro de page à importer (1 à ${n})`, '1');
-        if (!v) return;
-        page = Math.min(n, Math.max(1, parseInt(v, 10) || 1));
-      }
       S().toast('Conversion du PDF en cours…', 'info');
-      img = await renderPdfPage(file.data, page);
+      img = await renderPdfPage(file.data, choice.page);
     } else {
       img = await imageFromFile(file);
     }
-    applyBackground(img.src, img.width, img.height, file.name);
-    S().toast('Plan de fond importé. Étalonnez l’échelle (outil « Étalonner ») pour obtenir des mesures réelles.', 'success');
+    applyBackground(img.src, img.width, img.height, pageCount > 1 ? `${file.name} (page ${choice.page})` : file.name, { opacity: choice.opacity, grayscale: choice.grayscale });
+    if (choice.calibrate) {
+      S().setTool('calibrate');
+      S().toast('Plan importé. Étalonnage : cliquez les deux extrémités d’une cote connue, puis saisissez sa longueur réelle.', 'success');
+    } else {
+      S().toast('Plan de fond importé. Étalonnez l’échelle (outil « Étalonner ») pour obtenir des mesures réelles.', 'success');
+    }
   } catch (e) {
+    dropIfEmpty();
     await alertDialog('Import impossible', `Le fichier n’a pas pu être importé : ${errMsg(e)}`);
   }
 }
@@ -341,9 +393,9 @@ export function applyDxfBackground(name: string, choice: DxfImportChoice, upm: n
   S().requestFit();
 }
 
-export function applyBackground(src: string, width: number, height: number, name: string) {
+export function applyBackground(src: string, width: number, height: number, name: string, prep: { opacity?: number; grayscale?: boolean } = {}) {
   const scale = 2000 / Math.max(width, height);
-  const bg: Background = { src, sourceName: name, naturalWidth: width, naturalHeight: height, x: 0, y: 0, scale, opacity: 0.45, locked: true, grayscale: true };
+  const bg: Background = { src, sourceName: name, naturalWidth: width, naturalHeight: height, x: 0, y: 0, scale, opacity: prep.opacity ?? 0.45, locked: true, grayscale: prep.grayscale ?? true };
   S().mutateFloor((f) => { f.background = bg; });
   S().requestFit();
 }
@@ -451,38 +503,65 @@ function exportBaseName(job: ExportJob, variantId?: string, includeVariant = job
   return safeFileName([job.floor.titleBlock.title, job.building.name, job.floor.name, includeVariant && v ? v.name : ''].filter(Boolean).join(' - '));
 }
 
-export async function exportBuildingPdf(jobs: ExportJob[], separate: boolean): Promise<void> {
+/** Suivi d'un export du bâtiment : progression page par page et annulation entre deux fichiers. */
+export interface BatchExportControl {
+  onProgress?(done: number, total: number, label: string): void;
+  cancelled?: boolean;
+}
+export interface BatchExportResult {
+  /** Fichier à montrer dans l'Explorateur (le PDF unique, ou le premier fichier du dossier). */
+  showPath: string | null;
+  completed: number;
+  total: number;
+  cancelled: boolean;
+  ms: number;
+}
+
+export async function exportBuildingPdf(jobs: ExportJob[], separate: boolean, control: BatchExportControl = {}): Promise<BatchExportResult | null> {
   const first = jobs[0];
-  if (!first) return;
+  if (!first) return null;
   const title = `Plans d’évacuation - ${first.building.name}`;
   const count = jobs.reduce((total, job) => total + job.variantIds.length, 0);
+  const t0 = performance.now();
+  const done = (r: Omit<BatchExportResult, 'ms' | 'total'>): BatchExportResult => ({ ...r, total: count, ms: Math.round(performance.now() - t0) });
   try {
     if (!separate) {
+      control.onProgress?.(0, count, 'Préparation du PDF du bâtiment…');
       const out = await api().exportPdf({ html: buildBatchPrintHtml(jobs, title), paper: first.page.paper,
         landscape: first.page.orientation === 'landscape', suggestedName: `${safeFileName(title)}.pdf` });
-      if (out) {
-        S().toast(`PDF du bâtiment exporté · ${count} page(s).`, 'success');
-      }
-      return;
+      if (!out) return null;
+      S().toast(`PDF du bâtiment exporté · ${count} page(s).`, 'success');
+      return done({ showPath: out, completed: count, cancelled: false });
     }
     const dir = await api().createExportFolder(title);
-    if (!dir) return;
+    if (!dir) return null;
     let completed = 0;
+    let firstPath: string | null = null;
     for (const job of jobs) {
       for (const variantId of job.variantIds) {
+        if (control.cancelled) {
+          S().toast(`Export annulé · ${completed} fichier(s) sur ${count}.`, 'warning');
+          return done({ showPath: firstPath, completed, cancelled: true });
+        }
         const prefix = String(completed + 1).padStart(String(count).length, '0');
-        const path = `${dir}\\${prefix} - ${exportBaseName(job, variantId, true)}.pdf`;
+        const base = exportBaseName(job, variantId, true);
+        control.onProgress?.(completed, count, base);
+        const path = `${dir}\\${prefix} - ${base}.pdf`;
         const out = await exportPdfAction({ ...job, variantIds: [variantId] }, path);
         if (!out) {
           S().toast(`Export interrompu · ${completed} fichier(s) sur ${count}.`, 'warning');
-          return;
+          return done({ showPath: firstPath, completed, cancelled: true });
         }
+        firstPath ??= out;
         completed++;
+        control.onProgress?.(completed, count, base);
       }
     }
     S().toast(`${completed} fichier(s) PDF exporté(s).`, 'success');
+    return done({ showPath: firstPath, completed, cancelled: false });
   } catch (e) {
     await alertDialog('Échec de l’export du bâtiment', errMsg(e));
+    return null;
   }
 }
 

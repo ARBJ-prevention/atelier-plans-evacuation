@@ -177,12 +177,48 @@ async function withHtmlWindow(html, fn) {
 
 let pdfQueue = Promise.resolve();
 
+/**
+ * Images intégrées (fonds de plan, logos, vues aériennes) sorties du HTML : chacune n'est transmise qu'une fois,
+ * même si elle figure sur toutes les pages d'un lot (un fond PDF converti pèse plusieurs Mo).
+ */
+function splitInlineImages(html) {
+  const images = [];
+  const index = new Map();
+  const parts = [];
+  const marker = 'href="data:image/';
+  let from = 0;
+  for (;;) {
+    const at = html.indexOf(marker, from);
+    if (at < 0) break;
+    const start = at + 'href="'.length;
+    const end = html.indexOf('"', start);
+    if (end < 0) break;
+    // seules les images lourdes valent d'être mises en commun ; « xlink:href » est traité comme « href »
+    if (end - start < 2048) { parts.push(html.slice(from, end + 1)); from = end + 1; continue; }
+    const src = html.slice(start, end);
+    let i = index.get(src);
+    if (i === undefined) { i = images.length; images.push(src); index.set(src, i); }
+    const attrStart = html.startsWith('xlink:', at - 6) ? at - 6 : at;
+    parts.push(html.slice(from, attrStart), `data-evac-src="${i}"`);
+    from = end + 1;
+  }
+  parts.push(html.slice(from));
+  return { html: parts.join(''), images };
+}
+
+/** Taille des morceaux de texte injectés dans le monde isolé (évite de compiler un script géant). */
+const INJECT_CHUNK = 1 << 20;
+
 // Exécuté dans un monde isolé du renderer déjà chargé par l'éditeur.
-async function mountPdfDocument(html) {
+async function mountPdfDocument(html, images) {
   const source = new DOMParser().parseFromString(html, 'text/html');
   const pages = document.createElement('div');
   pages.id = 'evac-pdf-export';
   pages.append(...source.body.children);
+  for (const el of pages.querySelectorAll('[data-evac-src]')) {
+    el.setAttribute('href', images[Number(el.getAttribute('data-evac-src'))]);
+    el.removeAttribute('data-evac-src');
+  }
 
   const style = document.createElement('style');
   style.textContent = `
@@ -212,8 +248,19 @@ function renderPdf(contents, html, paper, landscape) {
   const task = pdfQueue.then(async () => {
     const execute = (code) => contents.executeJavaScriptInIsolatedWorld(1001, [{ code }]);
     let previousTitle;
+    // Texte et images envoyés par morceaux : un lot avec fonds de plan peut dépasser des dizaines de Mo.
+    const inject = async (target, text) => {
+      await execute('window.__evacParts = [];');
+      for (let i = 0; i < text.length; i += INJECT_CHUNK) await execute(`window.__evacParts.push(${JSON.stringify(text.slice(i, i + INJECT_CHUNK))});`);
+      await execute(`${target}(window.__evacParts.join('')); window.__evacParts = [];`);
+    };
     try {
-      previousTitle = await execute(`(${mountPdfDocument})(${JSON.stringify(html)})`);
+      const split = splitInlineImages(html);
+      await execute('window.__evacImages = []; window.__evacHtml = "";');
+      for (const image of split.images) await inject('window.__evacImages.push', image);
+      await inject('(function (t) { window.__evacHtml = t; })', split.html);
+      previousTitle = await execute(`(${mountPdfDocument})(window.__evacHtml, window.__evacImages)`);
+      await execute('window.__evacHtml = ""; window.__evacImages = [];');
       return await contents.printToPDF({
         pageSize: paper,
         landscape,

@@ -1,19 +1,25 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import brandIcon from '../../build/icon.svg';
 import * as A from '../app/actions';
 import { ARROW_PRESETS, GREEN_ARROW_STYLE, insertArrowPreset, type ArrowPreset } from '../app/arrowPresets';
 import { makeElement } from '../model/defaults';
 import { ElementView } from '../render/ElementView';
 import type { PageSetup, PageTheme } from '../model/types';
-import { STATUS_LABEL } from '../render/PrintPage';
+import { PRINT_ISSUE_LEVEL, printIssues, STATUS_LABEL } from '../render/PrintPage';
 import { horizonNight, THEMES, themePatch, themeColor } from '../render/layout';
+import { api } from '../services/api';
 import { currentFloor, currentVariantId, MAX_SYMBOL_WALL_GAP, useStore, type Tool, type ToolPresets } from '../store/store';
 import { Icon } from '../ui/icons';
 
-type Tab = 'home' | 'insert' | 'building' | 'page' | 'view';
-const TABS: { id: Tab; label: string }[] = [
-  { id: 'home', label: 'Accueil' }, { id: 'insert', label: 'Insérer' }, { id: 'building', label: 'Bâtiment' },
-  { id: 'page', label: 'Mise en page' }, { id: 'view', label: 'Affichage' },
+type Tab = 'plan' | 'evac' | 'edit' | 'page' | 'check' | 'view';
+/** Onglets dans l'ordre du travail : dessiner le plan, l'évacuation, mettre en page, vérifier et exporter. */
+const TABS: { id: Tab; label: string; title: string }[] = [
+  { id: 'plan', label: 'Plan', title: 'Plan de fond, étalonnage, murs, portes, fenêtres, escaliers, pièces, textes et formes' },
+  { id: 'evac', label: 'Évacuation', title: 'Affiches, « Vous êtes ici », itinéraires, flèches, pictogrammes, légende, circulations probables' },
+  { id: 'edit', label: 'Édition', title: 'Presse-papiers, sélection, organiser, aligner, supprimer' },
+  { id: 'page', label: 'Mise en page', title: 'Thème, couleur, papier, blocs de la page — tous les réglages dans l’aperçu' },
+  { id: 'check', label: 'Vérifier et exporter', title: 'Statut, points à vérifier, aperçu, PDF, PNG, export du bâtiment' },
+  { id: 'view', label: 'Affichage', title: 'Zoom, grille, aimantage, règles, repères' },
 ];
 
 export const TOOL_KEYS: Record<string, Tool> = {
@@ -43,8 +49,60 @@ function Group({ title, children, cols }: { title: string; children: React.React
   );
 }
 
+/** Lance une commande de l'application (mêmes commandes que le menu Fichier de la fenêtre). */
+export const runAppCommand = (action: string, arg?: string) => window.dispatchEvent(new CustomEvent('evac:command', { detail: { action, arg } }));
+
+const FILE_ITEMS: ([string, string, string] | '-')[] = [
+  ['new', 'Nouveau projet', 'Ctrl+N'], ['open', 'Ouvrir…', 'Ctrl+O'], '-',
+  ['save', 'Enregistrer', 'Ctrl+S'], ['save-as', 'Enregistrer sous…', 'Ctrl+Maj+S'], ['duplicate-project', 'Dupliquer le projet…', ''], '-',
+  ['import-background', 'Importer un plan de fond (DXF, DWG, PDF, image)…', ''], ['import-symbol', 'Importer un pictogramme…', ''], '-',
+  ['print-preview', 'Aperçu et vérification', 'Ctrl+P'], ['export-pdf', 'Exporter cette affiche (PDF, PNG)…', 'Ctrl+E'], ['export-building', 'Exporter le bâtiment…', ''], '-',
+  ['help', 'Guide d’utilisation', 'F1'], ['shortcuts', 'Raccourcis clavier', ''],
+];
+
+function FileMenu() {
+  const [open, setOpen] = useState(false);
+  const [recent, setRecent] = useState<string[]>([]);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    api().recentList().then(setRecent).catch(() => setRecent([]));
+    const close = (e: MouseEvent | KeyboardEvent) => {
+      if (e instanceof KeyboardEvent ? e.key === 'Escape' : !ref.current?.contains(e.target as Node)) setOpen(false);
+    };
+    window.addEventListener('mousedown', close);
+    window.addEventListener('keydown', close);
+    return () => { window.removeEventListener('mousedown', close); window.removeEventListener('keydown', close); };
+  }, [open]);
+  const go = (action: string, arg?: string) => { setOpen(false); runAppCommand(action, arg); };
+  return (
+    <div className="rb-file-wrap" ref={ref}>
+      <button className="rb-file" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen(!open)}>Fichier <Icon name="chevronDown" size={13} /></button>
+      {open && (
+        <div className="file-menu" role="menu">
+          {FILE_ITEMS.map((item, i) => item === '-'
+            ? <div key={i} className="file-sep" role="separator" />
+            : <button key={item[0]} role="menuitem" onClick={() => go(item[0])}><span>{item[1]}</span><kbd>{item[2]}</kbd></button>)}
+          {recent.length > 0 && (
+            <>
+              <div className="file-sep" role="separator" />
+              <div className="file-head">Récents</div>
+              {recent.slice(0, 6).map((p) => (
+                <button key={p} role="menuitem" title={p} onClick={() => go('open-recent', p)}><span>{p.split(/[\\/]/).pop()}</span><kbd /></button>
+              ))}
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function Ribbon({ onPrintPreview, onQuickExport }: { onPrintPreview(): void; onQuickExport(): void }) {
-  const [tab, setTab] = useState<Tab>('home');
+  const [tab, setTab] = useState<Tab>('plan');
+  const pendingSymbol = useStore((s) => s.pendingSymbol);
+  const newScope = useStore((s) => s.newScope);
+  const showCirculation = useStore((s) => s.showCirculation);
   const project = useStore((s) => s.project)!;
   const tool = useStore((s) => s.tool);
   const presets = useStore((s) => s.presets);
@@ -70,9 +128,12 @@ export function Ribbon({ onPrintPreview, onQuickExport }: { onPrintPreview(): vo
           <button title="Rétablir (Ctrl+Y)" disabled={!canRedo} onClick={() => S().redo()}><Icon name="redo" size={16} /></button>
         </div>
         <nav className="rb-tabs" role="tablist">
-          <button className="rb-file" onClick={() => A.openProjectAction()} title="Ouvrir un projet">Fichier</button>
+          <FileMenu />
           {TABS.map((t) => (
-            <button key={t.id} role="tab" aria-selected={tab === t.id} className={tab === t.id ? 'on' : ''} onClick={() => setTab(t.id)}>{t.label}</button>
+            <button key={t.id} role="tab" aria-selected={tab === t.id} title={t.title}
+              className={`${tab === t.id ? 'on' : ''}${t.id === 'edit' && sel && tab !== 'edit' ? ' has-sel' : ''}`} onClick={() => setTab(t.id)}>
+              {t.label}{t.id === 'edit' && sel > 0 && tab !== 'edit' && <span className="rb-dot" title={`${sel} élément(s) sélectionné(s)`} />}
+            </button>
           ))}
         </nav>
         <div className="rb-doc">
@@ -88,90 +149,17 @@ export function Ribbon({ onPrintPreview, onQuickExport }: { onPrintPreview(): vo
       </div>
 
       <div className="rb-panel" key={tab}>
-        {tab === 'home' && (
+        {tab === 'plan' && (
           <>
-            <Group title="Fichier">
-              <Big icon="new" label="Nouveau" onClick={() => A.newProjectAction()} />
-              <Big icon="open" label="Ouvrir" onClick={() => A.openProjectAction()} />
-              <Big icon="save" label="Enregistrer" onClick={() => A.saveProject(false)} />
-            </Group>
-            <Group title="Presse-papiers" cols>
-              <Small icon="paste" label="Coller" onClick={() => S().paste()} />
-              <Small icon="cut" label="Couper" onClick={() => S().cutSelection()} disabled={!sel} />
-              <Small icon="copy" label="Copier" onClick={() => S().copySelection()} disabled={!sel} />
-              <Small icon="copy" label="Dupliquer" onClick={() => S().duplicateSelection()} disabled={!sel} />
+            <Group title="Plan de fond">
+              <Big icon="import" label="Importer un plan" onClick={() => A.importBackgroundAction()}
+                title="Assistant d’import : PDF, image, DXF ou DWG ; étage, page, préparation du fond et échelle" />
+              <Big icon="calibrate" label="Étalonner" active={tool === 'calibrate'} onClick={() => use('calibrate')} title="Étalonner l’échelle (K) — tracez une cote connue sur le plan et indiquez sa longueur réelle" />
             </Group>
             <Group title="Outils">
               <Big icon="select" label="Sélection" active={tool === 'select'} onClick={() => use('select')} title="Sélection (V)" />
               <Big icon="pan" label="Main" active={tool === 'pan'} onClick={() => use('pan')} title="Déplacer la vue (H)" />
-              <Big icon="route" label="Itinéraire" active={tool === 'route'} onClick={() => use('route', { routeKind: 'principal' })} title="Itinéraire d’évacuation (I)" />
             </Group>
-            <Group title="Sélectionner" cols>
-              <Small icon="select" label="Semblables" title="Sélectionne tous les éléments du même genre que la sélection (même type de zone, même pictogramme…)" onClick={() => S().selectWhere('similar')} disabled={!sel} />
-              <Small icon="room" label="Zones et pièces" title="Sélectionne toutes les zones et pièces du plan" onClick={() => S().selectWhere('areas')} />
-              <Small icon="text" label="Textes" title="Sélectionne tous les textes du plan (noms de locaux importés…)" onClick={() => S().selectWhere('texts')} />
-              <Small icon="image" label="Pictogrammes" title="Sélectionne tous les pictogrammes du plan" onClick={() => S().selectWhere('symbols')} />
-            </Group>
-            <Group title="Organiser" cols>
-              <Small icon="group" label="Grouper" onClick={() => S().groupSelection()} disabled={sel < 2} />
-              <Small icon="group" label="Dégrouper" onClick={() => S().ungroupSelection()} disabled={!sel} />
-              <Small icon="front" label="Premier plan" onClick={() => S().reorderSelection('front')} disabled={!sel} />
-              <Small icon="back" label="Arrière-plan" onClick={() => S().reorderSelection('back')} disabled={!sel} />
-              <Small icon="forward" label="Avancer" title="Avancer d’un cran (Ctrl+Page préc.)" onClick={() => S().reorderSelection('forward')} disabled={!sel} />
-              <Small icon="backward" label="Reculer" title="Reculer d’un cran, y compris sous les éléments des autres calques (Ctrl+Page suiv.)" onClick={() => S().reorderSelection('backward')} disabled={!sel} />
-              <Small icon="rotate" label="Pivoter 90°" onClick={() => S().rotateSelection(90)} disabled={!sel} />
-              <Small icon="flipH" label="Retourner ↔" onClick={() => S().flipSelection('h')} disabled={!sel} />
-              <Small icon="flipV" label="Retourner ↕" onClick={() => S().flipSelection('v')} disabled={!sel} />
-              <Small icon="lockOn" label="Verrouiller" onClick={() => S().toggleLockSelection()} disabled={!sel} />
-            </Group>
-            <Group title="Aligner et répartir">
-              <div className="rb-grid4">
-                {([['left', 'alignLeft', 'Aligner à gauche'], ['hcenter', 'alignHCenter', 'Centrer horizontalement'], ['right', 'alignRight', 'Aligner à droite'], ['hdist', 'distH', 'Répartir horizontalement'],
-                  ['top', 'alignTop', 'Aligner en haut'], ['vcenter', 'alignVCenter', 'Centrer verticalement'], ['bottom', 'alignBottom', 'Aligner en bas'], ['vdist', 'distV', 'Répartir verticalement']] as const)
-                  .map(([k, icon, label]) => <Small key={k} icon={icon} title={label} onClick={() => S().alignSelection(k)} disabled={sel < 2} />)}
-              </div>
-            </Group>
-            <Group title="Édition">
-              <Big icon="trash" label="Supprimer" onClick={() => S().deleteSelection()} disabled={!sel} />
-            </Group>
-          </>
-        )}
-
-        {tab === 'insert' && (
-          <>
-            <Group title="Plan de fond">
-              <Big icon="import" label="Plan DXF / PDF" onClick={() => A.importBackgroundAction()} title="Importer un plan existant : DXF (AutoCAD, à l’échelle réelle), PDF ou image" />
-            </Group>
-            <Group title="Évacuation">
-              <Big icon="route" label="Itinéraire" active={tool === 'route' && presets.routeKind === 'principal'} onClick={() => use('route', { routeKind: 'principal' })} />
-              <Big icon="routeDashed" label="Secondaire" active={tool === 'route' && presets.routeKind === 'secondaire'} onClick={() => use('route', { routeKind: 'secondaire' })} />
-              <Big icon="symbol" label="Pictogramme" onClick={() => window.dispatchEvent(new CustomEvent('evac:show-library'))} />
-            </Group>
-            <Group title="Flèches d’évacuation">
-              <div className="arrow-presets">
-                {ARROW_PRESETS.map((p) => <ArrowPresetButton key={p.id} preset={p} />)}
-              </div>
-            </Group>
-            <Group title="Annotations">
-              <Big icon="textIcon" label="Texte" active={tool === 'text'} onClick={() => use('text')} />
-              <Big icon="legendIcon" label="Légende" active={tool === 'legend'} onClick={() => use('legend')} />
-              <Big icon="image" label="Image / logo" onClick={() => A.insertImageAction()} />
-            </Group>
-            <Group title="Formes">
-              <div className="rb-grid4">
-                {([['rect', 'shapeRect', 'Rectangle'], ['ellipse', 'shapeEllipse', 'Ellipse'], ['triangle', 'shapeTriangle', 'Triangle'], ['diamond', 'shapeDiamond', 'Losange'],
-                  ['hexagon', 'shapeHexagon', 'Hexagone'], ['line', 'shapeLine', 'Ligne'], ['arrow', 'shapeArrow', 'Flèche pleine'], ['star', 'shapeStar', 'Étoile']] as const)
-                  .map(([k, icon, label]) => <Small key={k} icon={icon} title={label} active={tool === 'shape' && presets.shape === k} onClick={() => use('shape', { shape: k })} />)}
-              </div>
-            </Group>
-            <Group title="Bibliothèque">
-              <Big icon="import" label="Importer un picto." onClick={() => A.importSymbolAction()} title="Importer un pictogramme SVG / PNG" />
-            </Group>
-          </>
-        )}
-
-        {tab === 'building' && (
-          <>
             <Group title="Murs et ouvertures">
               <Big icon="wall" label="Mur" active={tool === 'wall' && presets.wallThickness >= 18} onClick={() => use('wall', { wallThickness: 22 })}
                 title="Mur porteur épais (M) — cliquez point par point, double-clic pour terminer" />
@@ -211,12 +199,97 @@ export function Ribbon({ onPrintPreview, onQuickExport }: { onPrintPreview(): vo
               <Big icon="room" label="Pièce" active={tool === 'room'} onClick={() => use('room')} title="Pièce (R) — tracez un rectangle, puis nommez-la" />
               <Big icon="zone" label="Zone" active={tool === 'zone'} onClick={() => use('zone')} title="Zone de danger, refuge… (Z)" />
             </Group>
-            <Group title="Mesure">
-              <Big icon="calibrate" label="Étalonner" active={tool === 'calibrate'} onClick={() => use('calibrate')} title="Étalonner l’échelle (K) — tracez une cote connue sur le plan et indiquez sa longueur réelle" />
+            <Group title="Annotations">
+              <Big icon="textIcon" label="Texte" active={tool === 'text'} onClick={() => use('text')} title="Texte (T)" />
+              <Big icon="image" label="Image / logo" onClick={() => A.insertImageAction()} />
+            </Group>
+            <Group title="Formes">
+              <div className="rb-grid4">
+                {([['rect', 'shapeRect', 'Rectangle'], ['ellipse', 'shapeEllipse', 'Ellipse'], ['triangle', 'shapeTriangle', 'Triangle'], ['diamond', 'shapeDiamond', 'Losange'],
+                  ['hexagon', 'shapeHexagon', 'Hexagone'], ['line', 'shapeLine', 'Ligne'], ['arrow', 'shapeArrow', 'Flèche pleine'], ['star', 'shapeStar', 'Étoile']] as const)
+                  .map(([k, icon, label]) => <Small key={k} icon={icon} title={label} active={tool === 'shape' && presets.shape === k} onClick={() => use('shape', { shape: k })} />)}
+              </div>
             </Group>
           </>
         )}
 
+        {tab === 'evac' && (
+          <>
+            <Group title="Affiches">
+              <Big icon="plus" label="Nouvelle affiche" onClick={() => A.createDisplayLocation()} title="Nouvelle affiche : un emplacement « Vous êtes ici » de cet étage" />
+              <Big icon="symbol" label="Vous êtes ici" active={tool === 'symbol' && pendingSymbol === 'you-are-here'} onClick={() => S().setTool('symbol', 'you-are-here')}
+                title="Placer le repère « Vous êtes ici » de l’affiche active" />
+              {(floor?.variants.length ?? 0) > 1 && (
+                <div className="rb-stack">
+                  <span className="rb-field">Nouveaux éléments</span>
+                  <div className="seg">
+                    <button className={newScope === 'all' ? 'on' : ''} onClick={() => S().setNewScope('all')} title="Les éléments dessinés ou posés vont sur toutes les affiches de l’étage">Toutes</button>
+                    <button className={newScope === 'variant' ? 'on' : ''} onClick={() => S().setNewScope('variant')} title={`Les éléments dessinés ou posés ne vont que sur « ${variantName ?? ''} »`}>Cette affiche</button>
+                  </div>
+                </div>
+              )}
+            </Group>
+            <Group title="Itinéraires">
+              <Big icon="route" label="Principal" active={tool === 'route' && presets.routeKind === 'principal'} onClick={() => use('route', { routeKind: 'principal' })} title="Itinéraire principal (I) — cliquez les points de passage, double-clic pour terminer" />
+              <Big icon="routeDashed" label="Secondaire" active={tool === 'route' && presets.routeKind === 'secondaire'} onClick={() => use('route', { routeKind: 'secondaire' })} />
+            </Group>
+            <Group title="Flèches d’évacuation">
+              <div className="arrow-presets">
+                {ARROW_PRESETS.map((p) => <ArrowPresetButton key={p.id} preset={p} />)}
+              </div>
+            </Group>
+            <Group title="Pictogrammes">
+              <Big icon="symbol" label="Bibliothèque" onClick={() => window.dispatchEvent(new CustomEvent('evac:show-library'))} title="Pictogrammes ISO 7010 et compléments (panneau Symboles)" />
+              <Big icon="import" label="Importer un picto." onClick={() => A.importSymbolAction()} title="Importer un pictogramme SVG / PNG" />
+              <Big icon="legendIcon" label="Légende" active={tool === 'legend'} onClick={() => use('legend')} title="Légende sur le plan (L)" />
+            </Group>
+            <Group title="Aide à la vérification">
+              <Big icon="route" label="Circulations" active={showCirculation} onClick={() => S().toggleCirculation()}
+                title="Circulations probables : chemin le plus court du repère vers une sortie et zones sans accès (non imprimé)" />
+            </Group>
+          </>
+        )}
+
+        {tab === 'edit' && (
+          <>
+            <Group title="Presse-papiers" cols>
+              <Small icon="paste" label="Coller" onClick={() => S().paste()} />
+              <Small icon="cut" label="Couper" onClick={() => S().cutSelection()} disabled={!sel} />
+              <Small icon="copy" label="Copier" onClick={() => S().copySelection()} disabled={!sel} />
+              <Small icon="copy" label="Dupliquer" onClick={() => S().duplicateSelection()} disabled={!sel} />
+            </Group>
+            <Group title="Sélectionner" cols>
+              <Small icon="select" label="Semblables" title="Sélectionne tous les éléments du même genre que la sélection (même type de zone, même pictogramme…)" onClick={() => S().selectWhere('similar')} disabled={!sel} />
+              <Small icon="room" label="Zones et pièces" title="Sélectionne toutes les zones et pièces du plan" onClick={() => S().selectWhere('areas')} />
+              <Small icon="text" label="Textes" title="Sélectionne tous les textes du plan (noms de locaux importés…)" onClick={() => S().selectWhere('texts')} />
+              <Small icon="image" label="Pictogrammes" title="Sélectionne tous les pictogrammes du plan" onClick={() => S().selectWhere('symbols')} />
+            </Group>
+            <Group title="Organiser" cols>
+              <Small icon="group" label="Grouper" onClick={() => S().groupSelection()} disabled={sel < 2} />
+              <Small icon="group" label="Dégrouper" onClick={() => S().ungroupSelection()} disabled={!sel} />
+              <Small icon="front" label="Premier plan" onClick={() => S().reorderSelection('front')} disabled={!sel} />
+              <Small icon="back" label="Arrière-plan" onClick={() => S().reorderSelection('back')} disabled={!sel} />
+              <Small icon="forward" label="Avancer" title="Avancer d’un cran (Ctrl+Page préc.)" onClick={() => S().reorderSelection('forward')} disabled={!sel} />
+              <Small icon="backward" label="Reculer" title="Reculer d’un cran, y compris sous les éléments des autres calques (Ctrl+Page suiv.)" onClick={() => S().reorderSelection('backward')} disabled={!sel} />
+              <Small icon="rotate" label="Pivoter 90°" onClick={() => S().rotateSelection(90)} disabled={!sel} />
+              <Small icon="flipH" label="Retourner ↔" onClick={() => S().flipSelection('h')} disabled={!sel} />
+              <Small icon="flipV" label="Retourner ↕" onClick={() => S().flipSelection('v')} disabled={!sel} />
+              <Small icon="lockOn" label="Verrouiller" onClick={() => S().toggleLockSelection()} disabled={!sel} />
+            </Group>
+            <Group title="Aligner et répartir">
+              <div className="rb-grid4">
+                {([['left', 'alignLeft', 'Aligner à gauche'], ['hcenter', 'alignHCenter', 'Centrer horizontalement'], ['right', 'alignRight', 'Aligner à droite'], ['hdist', 'distH', 'Répartir horizontalement'],
+                  ['top', 'alignTop', 'Aligner en haut'], ['vcenter', 'alignVCenter', 'Centrer verticalement'], ['bottom', 'alignBottom', 'Aligner en bas'], ['vdist', 'distV', 'Répartir verticalement']] as const)
+                  .map(([k, icon, label]) => <Small key={k} icon={icon} title={label} onClick={() => S().alignSelection(k)} disabled={sel < 2} />)}
+              </div>
+            </Group>
+            <Group title="Suppression">
+              <Big icon="trash" label="Supprimer" onClick={() => S().deleteSelection()} disabled={!sel} />
+            </Group>
+          </>
+        )}
+
+        {tab === 'check' && floor && <CheckTab onPreview={onPrintPreview} onQuickExport={onQuickExport} />}
         {tab === 'page' && floor && <PageTab page={floor.page} onPreview={onPrintPreview} />}
         {tab === 'view' && <ViewTab />}
       </div>
@@ -354,9 +427,53 @@ function PageTab({ page, onPreview }: { page: PageSetup; onPreview(): void }) {
           {toggles.map(([k, l, icon]) => <Small key={k} icon={icon} label={l} active={!!page[k]} onClick={() => set({ [k]: !page[k] } as any)} />)}
         </div>
       </Group>
-      <Group title="Sortie">
-        <Big icon="print" label="Aperçu" onClick={onPreview} />
+      <Group title="Réglages">
+        <Big icon="paper" label="Tous les réglages" onClick={() => runAppCommand('layout-settings')} title="Échelle, zone imprimée, cadres, angle du nord… dans l’aperçu, page sous les yeux" />
         <Big icon="layout" label="Modèles" onClick={() => A.manageOrganizationTemplates()} title="Enregistrer ou appliquer un modèle d’organisation" />
+      </Group>
+    </>
+  );
+}
+
+/** Onglet « Vérifier et exporter » : statut explicite, points à vérifier, sorties. */
+function CheckTab({ onPreview, onQuickExport }: { onPreview(): void; onQuickExport(): void }) {
+  const floor = useStore((s) => currentFloor(s))!;
+  const variantId = useStore((s) => currentVariantId(s));
+  const S = useStore.getState;
+  const variants = floor.variants;
+  const checks = variants.map((v) => ({ v, n: printIssues(floor, v.id).filter((i) => PRINT_ISSUE_LEVEL[i] === 'check').length }));
+  const total = checks.reduce((n, c) => n + c.n, 0);
+  const status = floor.titleBlock.status;
+  return (
+    <>
+      <Group title="Statut de l’étage">
+        <div className="rb-stack">
+          <span className={`chip status-${status}`}>{STATUS_LABEL[status]}</span>
+          {status !== 'validated' && (
+            <div className="seg">
+              <button className={status === 'draft' ? 'on' : ''} onClick={() => S().mutateFloor((f) => { f.titleBlock.status = 'draft'; f.titleBlock.validationReason = undefined; }, { keepValidation: true })}>Brouillon</button>
+              <button className={status === 'to_validate' ? 'on' : ''} onClick={() => S().mutateFloor((f) => { f.titleBlock.status = 'to_validate'; f.titleBlock.validationReason = undefined; }, { keepValidation: true })}>À valider</button>
+            </div>
+          )}
+        </div>
+        <Big icon="check" label={status === 'validated' ? 'Validé' : 'Valider…'} disabled={status === 'validated'} onClick={() => A.validateAction()}
+          title="Validation explicite : votre nom et la date sont inscrits dans le cartouche. Les alertes ne valident rien." />
+      </Group>
+      <Group title="Points à vérifier">
+        <div className="rb-checks">
+          {checks.map(({ v, n }) => (
+            <button key={v.id} className={`rb-check${n ? ' warn' : ' ok'}${v.id === variantId ? ' on' : ''}`} onClick={() => { S().setVariant(v.id); onPreview(); }}
+              title={n ? `${n} point(s) à vérifier sur « ${v.name} » — ouvrir l’aperçu` : `Rien à signaler sur « ${v.name} »`}>
+              <span>{v.name}</span><b>{n ? `${n} à vérifier` : 'OK'}</b>
+            </button>
+          ))}
+        </div>
+        <Big icon="print" label={total ? `Vérifier (${total})` : 'Aperçu'} onClick={onPreview} title="Aperçu et vérification avant export (Ctrl+P)" />
+      </Group>
+      <Group title="Exporter">
+        <Big icon="pdf" label="Cette affiche" onClick={onQuickExport} title="PDF ou PNG de l’affiche active (Ctrl+E)" />
+        <Big icon="building" label="Bâtiment" onClick={() => runAppCommand('export-building')} title="Toutes les pages du bâtiment : un PDF regroupé ou un PDF par page" />
+        <Big icon="print" label="Imprimer…" onClick={onPreview} title="L’impression se lance depuis l’aperçu" />
       </Group>
     </>
   );
@@ -366,6 +483,7 @@ function ViewTab() {
   const grid = useStore((s) => s.grid);
   const guides = useStore((s) => s.guides);
   const rulers = useStore((s) => s.rulers);
+  const circulation = useStore((s) => s.showCirculation);
   const zoom = useStore((s) => s.view.zoom);
   const S = useStore.getState;
   const zoomBy = (k: number) => {
@@ -417,6 +535,8 @@ function ViewTab() {
         </label>
       </Group>
       <Group title="Aides">
+        <Big icon="route" label="Circulations" active={circulation} onClick={() => S().toggleCirculation()}
+          title="Circulations probables : chemin le plus court vers une sortie et zones sans accès (aide à la vérification, non imprimée)" />
         <Big icon="ruler" label="Règles" active={rulers} onClick={() => S().toggleRulers()} />
         <Big icon="guides" label="Repères" active={guides} onClick={() => S().toggleGuides()} />
       </Group>

@@ -354,6 +354,10 @@ function Inner({ el, ctx }: { el: Element; ctx: RenderCtx }): React.ReactElement
       const leaf = (hx: number, dir: 1 | -1, lw: number, k: string) => {
         parts.push(
           <g key={k}>
+            {ctx.interactive && (
+              // zone de clic : tout le secteur balayé par le vantail (sinon le clic tombe sur la pièce)
+              <path d={`M ${hx} 0 L ${hx} ${-lw} A ${lw} ${lw} 0 0 ${dir === 1 ? 1 : 0} ${hx + dir * lw} 0 Z`} fill="transparent" stroke="none" />
+            )}
             <line x1={hx} y1={0} x2={hx} y2={-lw} stroke={el.color} strokeWidth={sw} strokeLinecap="round" />
             <path d={`M ${hx} ${-lw} A ${lw} ${lw} 0 0 ${dir === 1 ? 1 : 0} ${hx + dir * lw} 0`} fill="none"
               stroke={el.color} strokeWidth={Math.max(0.8, w * 0.012)} strokeDasharray={`${w * 0.05} ${w * 0.035}`} />
