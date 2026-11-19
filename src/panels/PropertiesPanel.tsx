@@ -1,3 +1,4 @@
+import { hereCallout, isHereMarker } from '../model/hereCallout';
 import React, { useEffect, useRef, useState } from 'react';
 import * as A from '../app/actions';
 import { scopeLabel, scopeOf, selectionScope, setScopeAction } from '../app/scope';
@@ -631,6 +632,7 @@ function ElementProps({ el, floor }: { el: Element; floor: Floor }) {
 
 function TextTab({ el, upd, textRef, floor }: { el: Element; upd(p: Record<string, unknown>, k?: string): void; textRef: React.RefObject<HTMLTextAreaElement | null>; floor: Floor }) {
   const e = el as any;
+  const variantId = useStore((s) => currentVariantId(s));
   if (el.type === 'text') {
     return (
       <>
@@ -683,7 +685,21 @@ function TextTab({ el, upd, textRef, floor }: { el: Element; upd(p: Record<strin
       </Section>
       <Section title="Libellé" icon="textIcon">
         <Row label="Texte"><input type="text" value={e.label} placeholder="(aucun)" onChange={(ev) => upd({ label: ev.target.value })} /></Row>
-        <Row label="Position"><Seg value={e.labelPosition} options={[['below', 'Dessous'], ['above', 'Dessus'], ['right', 'Droite'], ['left', 'Gauche']]} onChange={(v) => upd({ labelPosition: v })} /></Row>
+        {isHereMarker(e) && <Row label="Style"><Seg value={e.hereStyle ?? 'pill'} options={[['pill', 'Pastille'], ['dark', 'Sombre'], ['outline', 'Contour'], ['tag', 'Étiquette']]} onChange={(v) => upd({ hereStyle: v })} /></Row>}
+        {isHereMarker(e)
+          ? <>
+            <Row label="Position" hint="Auto : le cartouche et sa flèche se placent là où le plan est le moins chargé. Libre : glissez le cartouche sur le plan, même en dehors du dessin.">
+              <Seg value={e.hereOffset ? 'free' : e.labelPosition}
+                options={[['auto', 'Auto'], ['free', 'Libre'], ['above', 'Dessus'], ['below', 'Dessous'], ['right', 'Droite'], ['left', 'Gauche']]}
+                onChange={(v) => {
+                  if (v !== 'free') { upd({ labelPosition: v, hereOffset: undefined }); return; }
+                  const c = hereCallout(e, floor, variantId);
+                  if (c) upd({ hereOffset: [Math.round(c.x + c.w / 2 - e.x), Math.round(c.y + c.h / 2 - e.y)] });
+                }} />
+            </Row>
+            <p className="muted tiny">Glissez le cartouche « {e.label || 'Vous êtes ici'} » sur le plan pour le placer où vous voulez, même hors du dessin : la flèche suit.</p>
+          </>
+          : <Row label="Position"><Seg value={e.labelPosition === 'auto' ? 'below' : e.labelPosition} options={[['below', 'Dessous'], ['above', 'Dessus'], ['right', 'Droite'], ['left', 'Gauche']]} onChange={(v) => upd({ labelPosition: v })} /></Row>}
         <Row label="Taille"><Num value={e.labelSize} min={0} max={200} onChange={(v) => upd({ labelSize: v })} suffix={e.labelSize ? '' : 'auto'} /></Row>
         <Row label="Couleur"><Color value={e.labelColor} onChange={(v) => upd({ labelColor: v })} /></Row>
       </Section>

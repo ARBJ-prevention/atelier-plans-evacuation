@@ -5,7 +5,7 @@ import type { PageSetup, PageTheme, PrintBlockPosition } from '../model/types';
 import { PageScopeNote } from '../panels/PropertiesPanel';
 import { ThemeThumb } from '../panels/Ribbon';
 import { printIssues } from '../render/PrintPage';
-import { FRAME_ZONES, frameOn, preferredBlockPosition, PRINT_BLOCKS, PRINT_POSITIONS, THEMES, themePatch } from '../render/layout';
+import { FRAME_ZONES, frameOn, headerColorValue, preferredBlockPosition, PRINT_BLOCKS, PRINT_POSITIONS, THEMES, themePatch } from '../render/layout';
 import { currentBuilding, currentFloor, currentVariantId, useStore } from '../store/store';
 import { Icon } from '../ui/icons';
 import { BuildingExport } from './BuildingExport';
@@ -128,6 +128,8 @@ export function PrintDialog({ onClose, onEdit, currentOnly = false, focusScale =
           </div>
           <div className="row gap layout-colors">
             <label className="field inline"><span>Accent</span><input type="color" value={page.accentColor} onChange={(e) => set({ accentColor: e.target.value })} /></label>
+            <label className="field inline"><span>En-tête</span><input type="color" value={headerColorValue(page)} onChange={(e) => set({ headerColor: e.target.value })} title="Couleur de fond de l’en-tête" /></label>
+            <button className="btn small" disabled={!page.headerColor} onClick={() => set({ headerColor: undefined })} title="Revenir à la couleur d’en-tête prévue par le thème">Couleur par défaut</button>
             <label className="field inline"><span>Fond du plan</span><input type="color" value={page.planBackground || '#ffffff'} onChange={(e) => set({ planBackground: e.target.value })} /></label>
           </div>
 
@@ -168,6 +170,9 @@ export function PrintDialog({ onClose, onEdit, currentOnly = false, focusScale =
               </label>
             );
           })}
+          <label className="check" title="Quand le plan laisse de grands vides sur la page, des blocs passent à côté de lui pour qu’il soit dessiné plus grand.">
+            <input type="checkbox" checked={page.fillSpace !== false} onChange={(e) => set({ fillSpace: e.target.checked })} /> Agrandir le plan : placer des blocs dans l’espace libre
+          </label>
           {Object.values(positions ?? {}).some(Boolean) && (
             <button className="btn small full" onClick={() => set({ blockPositions: { ...page.blockPositions, [page.theme]: {} } })}>
               Rétablir les placements du thème

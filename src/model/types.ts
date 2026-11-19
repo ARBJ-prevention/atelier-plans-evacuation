@@ -135,7 +135,8 @@ export interface SymbolElement extends BaseElement {
   size: number;
   symbolId: string;
   label: string;
-  labelPosition: 'below' | 'above' | 'right' | 'left';
+  /** « auto » : réservé au repère « Vous êtes ici » (cartouche placé là où le plan est le moins chargé). */
+  labelPosition: 'below' | 'above' | 'right' | 'left' | 'auto';
   labelSize: number;
   labelColor: string;
   /** Pastille blanche derrière le pictogramme (lisibilité sur fond chargé). */
@@ -143,6 +144,10 @@ export interface SymbolElement extends BaseElement {
   /** Étirement horizontal / vertical (1 = proportions d'origine). */
   stretchX?: number;
   stretchY?: number;
+  /** Position libre du cartouche « Vous êtes ici » : décalage de son centre par rapport au repère (prioritaire sur `labelPosition`). */
+  hereOffset?: Pt;
+  /** Style du cartouche « Vous êtes ici » (absent = pastille). */
+  hereStyle?: 'pill' | 'dark' | 'outline' | 'tag';
   /** Fusion avec les panneaux collés (pas de liseré ni de coin arrondi du côté commun). Par défaut : oui. */
   fuse?: boolean;
 }
@@ -324,9 +329,13 @@ export interface PageSetup {
   customArea: { x: number; y: number; w: number; h: number };
   theme: PageTheme;
   accentColor: string;
+  /** Couleur de fond de l'en-tête choisie par l'utilisateur ; absente = couleur prévue par le thème. */
+  headerColor?: string;
   planBackground: string;
   sidePosition: 'right' | 'left' | 'bottom';
   blockPositions?: Partial<Record<PageTheme, PrintBlockPositions>>;
+  /** Déplacer des blocs dans l'espace libre à côté du plan quand il y gagne nettement en taille (absent = oui). */
+  fillSpace?: boolean;
   /** En-tête (titre, adresse, numéros d'urgence). */
   showTitleBlock: boolean;
   /** Cartouche en pied de page (auteur, date, version, statut…). Absent des anciens fichiers : suit `showTitleBlock`. */

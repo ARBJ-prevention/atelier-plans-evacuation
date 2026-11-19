@@ -17,7 +17,7 @@ describe('placement des blocs imprimés', () => {
     '%s applique sa disposition et affiche les consignes et les numéros en entier',
     (theme, edge) => {
       const { project, building, floor, variantId } = offices();
-      const page = { ...floor.page, ...themePatch(theme), paper: 'A3' as const, orientation: 'landscape' as const };
+      const page = { ...floor.page, ...themePatch(theme), paper: 'A3' as const, orientation: 'landscape' as const, fillSpace: false };
       const { drawing, blocks } = computeLayout(floor, variantId, page);
       const legend = blocks!.legend!;
       if (edge === 'right') expect(legend.x).toBeGreaterThan(drawing.x + drawing.w);
@@ -34,7 +34,7 @@ describe('placement des blocs imprimés', () => {
     (theme) => {
       const { floor, variantId } = offices();
       const page = {
-        ...floor.page, theme, orientation: 'portrait' as const, showAerial: true, showSketch: true,
+        ...floor.page, theme, orientation: 'portrait' as const, showAerial: true, showSketch: true, fillSpace: false,
         blockPositions: { [theme]: { legend: 'left', instructions: 'bottom', aerial: 'top', sketch: 'right', numbers: 'right' } satisfies PrintBlockPositions },
       };
       const { drawing, blocks, numbersInHeader } = computeLayout(floor, variantId, page);
@@ -52,7 +52,7 @@ describe('placement des blocs imprimés', () => {
     const { project, floor, variantId } = offices();
     expect(computeLayout(floor, variantId).blocks).toBeUndefined();
     const theme: PageTheme = 'indigo';
-    floor.page = { ...floor.page, ...themePatch(theme), blockPositions: {
+    floor.page = { ...floor.page, ...themePatch(theme), fillSpace: false, blockPositions: {
       indigo: { legend: 'top' }, sienne: { legend: 'right' },
     } };
     const restored = parseProject(serializeProject(project)).buildings[0].floors[0];
@@ -61,5 +61,31 @@ describe('placement des blocs imprimés', () => {
     expect(indigo.blocks!.legend!.y).toBeLessThan(indigo.drawing.y);
     const sienne = computeLayout(restored, variantId, { ...restored.page, ...themePatch('sienne') });
     expect(sienne.blocks!.legend!.x).toBeGreaterThan(sienne.drawing.x + sienne.drawing.w);
+  });
+
+  it.each([
+    ['sienne', 'landscape'], ['indigo', 'portrait'], ['petrole', 'portrait'], ['moderne', 'landscape'],
+  ] as const)('%s en %s : des blocs passent dans l’espace libre pour agrandir le plan', (theme, orientation) => {
+    const { building, project, floor, variantId } = offices();
+    // « moderne » : légende, consignes et croquis placés à la main en bas, comme sur l'aperçu signalé.
+    const blockPositions = theme === 'moderne' ? { moderne: { legend: 'bottom', instructions: 'bottom', sketch: 'bottom' } as const } : undefined;
+    const page = { ...floor.page, ...themePatch(theme), orientation, showSketch: true, ...(blockPositions && { blockPositions }) };
+    const strict = computeLayout(floor, variantId, { ...page, fillSpace: false });
+    const filled = computeLayout(floor, variantId, page);
+    expect(filled.k).toBeGreaterThan(strict.k * 1.1);
+    expect(filled.relocated?.length).toBeGreaterThan(0);
+    // Les blocs ne chevauchent ni le plan ni les autres blocs, et restent sur la page.
+    const rects = Object.values(filled.blocks!);
+    const overlap = (a: { x: number; y: number; w: number; h: number }, b: typeof a) =>
+      a.x < b.x + b.w - 0.1 && b.x < a.x + a.w - 0.1 && a.y < b.y + b.h - 0.1 && b.y < a.y + a.h - 0.1;
+    for (const [i, r] of rects.entries()) {
+      expect(overlap(r, filled.drawing)).toBe(false);
+      for (const other of rects.slice(i + 1)) expect(overlap(r, other)).toBe(false);
+      expect(r.x + r.w).toBeLessThanOrEqual(filled.w);
+      expect(r.y + r.h).toBeLessThanOrEqual(filled.h);
+    }
+    expect(printIssues(floor, variantId, page)).not.toContain('instructions-clipped');
+    const svg = renderPageSvg({ building, floor, variantId, page, customSymbols: project.customSymbols });
+    expect(svg).toContain('sans autorisation.');
   });
 });

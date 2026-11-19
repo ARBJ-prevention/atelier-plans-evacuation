@@ -150,12 +150,16 @@ export const DRAWN_SYMBOLS: SymbolDef[] = [
 
   // ── Repères ────────────────────────────────────────────────────────────────
   own('you-are-here', 'Vous êtes ici', CAT.marks, `
-    <circle cx="50" cy="50" r="46" fill="${RED}" opacity="0.18"/>
-    <circle cx="50" cy="50" r="33" fill="${RED}" stroke="${W}" stroke-width="7"/>
-    <circle cx="50" cy="50" r="11" fill="${W}"/>`, { defaultLabel: 'Vous êtes ici' }),
+    <circle cx="50" cy="50" r="48" fill="${RED}" opacity="0.14"/>
+    <circle cx="50" cy="50" r="40" fill="${RED}" opacity="0.22"/>
+    <circle cx="50" cy="50" r="31" fill="${W}"/>
+    <circle cx="50" cy="50" r="25" fill="#c8102e"/>
+    <circle cx="50" cy="50" r="9.5" fill="${W}"/>`, { defaultLabel: 'Vous êtes ici' }),
   own('you-are-here-pin', 'Vous êtes ici (repère)', CAT.marks, `
-    <path d="M50 97 C50 97 19 61 19 39 A31 31 0 0 1 81 39 C81 61 50 97 50 97 Z" fill="${RED}" stroke="${W}" stroke-width="4"/>
-    <circle cx="50" cy="39" r="12" fill="${W}"/>`, { defaultLabel: 'Vous êtes ici' }),
+    <path d="M50 94 C50 94 15 63 15 39 A35 35 0 0 1 85 39 C85 63 50 94 50 94 Z"
+      fill="#a30e26" stroke="${W}" stroke-width="8" stroke-linejoin="round"/>
+    <circle cx="50" cy="39" r="18" fill="${W}"/>
+    <circle cx="50" cy="39" r="8" fill="${RED}"/>`, { defaultLabel: 'Vous êtes ici' }),
   own('north', 'Nord', CAT.marks, `
     <circle cx="50" cy="54" r="34" fill="${W}" stroke="#1d2630" stroke-width="3"/>
     <path d="M50 22 L63 74 L50 64 L37 74 Z" fill="#1d2630"/>

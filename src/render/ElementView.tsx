@@ -1,5 +1,6 @@
 import React from 'react';
 import { boxOf, doorDimensions, legendSize, openingHostFit, polygonArea, symbolFuseSides, textSize, usedSymbolIds, windowFrameWidth, type FuseSides } from '../model/geometry';
+import { hereCallout, type HereCallout } from '../model/hereCallout';
 import type {
   ArrowStyle, CustomSymbol, DashStyle, Element, FillPattern, Floor, Pt, RouteElement, ShapeElement, SymbolElement,
 } from '../model/types';
@@ -241,8 +242,9 @@ export function polygonCentroid(p: Pt[]): Pt {
 }
 
 function SymbolView({ el, ctx }: { el: SymbolElement; ctx: RenderCtx }) {
+  const here = hereCallout(el, ctx.floor, ctx.variantId);
   const ls = el.labelSize > 0 ? el.labelSize : Math.max(8, el.size * 0.26);
-  const pos = el.labelPosition;
+  const pos = el.labelPosition === 'auto' ? 'below' : el.labelPosition;
   const sx = el.stretchX ?? 1, sy = el.stretchY ?? 1;
   const offX = (el.size * sx) / 2 + ls * 0.4, offY = (el.size * sy) / 2 + ls * 0.4;
   const lx = pos === 'right' ? offX : pos === 'left' ? -offX : 0;
@@ -254,15 +256,131 @@ function SymbolView({ el, ctx }: { el: SymbolElement; ctx: RenderCtx }) {
   const anchor = pos === 'right' ? 'start' : pos === 'left' ? 'end' : 'middle';
   return (
     <g transform={`translate(${el.x} ${el.y})`}>
+      {here && <HereLabel el={el} box={here} uid={`${ctx.idPrefix ?? ''}yah-${el.id}`} />}
       <g transform={`${el.rotation ? `rotate(${el.rotation})` : ''} ${stretch} ${el.flipX || el.flipY ? `scale(${el.flipX ? -1 : 1} ${el.flipY ? -1 : 1})` : ''}`}>
         {el.halo && <rect x={-el.size * 0.62} y={-el.size * 0.62} width={el.size * 1.24} height={el.size * 1.24} rx={el.size * 0.18} fill="#ffffff" stroke="rgba(0,0,0,.12)" strokeWidth={el.size * 0.02} />}
         <SymbolGraphic symbolId={el.symbolId} size={el.size} custom={ctx.customSymbols} fuse={fuse} clipId={`${ctx.idPrefix ?? ''}fuse-${el.id}`} />
       </g>
-      {el.label && (
+      {el.label && !here && (
         <text x={lx} y={ly} textAnchor={anchor} fontFamily={FONT} fontWeight={700}
           fontSize={ls} fill={el.labelColor} stroke="#fff" strokeWidth={Math.max(2, ls * 0.28)}
           paintOrder="stroke" strokeLinejoin="round">{el.label}</text>
       )}
+    </g>
+  );
+}
+
+/**
+ * Cartouche « Vous êtes ici » relié au repère par une flèche cernée de blanc.
+ * Quatre styles : pastille (dégradé rouge), sombre (bleu nuit), contour (blanc liseré rouge), étiquette (bloc rouge + texte).
+ */
+function HereLabel({ el, box, uid }: { el: SymbolElement; box: HereCallout; uid: string }) {
+  const style = el.hereStyle ?? 'pill';
+  const x = box.x - el.x, y = box.y - el.y;
+  const { w, h, fontSize: fs } = box;
+  const top = '#f0243f', bottom = '#b8102b', ink = '#a30e26', navy = '#16212c';
+  const custom = el.labelColor !== '#111111';
+  const curved = style === 'pill' || style === 'dark';
+  const arrowColor = style === 'dark' ? '#e30613' : bottom;
+  // Flèche (coordonnées relatives au repère)
+  const F: Pt = [box.from[0] - el.x, box.from[1] - el.y];
+  const T: Pt = [box.to[0] - el.x, box.to[1] - el.y];
+  const len = Math.hypot(T[0] - F[0], T[1] - F[1]) || 1;
+  let nx = -(T[1] - F[1]) / len, ny = (T[0] - F[0]) / len;
+  if (ny > 0 || (ny === 0 && nx < 0)) { nx = -nx; ny = -ny; } // toujours bombée vers le haut
+  const bend = curved ? Math.min(len * 0.16, fs * 2.2) : 0;
+  const C: Pt = [(F[0] + T[0]) / 2 + nx * bend, (F[1] + T[1]) / 2 + ny * bend];
+  const tl = Math.hypot(T[0] - C[0], T[1] - C[1]) || 1;
+  const ux = (T[0] - C[0]) / tl, uy = (T[1] - C[1]) / tl;
+  const head = Math.min(len * 0.45, fs * 1.35), headW = fs * 0.78;
+  const B: Pt = [T[0] - ux * head, T[1] - uy * head];
+  const f2 = (v: number) => v.toFixed(2);
+  const curve = `M${f2(F[0])} ${f2(F[1])} Q${f2(C[0])} ${f2(C[1])} ${f2(B[0] + ux * fs * 0.2)} ${f2(B[1] + uy * fs * 0.2)}`;
+  const tip = `M${f2(T[0])} ${f2(T[1])} L${f2(B[0] - uy * headW)} ${f2(B[1] + ux * headW)} L${f2(B[0] + uy * headW)} ${f2(B[1] - ux * headW)} Z`;
+  const shaft = fs * (style === 'outline' ? 0.26 : 0.34), halo = fs * 0.3;
+  const r = h / 2, cy = y + r;
+  const iconX = x + r, textX = x + h * 0.86 + (w - h * 0.86 - h * 0.42) / 2;
+  const textY = cy + fs * 0.35;
+  const arrow = (
+    <>
+      <path d={curve} fill="none" stroke="#fff" strokeWidth={shaft + halo * 2} strokeLinecap="round" />
+      <path d={tip} fill="#fff" stroke="#fff" strokeWidth={halo * 2} strokeLinejoin="round" />
+      {!curved && <circle cx={F[0]} cy={F[1]} r={shaft * 1.25 + halo} fill="#fff" />}
+      <path d={curve} fill="none" stroke={arrowColor} strokeWidth={shaft} strokeLinecap="round" />
+      <path d={tip} fill={arrowColor} stroke={arrowColor} strokeWidth={fs * 0.12} strokeLinejoin="round" />
+      {!curved && <circle cx={F[0]} cy={F[1]} r={shaft * 1.25} fill={arrowColor} />}
+    </>
+  );
+  const target = (cx: number, ring: string, core: string, rad = h * 0.31) => (
+    <>
+      <circle cx={cx} cy={cy} r={rad} fill={core} />
+      <circle cx={cx} cy={cy} r={rad * 0.61} fill="none" stroke={ring} strokeWidth={rad * 0.19} />
+      <circle cx={cx} cy={cy} r={rad * 0.24} fill={ring} />
+    </>
+  );
+  const shadow = (rx: number) => <rect x={x + fs * 0.05} y={y + fs * 0.22} width={w} height={h} rx={rx} fill="#1d2630" opacity={0.16} />;
+
+  if (style === 'dark') {
+    return (
+      <g className="here-callout" data-here-label={el.id}>
+        {arrow}
+        {shadow(r)}
+        <rect x={x} y={y} width={w} height={h} rx={r} fill={navy} stroke="#fff" strokeWidth={fs * 0.16} />
+        <circle cx={iconX} cy={cy} r={h * 0.36} fill="#e30613" opacity={0.25} />
+        {target(iconX, '#fff', '#e30613', h * 0.27)}
+        <text x={textX} y={textY} textAnchor="middle" fontFamily={FONT} fontWeight={700} letterSpacing={fs * 0.02}
+          fontSize={fs} fill={custom ? el.labelColor : '#fff'}>{el.label}</text>
+      </g>
+    );
+  }
+  if (style === 'outline') {
+    const rx = h * 0.28;
+    return (
+      <g className="here-callout" data-here-label={el.id}>
+        {arrow}
+        <rect x={x} y={y} width={w} height={h} rx={rx} fill="#fff" stroke="#fff" strokeWidth={fs * 0.4} />
+        <rect x={x} y={y} width={w} height={h} rx={rx} fill="#fff" stroke={ink} strokeWidth={fs * 0.14} />
+        {target(iconX, '#fff', ink, h * 0.27)}
+        <text x={textX} y={textY} textAnchor="middle" fontFamily={FONT} fontWeight={800}
+          fontSize={fs} fill={custom ? el.labelColor : ink}>{el.label}</text>
+      </g>
+    );
+  }
+  if (style === 'tag') {
+    const rx = h * 0.22, block = h * 0.95;
+    const tx = x + block + (w - block) / 2;
+    return (
+      <g className="here-callout" data-here-label={el.id}>
+        {arrow}
+        {shadow(rx)}
+        <defs><clipPath id={`${uid}-c`}><rect x={x} y={y} width={w} height={h} rx={rx} /></clipPath></defs>
+        <rect x={x} y={y} width={w} height={h} rx={rx} fill="#fff" stroke="#fff" strokeWidth={fs * 0.32} />
+        <g clipPath={`url(#${uid}-c)`}>
+          <rect x={x} y={y} width={w} height={h} fill="#fff" />
+          <rect x={x} y={y} width={block} height={h} fill={bottom} />
+        </g>
+        <rect x={x} y={y} width={w} height={h} rx={rx} fill="none" stroke={bottom} strokeWidth={fs * 0.1} />
+        {target(x + block / 2, bottom, '#fff', h * 0.29)}
+        <text x={tx} y={textY} textAnchor="middle" fontFamily={FONT} fontWeight={700}
+          fontSize={fs} fill={custom ? el.labelColor : navy}>{el.label}</text>
+      </g>
+    );
+  }
+  return (
+    <g className="here-callout" data-here-label={el.id}>
+      <defs>
+        <linearGradient id={`${uid}-g`} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor={top} /><stop offset="1" stopColor={bottom} />
+        </linearGradient>
+      </defs>
+      {arrow}
+      {shadow(r)}
+      <rect x={x} y={y} width={w} height={h} rx={r} fill={custom ? '#fff' : `url(#${uid}-g)`} stroke="#fff" strokeWidth={fs * 0.16} />
+      {custom && <rect x={x} y={y} width={w} height={h} rx={r} fill="none" stroke={ink} strokeWidth={fs * 0.1} />}
+      {!custom && <rect x={x + r * 0.5} y={y + h * 0.1} width={w - r} height={h * 0.32} rx={h * 0.16} fill="#fff" opacity={0.13} />}
+      {target(iconX, custom ? '#fff' : ink, custom ? ink : '#fff')}
+      <text x={textX} y={textY} textAnchor="middle" fontFamily={FONT} fontWeight={700} letterSpacing={fs * 0.02}
+        fontSize={fs} fill={custom ? el.labelColor : '#fff'}>{el.label}</text>
     </g>
   );
 }

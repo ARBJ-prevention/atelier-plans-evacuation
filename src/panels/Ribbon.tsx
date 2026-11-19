@@ -6,7 +6,7 @@ import { makeElement } from '../model/defaults';
 import { ElementView } from '../render/ElementView';
 import type { PageSetup, PageTheme } from '../model/types';
 import { PRINT_ISSUE_LEVEL, printIssues, STATUS_LABEL } from '../render/PrintPage';
-import { horizonNight, THEMES, themePatch, themeColor } from '../render/layout';
+import { headerColorValue, horizonNight, THEMES, themePatch, themeColor } from '../render/layout';
 import { api } from '../services/api';
 import { currentFloor, currentVariantId, MAX_SYMBOL_WALL_GAP, useStore, type Tool, type ToolPresets } from '../store/store';
 import { Icon } from '../ui/icons';
@@ -431,6 +431,12 @@ function PageTab({ page, onPreview }: { page: PageSetup; onPreview(): void }) {
         <div className="accent-row">
           {ACCENTS.map((c) => <button key={c} className={page.accentColor === c ? 'swatch on' : 'swatch'} style={{ background: c }} title={c} onClick={() => set({ accentColor: c })} />)}
           <input type="color" value={page.accentColor} onChange={(e) => set({ accentColor: e.target.value })} title="Couleur personnalisée" />
+        </div>
+      </Group>
+      <Group title="Couleur de l’en-tête">
+        <div className="accent-row">
+          <input type="color" value={headerColorValue(page)} onChange={(e) => set({ headerColor: e.target.value })} title="Couleur de fond de l’en-tête" />
+          <button className="btn small" disabled={!page.headerColor} onClick={() => set({ headerColor: undefined })} title="Revenir à la couleur d’en-tête prévue par le thème">Par défaut</button>
         </div>
       </Group>
       <Group title="Papier" cols>

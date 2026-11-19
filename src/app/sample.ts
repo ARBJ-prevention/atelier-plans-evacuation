@@ -112,8 +112,8 @@ export function sampleOffices(): Project {
   P.sym('iso-E002', 1210, 560, 40); P.sym('iso-P020', 1430, 680, 40);
   P.sym('electric-cutoff', 1110, 860, 40);
   P.sym('iso-E007', 175, 1080, 64, { label: 'Parking visiteurs', labelSize: 15 });
-  P.sym('you-are-here', 260, 640, 52, { label: 'Vous êtes ici', variantId: v1.id, labelSize: 15 });
-  P.sym('you-are-here', 1180, 450, 52, { label: 'Vous êtes ici', variantId: v2.id, labelSize: 15 });
+  P.sym('you-are-here', 260, 640, 52, { label: 'Vous êtes ici', variantId: v1.id });
+  P.sym('you-are-here', 1180, 450, 52, { label: 'Vous êtes ici', variantId: v2.id });
   f.elements = P.els;
   return p;
 }
@@ -180,8 +180,8 @@ export function sampleSchool(): Project {
   P.sym('iso-E003', 1650, 960, 40); P.sym('iso-E010', 1390, 960, 40);
   P.sym('fire-blanket', 560, 600, 40); P.sym('gas-cutoff', 1190, 960, 40); P.sym('electric-cutoff', 1300, 960, 40);
   P.sym('iso-E007', 545, 1300, 72, { label: 'Point de rassemblement', labelSize: 16 });
-  P.sym('you-are-here', 1475, 820, 54, { label: 'Vous êtes ici', variantId: v1.id, labelSize: 16 });
-  P.sym('you-are-here', 300, 650, 54, { label: 'Vous êtes ici', variantId: v2.id, labelSize: 16 });
+  P.sym('you-are-here', 1475, 820, 54, { label: 'Vous êtes ici', variantId: v1.id });
+  P.sym('you-are-here', 300, 650, 54, { label: 'Vous êtes ici', variantId: v2.id });
   f.elements = P.els;
   f.titleBlock.instructions = `EN CAS D'INCENDIE
 1. Donnez l'alarme (bouton rouge).
@@ -251,9 +251,9 @@ export function sampleHotel(): Project {
   [[600, 380], [1300, 380], [1960, 380]].forEach(([x, y]) => P.sym('iso-F001', x, y - 0, 36));
   P.sym('iso-F005', 270, 460, 36); P.sym('iso-F005', W - 270, 460, 36);
   P.sym('iso-P020', 1670, 250, 40); P.sym('smoke-detector', 900, 380, 30); P.sym('iso-E010', 1460, 290, 38);
-  P.sym('you-are-here', 1670, 380, 50, { label: 'Vous êtes ici', variantId: v1.id, labelSize: 15, labelPosition: 'right' });
-  P.sym('you-are-here', 700, 380, 50, { label: 'Vous êtes ici', variantId: v2.id, labelSize: 15, labelPosition: 'right' });
-  P.sym('you-are-here', 460, 380, 50, { label: 'Vous êtes ici', variantId: v3.id, labelSize: 15, labelPosition: 'right' });
+  P.sym('you-are-here', 1670, 380, 50, { label: 'Vous êtes ici', variantId: v1.id });
+  P.sym('you-are-here', 700, 380, 50, { label: 'Vous êtes ici', variantId: v2.id });
+  P.sym('you-are-here', 460, 380, 50, { label: 'Vous êtes ici', variantId: v3.id });
   f.elements = P.els;
   f.titleBlock.instructions = `EN CAS D'INCENDIE DANS VOTRE CHAMBRE
 1. Quittez la chambre et fermez la porte.
@@ -319,7 +319,7 @@ export function sampleWarehouse(): Project {
   P.sym('iso-E003', 640, 1150, 40); P.sym('iso-E011', 1360, 1200, 40); P.sym('iso-E012', 1640, 1200, 40);
   P.sym('iso-E001', 60, 720, 44); P.sym('iso-E002', 1390, 140, 44); P.sym('iso-E002', 430, 1440, 44); P.sym('iso-E002', 1980, 1440, 44);
   P.sym('iso-E007', 1100, 1660, 72, { label: 'Point de rassemblement — parking poids lourds', labelSize: 16 });
-  P.sym('you-are-here', 350, 1180, 56, { label: 'Vous êtes ici', labelSize: 16 });
+  P.sym('you-are-here', 350, 1180, 56, { label: 'Vous êtes ici' });
   f.elements = P.els;
   return p;
 }

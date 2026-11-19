@@ -174,5 +174,8 @@ export function elementDefaults(type: Element['type'], routeColor = '#00843d'): 
 
 /** Nouvel élément créé par les outils. */
 export function makeElement(type: Element['type'], props: Record<string, unknown>, routeColor = '#00843d'): Element {
-  return { id: uid('el'), type, ...elementDefaults(type, routeColor), ...props } as Element;
+  const el = { id: uid('el'), type, ...elementDefaults(type, routeColor), ...props } as Element;
+  // Le repère « Vous êtes ici » place lui-même son cartouche et sa flèche.
+  if (el.type === 'symbol' && el.symbolId.startsWith('you-are-here') && props.labelPosition === undefined) el.labelPosition = 'auto';
+  return el;
 }

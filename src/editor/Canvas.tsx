@@ -8,6 +8,7 @@ import {
 } from '../model/geometry';
 import type { DoorElement, Element, Floor, Pt, SymbolElement, WindowElement } from '../model/types';
 import { ElementView, legendCount, polygonCentroid } from '../render/ElementView';
+import { hereCallout } from '../model/hereCallout';
 import { FloorDrawing } from '../render/FloorDrawing';
 import { computeCirculation, type Circulation } from '../services/circulation';
 import { getBuiltinSymbol } from '../symbols/library';
@@ -24,7 +25,7 @@ type Drag =
   | { kind: 'resize'; orig: Element; start: Pt; direction: Pt; wallDepth?: number; began: boolean }
   | { kind: 'pscale'; id: string; orig: Element; box: Rect; direction: Pt; start: Pt; began: boolean }
   | { kind: 'rotate'; id: string; center: Pt }
-  | { kind: 'label'; id: string; start: Pt; ox: number; oy: number; began: boolean }
+  | { kind: 'label'; id: string; start: Pt; ox: number; oy: number; began: boolean; here?: boolean }
   | { kind: 'bgmove'; start: Pt; ox: number; oy: number; began: boolean }
   | { kind: 'rect'; start: Pt };
 
@@ -305,6 +306,19 @@ export function Canvas({ onCalibrate }: CanvasProps) {
 
     switch (s.tool) {
       case 'select': {
+        // Cartouche « Vous êtes ici » : on le saisit directement pour le placer librement (même hors du plan)
+        const hereId = !e.shiftKey && !e.ctrlKey ? target.closest('[data-here-label]')?.getAttribute('data-here-label') : null;
+        const hereEl = hereId ? elById(hereId) : null;
+        if (hereEl && hereEl.type === 'symbol' && !hereEl.locked) {
+          const c = hereCallout(hereEl, floor, variantId);
+          if (c) {
+            if (!s.selection.includes(hereEl.id) || s.selection.length !== 1) s.select([hereEl.id]);
+            const ox = hereEl.hereOffset ? hereEl.hereOffset[0] : c.x + c.w / 2 - hereEl.x;
+            const oy = hereEl.hereOffset ? hereEl.hereOffset[1] : c.y + c.h / 2 - hereEl.y;
+            drag.current = { kind: 'label', id: hereEl.id, start: p, ox, oy, began: false, here: true };
+            return;
+          }
+        }
         const handle = target.closest('[data-handle]')?.getAttribute('data-handle');
         if (handle && s.selection.length === 1) {
           const el = elById(s.selection[0]);
@@ -648,7 +662,8 @@ export function Canvas({ onCalibrate }: CanvasProps) {
         const rd = (v: number) => Math.round(v * 10) / 10;
         s.mutateFloor((f) => {
           const x = f.elements.find((q) => q.id === d.id) as any;
-          if (x) { x.labelDx = rd(d.ox + dx); x.labelDy = rd(d.oy + dy); }
+          if (x && d.here) x.hereOffset = [rd(d.ox + dx), rd(d.oy + dy)];
+          else if (x) { x.labelDx = rd(d.ox + dx); x.labelDy = rd(d.oy + dy); }
         }, { history: false, keepValidation: true });
         return;
       }
@@ -752,6 +767,15 @@ export function Canvas({ onCalibrate }: CanvasProps) {
           style={{ cursor: 'move' }} fill="rgba(37,99,235,0.07)" stroke="#2563eb" strokeWidth={1} strokeDasharray="4 3" vectorEffect="non-scaling-stroke">
           <title>Glisser pour déplacer le nom</title>
         </rect>,
+      );
+    }
+    const hc = el.type === 'symbol' ? hereCallout(el, floor, variantId) : null;
+    if (hc) {
+      // cadre du cartouche « Vous êtes ici » : on le glisse où l'on veut
+      const m = 5 / z;
+      handles.push(
+        <rect key="hlbl" className="label-handle" x={hc.x - m} y={hc.y - m} width={hc.w + m * 2} height={hc.h + m * 2} rx={hc.h / 2 + m}
+          fill="none" stroke="#2563eb" strokeWidth={1.2} strokeDasharray="5 3" vectorEffect="non-scaling-stroke" pointerEvents="none" />,
       );
     }
     if ('points' in el) {

@@ -4,7 +4,7 @@ import { floorContentBounds, isVisibleInVariant, usedSymbolIds } from '../model/
 import type { AreaElement, Building, CustomSymbol, Floor, PageSetup, RouteElement, SymbolElement, ValidationStatus, WallElement } from '../model/types';
 import { FONT, symbolName, SymbolGraphic } from './ElementView';
 import { FloorDrawing } from './FloorDrawing';
-import { computeLayout, frameOn, frameStroke, horizonNight, INSTRUCTION_FONT, instructionColumns, instructionLines, instructionsHeight, legendColumnLimit, mixHex, niceScaleBarMeters, themeColor, wrapText, type PageLayout } from './layout';
+import { computeLayout, frameOn, frameStroke, headerColors, horizonNight, isLightHex, INSTRUCTION_FONT, instructionColumns, instructionLines, instructionsHeight, legendColumnLimit, mixHex, niceScaleBarMeters, themeColor, wrapText, type PageLayout } from './layout';
 
 export const STATUS_LABEL: Record<ValidationStatus, string> = {
   draft: 'Brouillon',
@@ -171,7 +171,8 @@ function Header({ L, page, accent, title, subtitle, logo, numbers, version, uid 
   const k = L.hs;                       // agrandissement selon le papier
   const titleFs = 11 * k;               // titre principal : grand et lisible de loin
   const subFs = 7 * k;                  // lieu : légèrement plus petit que le titre
-  const bg = T.headerBg === 'accent' ? accent : T.headerBg;
+  const HC = headerColors(T, page, accent);   // couleur d'en-tête du thème ou choisie par l'utilisateur
+  const bg = HC.bg;
   const inner = T.fullBleedHeader ? { x: m, w: L.w - 2 * m, top: m * 0.6 } : { x: H.x, w: H.w, top: 0 };
   const logoW = logo ? 30 * k : 0;
   const titleText = T.titleUpper ? title.toUpperCase() : title;
@@ -197,14 +198,14 @@ function Header({ L, page, accent, title, subtitle, logo, numbers, version, uid 
     const emergencyFont = Math.min(emergency.fs, emergencyLineHeight / 1.14, primary ? 2.55 : 3);
     return (
       <g>
-        <rect x={H.x} y={H.y} width={H.w} height={H.h} rx={indigo ? 3 : 1} fill={T.headerBg} />
+        <rect x={H.x} y={H.y} width={H.w} height={H.h} rx={indigo ? 3 : 1} fill={HC.bg} />
         {sienne && <rect x={H.x} y={H.y} width={2} height={H.h} fill={accent} />}
         {sienne && <rect x={H.x} y={H.y + H.h - 0.6} width={H.w} height={0.6} fill={accent} />}
         {T.printStyle === 'petrole' && <rect x={H.x} y={H.y} width={H.w} height={1.5} fill={accent} />}
         {logo && <image href={logo} x={px} y={H.y + 5} width={logoW} height={H.h - 10} preserveAspectRatio="xMinYMid meet" />}
         <text x={tx} y={H.y + 17} fontFamily={tf(T.titleFont)} fontSize={titleSize} fontWeight={T.titleWeight}
-          letterSpacing={-0.28} fill={T.headerFg}>{fit(titleText, textW, titleSize)}</text>
-        <text x={tx} y={H.y + 25} fontFamily={FONT} fontSize={subSize} fontWeight={600} fill={T.headerSub}>
+          letterSpacing={-0.28} fill={HC.fg}>{fit(titleText, textW, titleSize)}</text>
+        <text x={tx} y={H.y + 25} fontFamily={FONT} fontSize={subSize} fontWeight={600} fill={HC.sub}>
           {fit(subtitle, textW, subSize)}
         </text>
         {numbers && (
@@ -223,35 +224,41 @@ function Header({ L, page, accent, title, subtitle, logo, numbers, version, uid 
   }
   if (page.theme === 'editorial') {
     // Éditorial : grand titre noir aligné à gauche, pavé d'accent, filet épais de clôture
-    const tx = H.x + (logo ? logoW + 5 : 0);
+    const pad = HC.custom ? 4 * k : 0;       // marge intérieure quand l'en-tête reçoit un fond coloré
+    const tx = H.x + pad + (logo ? logoW + 5 : 0);
     const bigFs = titleFs * 1.32;
     const nFs = numFs * 1.1;
     const nW = numbers ? Math.min(H.w * 0.5, numbers.length * nFs * 0.5 + nFs * 2) : 0;
     const nText = numbers ? fit(numbers, nW - nFs * 1.8, nFs * 0.92) : '';
-    const right = H.x + H.w;
+    const right = H.x + H.w - pad;
     const verText = version ? `Version ${version}` : '';
     const verW = verText.length * 2.6 * k * 0.62;
-    const textW = H.w - (tx - H.x) - nW - 6;         // ligne du titre (à côté des numéros)
-    const subW = H.w - (tx - H.x) - verW - 8;        // ligne du lieu (à côté de la version)
+    const textW = H.w - (tx - H.x) - nW - 6 - pad;         // ligne du titre (à côté des numéros)
+    const subW = H.w - (tx - H.x) - verW - 8 - pad;        // ligne du lieu (à côté de la version)
     return (
       <g>
+        {HC.custom && <rect x={H.x} y={H.y} width={H.w} height={H.h} fill={HC.bg} />}
         <rect x={H.x} y={H.y} width={H.w} height={0.3} fill={T.ink} />
         <rect x={H.x} y={H.y} width={16 * k} height={2.2 * k} fill={accent} />
-        {logo && <image href={logo} x={H.x} y={H.y + 5 * k} width={logoW} height={H.h - 8 * k} preserveAspectRatio="xMinYMid meet" />}
-        <text x={tx} y={H.y + H.h * 0.6} fontFamily={tf(T.titleFont)} fontWeight={T.titleWeight} fontSize={bigFs} fill={T.headerFg} letterSpacing={-0.25 * k}>
+        {logo && <image href={logo} x={H.x + pad} y={H.y + 5 * k} width={logoW} height={H.h - 8 * k} preserveAspectRatio="xMinYMid meet" />}
+        <text x={tx} y={H.y + H.h * 0.6} fontFamily={tf(T.titleFont)} fontWeight={T.titleWeight} fontSize={bigFs} fill={HC.fg} letterSpacing={-0.25 * k}>
           {fit(titleText, textW, bigFs * 0.98)}
         </text>
         <rect x={tx} y={H.y + H.h * 0.83 - subFs * 0.55} width={subFs * 0.5} height={subFs * 0.5} fill={accent} />
-        <text x={tx + subFs * 0.9} y={H.y + H.h * 0.83} fontFamily={tf(T.titleFont)} fontWeight={500} fontSize={fitSize(subtitle, subW - subFs, subFs * 0.9)} fill={T.headerSub}>
+        <text x={tx + subFs * 0.9} y={H.y + H.h * 0.83} fontFamily={tf(T.titleFont)} fontWeight={500} fontSize={fitSize(subtitle, subW - subFs, subFs * 0.9)} fill={HC.sub}>
           {fit(subtitle, subW - subFs, fitSize(subtitle, subW - subFs, subFs * 0.9) * 0.92)}
         </text>
         {numbers && (
           <g>
+            {HC.custom && (() => {   // sur un en-tête coloré, les numéros rouges gardent un fond blanc lisible
+              const x0 = right - nText.length * nFs * 0.43 - nFs * 2;
+              return <rect x={x0} y={H.y + H.h * 0.52 - nFs * 1.5} width={right + nFs * 0.7 - x0} height={nFs * 2.25} rx={nFs * 1.12} fill="#ffffff" />;
+            })()}
             <text x={right} y={H.y + H.h * 0.52} textAnchor="end" fontFamily={tf('Bahnschrift')} fontWeight={700} fontSize={nFs} fill={FIRE}>{nText}</text>
             <PhoneGlyph x={right - nText.length * nFs * 0.43 - nFs * 1.5} y={H.y + H.h * 0.52 - nFs * 1.02} s={nFs * 1.2} color={FIRE} />
           </g>
         )}
-        {verText && <text x={right} y={H.y + H.h * 0.83} textAnchor="end" fontFamily={FONT} fontSize={2.6 * k} fontWeight={600} fill={T.muted} letterSpacing={0.3}>{verText.toUpperCase()}</text>}
+        {verText && <text x={right} y={H.y + H.h * 0.83} textAnchor="end" fontFamily={FONT} fontSize={2.6 * k} fontWeight={600} fill={HC.custom ? HC.sub : T.muted} letterSpacing={0.3}>{verText.toUpperCase()}</text>}
         <rect x={H.x} y={H.y + H.h - 1.1} width={H.w} height={1.1} fill={T.ink} />
       </g>
     );
@@ -265,38 +272,46 @@ function Header({ L, page, accent, title, subtitle, logo, numbers, version, uid 
     const cx = H.x + H.w / 2;
     return (
       <g>
+        {HC.custom && <rect x={H.x} y={H.y} width={H.w} height={H.h} fill={HC.bg} />}
         {logo && <image href={logo} x={H.x + 2} y={H.y + 2} width={logoW} height={H.h - 4} preserveAspectRatio="xMinYMid meet" />}
         {icon > 0 && (
           <g transform={`translate(${H.x + (logo ? logoW + 4 : 0) + icon / 2 + 2} ${H.y + H.h / 2})`}><SymbolGraphic symbolId="iso-E002" size={icon} custom={[]} /></g>
         )}
-        <text x={cx} y={H.y + H.h * 0.47} textAnchor="middle" fontFamily={tf(T.titleFont)} fontWeight={T.titleWeight} fontSize={titleFs} fill={T.headerFg} letterSpacing={0.4 * k}>
+        <text x={cx} y={H.y + H.h * 0.47} textAnchor="middle" fontFamily={tf(T.titleFont)} fontWeight={T.titleWeight} fontSize={titleFs} fill={HC.fg} letterSpacing={0.4 * k}>
           {fit(titleText, H.w - 2 * side, titleFs * (T.titleUpper ? 1.12 : 1))}
         </text>
-        <text x={cx} y={H.y + H.h * 0.82} textAnchor="middle" fontFamily={tf(T.titleFont)} fontWeight={600} fontSize={fitSize(subtitle, H.w - 2 * side, subFs)} fill={T.headerSub}>
+        <text x={cx} y={H.y + H.h * 0.82} textAnchor="middle" fontFamily={tf(T.titleFont)} fontWeight={600} fontSize={fitSize(subtitle, H.w - 2 * side, subFs)} fill={HC.sub}>
           {fit(subtitle, H.w - 2 * side, fitSize(subtitle, H.w - 2 * side, subFs) * 0.92)}
         </text>
         <rect x={H.x + H.w - vw} y={H.y + 1.5} width={vw} height={H.h - 3} rx={T.cardRadius} fill="none" stroke={line} strokeWidth={0.3} />
-        <text x={H.x + H.w - vw / 2} y={H.y + H.h * 0.36} textAnchor="middle" fontFamily={FONT} fontSize={2.5 * k} fill={T.muted}>VERSION</text>
-        <text x={H.x + H.w - vw / 2} y={H.y + H.h * 0.74} textAnchor="middle" fontFamily={FONT} fontSize={6.5 * k} fontWeight={700} fill={T.ink}>{version || '—'}</text>
+        <text x={H.x + H.w - vw / 2} y={H.y + H.h * 0.36} textAnchor="middle" fontFamily={FONT} fontSize={2.5 * k} fill={HC.custom ? HC.sub : T.muted}>VERSION</text>
+        <text x={H.x + H.w - vw / 2} y={H.y + H.h * 0.74} textAnchor="middle" fontFamily={FONT} fontSize={6.5 * k} fontWeight={700} fill={HC.custom ? HC.fg : T.ink}>{version || '—'}</text>
         <line x1={H.x} y1={H.y + H.h} x2={H.x + H.w} y2={H.y + H.h} stroke={line} strokeWidth={page.theme === 'encadre' ? 0.8 : 0.5} />
       </g>
     );
   }
   if (page.theme === 'epure') {
-    const tx = inner.x + (logo ? logoW + 4 : 0);
-    const avail = inner.w - numW - (logo ? logoW + 4 : 0) - 6;
+    const pad = HC.custom ? 4 * k : 0;
+    const ix = inner.x + pad, iw = inner.w - 2 * pad;
+    const tx = ix + (logo ? logoW + 4 : 0);
+    const avail = iw - numW - (logo ? logoW + 4 : 0) - 6;
     return (
       <g>
-        {logo && <image href={logo} x={inner.x} y={H.y + 1} width={logoW} height={H.h - 4} preserveAspectRatio="xMinYMid meet" />}
-        <text x={tx} y={H.y + H.h * 0.5} fontFamily={tf(T.titleFont)} fontWeight={T.titleWeight} fontSize={titleFs * 1.05} fill={T.headerFg}>{fit(titleText, avail, titleFs * 1.05)}</text>
-        <text x={tx} y={H.y + H.h * 0.86} fontFamily={FONT} fontWeight={600} fontSize={fitSize(subtitle, inner.w - (logo ? logoW + 4 : 0), subFs)} fill={accent}>{fit(subtitle, inner.w - (logo ? logoW + 4 : 0), fitSize(subtitle, inner.w - (logo ? logoW + 4 : 0), subFs) * 0.92)}</text>
+        {HC.custom && <rect x={inner.x} y={H.y} width={inner.w} height={H.h} fill={HC.bg} />}
+        {logo && <image href={logo} x={ix} y={H.y + 1} width={logoW} height={H.h - 4} preserveAspectRatio="xMinYMid meet" />}
+        <text x={tx} y={H.y + H.h * 0.5} fontFamily={tf(T.titleFont)} fontWeight={T.titleWeight} fontSize={titleFs * 1.05} fill={HC.fg}>{fit(titleText, avail, titleFs * 1.05)}</text>
+        <text x={tx} y={H.y + H.h * 0.86} fontFamily={FONT} fontWeight={600} fontSize={fitSize(subtitle, iw - (logo ? logoW + 4 : 0), subFs)} fill={HC.custom ? HC.sub : accent}>{fit(subtitle, iw - (logo ? logoW + 4 : 0), fitSize(subtitle, iw - (logo ? logoW + 4 : 0), subFs) * 0.92)}</text>
         {numbers && (
           <g>
-            <PhoneGlyph x={inner.x + inner.w - Math.min(numW - numFs * 1.6, numbers.length * numFs * 0.47) - numFs * 1.6} y={H.y + H.h * 0.5 - numFs * 1.15} s={numFs * 1.25} color={FIRE} />
-            <text x={inner.x + inner.w} y={H.y + H.h * 0.5 - numFs * 0.1} textAnchor="end" fontFamily={tf('Bahnschrift')} fontWeight={600} fontSize={numFs} fill={FIRE}>{fit(numbers, numW - numFs * 1.6, numFs)}</text>
+            {HC.custom && (() => {   // sur un en-tête coloré, les numéros rouges gardent un fond blanc lisible
+              const x0 = ix + iw - Math.min(numW - numFs * 1.6, numbers.length * numFs * 0.47) - numFs * 2.2;
+              return <rect x={x0} y={H.y + H.h * 0.5 - numFs * 1.55} width={ix + iw + numFs * 0.8 - x0} height={numFs * 2.3} rx={numFs * 1.15} fill="#ffffff" />;
+            })()}
+            <PhoneGlyph x={ix + iw - Math.min(numW - numFs * 1.6, numbers.length * numFs * 0.47) - numFs * 1.6} y={H.y + H.h * 0.5 - numFs * 1.15} s={numFs * 1.25} color={FIRE} />
+            <text x={ix + iw} y={H.y + H.h * 0.5 - numFs * 0.1} textAnchor="end" fontFamily={tf('Bahnschrift')} fontWeight={600} fontSize={numFs} fill={FIRE}>{fit(numbers, numW - numFs * 1.6, numFs)}</text>
           </g>
         )}
-        <line x1={inner.x} y1={H.y + H.h} x2={inner.x + inner.w} y2={H.y + H.h} stroke="#d4dae0" strokeWidth={0.25} />
+        <line x1={ix} y1={H.y + H.h} x2={ix + iw} y2={H.y + H.h} stroke="#d4dae0" strokeWidth={0.25} />
       </g>
     );
   }
@@ -304,8 +319,11 @@ function Header({ L, page, accent, title, subtitle, logo, numbers, version, uid 
   const sig = page.theme === 'signaletique';
   const hz = T.headerBg === 'gradient';
   const gid = `hz-${uid}`;
-  const night = horizonNight(accent);
-  const light = sig || hz;          // pastille d'urgence blanche, texte rouge
+  const hzBase = HC.custom ? HC.bg : accent;   // Horizon : le dégradé part de la couleur choisie
+  const night = horizonNight(hzBase);
+  // pastille d'urgence blanche, texte rouge (sauf sur un en-tête clair, où elle disparaîtrait)
+  const light = (sig || hz) && !(HC.custom && isLightHex(HC.bg));
+  const fg = hz ? T.headerFg : HC.fg, sub = hz ? T.headerSub : HC.sub;
   const top = inner.top, bottom = H.h - 1.3;
   const cy = top + (bottom - top) / 2;
   const tx = inner.x + (logo ? logoW + 4 : 0);
@@ -321,8 +339,8 @@ function Header({ L, page, accent, title, subtitle, logo, numbers, version, uid 
         <defs>
           <linearGradient id={gid} x1="0" y1="0" x2="1" y2="0.6">
             <stop offset="0" stopColor={night} />
-            <stop offset="0.45" stopColor={mixHex(night, accent, 0.35)} />
-            <stop offset="1" stopColor={accent} />
+            <stop offset="0.45" stopColor={mixHex(night, hzBase, 0.35)} />
+            <stop offset="1" stopColor={hzBase} />
           </linearGradient>
         </defs>
       )}
@@ -344,10 +362,10 @@ function Header({ L, page, accent, title, subtitle, logo, numbers, version, uid 
           <g transform={`translate(${tx + iconS / 2} ${cy})`}><SymbolGraphic symbolId="iso-E002" size={iconS * 0.85} custom={[]} /></g>
         </g>
       )}
-      <text x={textX} y={titleY} fontFamily={tf(T.titleFont)} fontWeight={T.titleWeight} fontSize={titleFs} fill={T.headerFg} letterSpacing={sig ? 0.4 : 0}>
+      <text x={textX} y={titleY} fontFamily={tf(T.titleFont)} fontWeight={T.titleWeight} fontSize={titleFs} fill={fg} letterSpacing={sig ? 0.4 : 0}>
         {fit(titleText, inner.x + inner.w - textX - numW - 6, titleFs * (T.titleUpper ? 1.12 : 1))}
       </text>
-      <text x={textX} y={subY} fontFamily={tf('Bahnschrift')} fontWeight={600} fontSize={fitSize(subtitle, inner.x + inner.w - textX, subFs)} fill={T.headerSub}>{fit(subtitle, inner.x + inner.w - textX, fitSize(subtitle, inner.x + inner.w - textX, subFs) * 0.92)}</text>
+      <text x={textX} y={subY} fontFamily={tf('Bahnschrift')} fontWeight={600} fontSize={fitSize(subtitle, inner.x + inner.w - textX, subFs)} fill={sub}>{fit(subtitle, inner.x + inner.w - textX, fitSize(subtitle, inner.x + inner.w - textX, subFs) * 0.92)}</text>
       {numbers && (
         <g>
           <rect x={inner.x + inner.w - numW} y={pillY} width={numW} height={pillH} rx={pillH / 2} fill={light ? '#ffffff' : FIRE} />

@@ -1,5 +1,8 @@
 # Journal des versions
 
+## Prochaine version
+- **« Vous êtes ici » avec flèche** : le repère est relié à un cartouche rouge par une grosse flèche cernée de blanc. En position **Auto** (par défaut), le cartouche se place tout seul là où le plan est le moins chargé (hors des pictogrammes, textes, murs et itinéraires, de préférence dans le vide ou hors du bâtiment) et la taille du texte suit celle du dessin. Les positions Dessus / Dessous / Droite / Gauche restent disponibles dans les Propriétés, ainsi que quatre styles : Pastille, Sombre, Contour et Étiquette.
+
 ## 2.0.20 - novembre 2026
 - **Nouveaux thèmes d'impression** : Indigo à droite, Sienne en bas et Pétrole à gauche. Les neuf thèmes précédents restent disponibles.
 - **Placement des blocs** : positionnez la légende, les consignes, la vue aérienne, le croquis de situation et les numéros d'urgence autour du plan. Les choix sont mémorisés par thème et par étage et s'appliquent à l'aperçu et aux exports.

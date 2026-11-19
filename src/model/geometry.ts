@@ -1,4 +1,5 @@
 import { getBuiltinSymbol } from '../symbols/library';
+import { hereCallout } from './hereCallout';
 import type { DoorElement, Element, Floor, Pt, SymbolElement, WindowElement } from './types';
 
 export interface Rect { x: number; y: number; w: number; h: number }
@@ -618,6 +619,8 @@ export function floorContentBounds(floor: Floor, variantId: string): Rect {
     if (!visibleLayers.has(el.layer) || !isVisibleInVariant(el, variantId)) continue;
     if (el.type === 'legend') legendItems ??= usedSymbolIds(floor, variantId).length;
     rects.push(elementBounds(el, legendItems));
+    const label = el.type === 'symbol' ? hereCallout(el, floor, variantId) : null;
+    if (label) rects.push(inflate(label, label.fontSize * 0.15));
   }
   const u = unionRects(rects);
   return u && u.w > 0 && u.h > 0 ? inflate(u, Math.max(u.w, u.h) * 0.02) : { x: 0, y: 0, w: 1000, h: 700 };

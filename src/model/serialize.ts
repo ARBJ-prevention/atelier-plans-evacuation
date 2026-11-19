@@ -55,6 +55,8 @@ function migrateElement(e: any): Element {
   if (e.type === 'door' && typeof e.double === 'boolean' && !e.doorType) out.doorType = e.double ? 'double' : 'single';
   delete out.double;
   if (e.type === 'symbol' && LEGACY_SYMBOLS[e.symbolId]) out.symbolId = LEGACY_SYMBOLS[e.symbolId];
+  // Avant le placement automatique, « Dessous » était la valeur par défaut du repère « Vous êtes ici ».
+  if (out.type === 'symbol' && typeof out.symbolId === 'string' && out.symbolId.startsWith('you-are-here') && (!e.labelPosition || e.labelPosition === 'below')) out.labelPosition = 'auto';
   if (Array.isArray(e.excludedVariantIds)) out.excludedVariantIds = e.excludedVariantIds.filter((id: unknown) => typeof id === 'string');
   else delete out.excludedVariantIds;
   return out as Element;

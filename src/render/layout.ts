@@ -1,5 +1,5 @@
 import { floorContentBounds, isVisibleInVariant, usedSymbolIds, type Rect } from '../model/geometry';
-import type { FrameKey, Floor, PageSetup, PageTheme, PrintBlock, PrintBlockPosition } from '../model/types';
+import type { FrameKey, Floor, PageSetup, PageTheme, PrintBlock, PrintBlockPosition, PrintBlockPositions } from '../model/types';
 import { getBuiltinSymbol } from '../symbols/library';
 
 export const PAPER_MM: Record<string, [number, number]> = { A4: [210, 297], A3: [297, 420], A2: [420, 594] };
@@ -171,6 +171,33 @@ export function mixHex(a: string, b: string, t: number): string {
   return '#' + A.map((v, i) => Math.round(v + (B[i] - v) * t).toString(16).padStart(2, '0')).join('');
 }
 
+/** Couleur claire ? (luminance perçue) */
+export function isLightHex(c: string): boolean {
+  const s = c.replace('#', '');
+  const f = s.length === 3 ? s.split('').map((x) => x + x).join('') : s.padEnd(6, '0').slice(0, 6);
+  const [r, g, b] = [0, 2, 4].map((i) => parseInt(f.slice(i, i + 2), 16) || 0);
+  return 0.299 * r + 0.587 * g + 0.114 * b > 160;
+}
+
+/**
+ * Couleurs de l'en-tête : celles du thème, ou, si l'utilisateur a choisi une couleur d'en-tête,
+ * ce fond avec un texte blanc ou foncé selon sa clarté (le titre reste toujours lisible).
+ */
+export function headerColors(T: ThemeTokens, page: PageSetup, accent: string): { custom: boolean; bg: string; fg: string; sub: string } {
+  const c = page.headerColor;
+  if (!c) return { custom: false, bg: T.headerBg === 'accent' ? accent : T.headerBg, fg: T.headerFg, sub: T.headerSub };
+  const fg = isLightHex(c) ? '#111a24' : '#ffffff';
+  return { custom: true, bg: c, fg, sub: mixHex(c, fg, 0.8) };
+}
+
+/** Couleur d'en-tête affichée dans le sélecteur : celle choisie, sinon celle du thème (blanc si l'en-tête est sans fond). */
+export function headerColorValue(page: PageSetup): string {
+  if (page.headerColor) return page.headerColor;
+  const bg = (THEMES[page.theme] ?? THEMES.moderne).headerBg;
+  if (bg === 'accent' || bg === 'gradient') return page.accentColor || '#00843d';
+  return /^#[0-9a-f]{6}$/i.test(bg) ? bg : '#ffffff';
+}
+
 /**
  * Changement de thème : les thèmes « à cadres » activent aussi la vue aérienne et le croquis ;
  * Horizon active le croquis de situation seul (dès le premier choix, quel que soit le thème précédent).
@@ -240,6 +267,8 @@ export interface PageLayout {
   hs: number;
   /** Numéros d'urgence affichés dans l'en-tête (sinon dans le cadre rouge latéral). */
   numbersInHeader: boolean;
+  /** Blocs déplacés automatiquement dans l'espace libre pour agrandir le plan. */
+  relocated?: PrintBlock[];
 }
 
 /**
@@ -359,6 +388,7 @@ function positionedBlocks(
     e.type === 'route' && visible.has(e.layer) && isVisibleInVariant(e, variantId) ? [e.kind] : [])).size;
   const rects: Partial<Record<PrintBlock, Rect>> = {};
   const drawing = { ...area };
+  let squeezed = false;
   function height(key: PrintBlock, width: number, row: boolean) {
     switch (key) {
       case 'legend': return 11 + Math.ceil(items / legendColumnLimit(width)) * 7 + 1;
@@ -379,8 +409,9 @@ function positionedBlocks(
     const weight = (key: PrintBlock) => key === 'instructions' ? 2.2 : key === 'legend' ? 1.45 : 1;
     const total = keys.reduce((sum, key) => sum + weight(key), 0);
     const widths = keys.map((key) => available * weight(key) / total);
-    const h = Math.min(area.h * (groups.top.length && groups.bottom.length ? 0.31 : 0.58),
-      Math.max(...keys.map((key, i) => height(key, widths[i], true))));
+    const need = Math.max(...keys.map((key, i) => height(key, widths[i], true)));
+    const h = Math.min(area.h * (groups.top.length && groups.bottom.length ? 0.31 : 0.58), need);
+    if (h < need - 0.5) squeezed = true;
     const y = edge === 'top' ? area.y : area.y + area.h - h;
     let x = area.x;
     keys.forEach((key, i) => {
@@ -407,6 +438,7 @@ function positionedBlocks(
     const minHeight = (key: PrintBlock) => key === 'legend' || key === 'instructions' ? 17 : key === 'numbers' ? 16 : 14;
     const minimum = keys.reduce((sum, key) => sum + minHeight(key), 0);
     const fit = total <= available ? 1 : clamp((available - minimum) / Math.max(1, total - minimum), 0, 1);
+    if (fit < 1) squeezed = true;
     let y = drawing.y;
     keys.forEach((key, i) => {
       const min = minHeight(key);
@@ -417,10 +449,72 @@ function positionedBlocks(
     drawing.w -= width + gap;
     if (edge === 'left') drawing.x += width + gap;
   }
-  return { rects, drawing };
+  return { rects, drawing, squeezed };
 }
 
+type LayoutResult = PageLayout & { squeezed: boolean };
+
+/** Côté où se trouve un bloc par rapport à la zone du plan. */
+function blockEdge(r: Rect, d: Rect): PrintBlockPosition {
+  if (r.y >= d.y + d.h - 0.5) return 'bottom';
+  if (r.y + r.h <= d.y + 0.5) return 'top';
+  return r.x >= d.x + d.w - 0.5 ? 'right' : 'left';
+}
+
+/** Côté de repli d'un bloc : l'espace qui reste libre à côté du plan quand le bloc est sur son côté d'origine. */
+const SPARE_EDGE: Record<PrintBlockPosition, PrintBlockPosition> = { bottom: 'right', top: 'right', left: 'bottom', right: 'bottom' };
+
+/**
+ * Mise en page de l'affiche. Quand les blocs laissent de grands vides à côté du plan (plan large au-dessus
+ * d'un bandeau, plan en longueur à côté d'une colonne…), certains blocs passent dans cet espace libre si le
+ * plan y gagne nettement en taille. Désactivable avec `page.fillSpace = false`.
+ */
 export function computeLayout(floor: Floor, variantId: string, page: PageSetup = floor.page): PageLayout {
+  const base = layoutOnce(floor, variantId, page);
+  const fixed = floor.unitsPerMeter > 0 && page.scaleMode === 'fixed' && page.scale > 0;
+  if (page.fillSpace === false || fixed || (!base.blocks && !base.side)) return strip(base);
+
+  // Blocs affichés et côté qu'ils occupent dans la mise en page voulue.
+  const edges: [PrintBlock, PrintBlockPosition][] = [];
+  if (base.blocks) {
+    for (const [key, r] of Object.entries(base.blocks) as [PrintBlock, Rect][]) edges.push([key, blockEdge(r, base.drawing)]);
+  } else if (base.side) {
+    const edge = blockEdge(base.side, base.drawing);
+    const tb = floor.titleBlock;
+    for (const [key, , flag] of PRINT_BLOCKS) {
+      if (!page[flag] || (key === 'instructions' && !tb.instructions.trim())
+        || (key === 'numbers' && (base.numbersInHeader || !tb.emergencyNumbers.trim()))) continue;
+      edges.push([key, edge]);
+    }
+  }
+  if (!edges.length) return strip(base);
+
+  const area = (L: PageLayout) => L.world.w * L.k * L.world.h * L.k;
+  let best: LayoutResult | null = null, bestScore = 0;
+  const n = Math.min(edges.length, 5);
+  for (let mask = 1; mask < 1 << n; mask++) {
+    const map: PrintBlockPositions = {};
+    const moved: PrintBlock[] = [];
+    edges.forEach(([key, edge], i) => {
+      const go = i < n && mask & (1 << i);
+      map[key] = go ? SPARE_EDGE[edge] : edge;
+      if (go) moved.push(key);
+    });
+    const L = layoutOnce(floor, variantId, { ...page, blockPositions: { ...page.blockPositions, [page.theme]: map } });
+    if (L.squeezed && !base.squeezed) continue;
+    // Chaque bloc déplacé doit se justifier : on préfère le moins de déplacements possible.
+    const score = area(L) * Math.pow(0.9, moved.length);
+    if (score > bestScore) { best = { ...L, relocated: moved }; bestScore = score; }
+  }
+  // On ne bouleverse la disposition choisie que si le plan y gagne vraiment (≥ 25 % de surface).
+  return best && area(best) >= area(base) * 1.25 ? strip(best) : strip(base);
+}
+
+function strip({ squeezed: _squeezed, ...layout }: LayoutResult): PageLayout {
+  return layout;
+}
+
+function layoutOnce(floor: Floor, variantId: string, page: PageSetup): LayoutResult {
   const paper = pageSizeMm(page);
   const s = PAPER_SCALE[page.paper] ?? 1;
   const w = paper.w / s, h = paper.h / s;
@@ -505,7 +599,8 @@ export function computeLayout(floor: Floor, variantId: string, page: PageSetup =
         extra ? 48 : 0,
         numsInSide ? 22 : 0,
       );
-      const sh = clamp(Math.min(need, Math.max(leftover, bandBase)), bandBase, H * 0.5);
+      // Un bandeau peu rempli ne réserve plus une hauteur minimale : la place libérée revient au plan.
+      const sh = clamp(Math.min(need, Math.max(leftover, bandBase)), 0, H * 0.5);
       side = { x: x0, y: y1 - sh, w: W, h: sh };
       y1 -= sh + G;
     } else {
@@ -525,11 +620,21 @@ export function computeLayout(floor: Floor, variantId: string, page: PageSetup =
   const placement = positioned ? positionedBlocks(floor, variantId, page, content, G, numbersInHeader) : undefined;
   const drawing = placement?.drawing ?? content;
 
-  const inner = { x: drawing.x + pad, y: drawing.y + pad, w: drawing.w - 2 * pad, h: drawing.h - 2 * pad };
-  // Place réservée à la flèche du nord (coin haut droit) et à la barre d'échelle (bas).
-  if (page.showNorth) inner.w -= 17;
-  if (page.showScaleBar && floor.unitsPerMeter > 0) inner.h -= 10;
-  let k = Math.min(inner.w / world.w, inner.h / world.h);
+  // Place réservée à la flèche du nord (coin haut droit) et à la barre d'échelle (coin bas gauche) :
+  // chacune prend une bande sur le côté où le plan a de la marge (bande verticale si le plan est limité
+  // par la hauteur, horizontale s'il l'est par la largeur), pour ne pas rapetisser le plan inutilement.
+  const north = page.showNorth, bar = page.showScaleBar && floor.unitsPerMeter > 0;
+  let inner = { x: drawing.x + pad, y: drawing.y + pad, w: drawing.w - 2 * pad, h: drawing.h - 2 * pad };
+  let k = -1;
+  for (const northTop of north ? [false, true] : [false]) {
+    for (const barSide of bar ? [false, true] : [false]) {
+      const r = { x: drawing.x + pad, y: drawing.y + pad, w: drawing.w - 2 * pad, h: drawing.h - 2 * pad };
+      if (north) { if (northTop) { r.y += 20; r.h -= 20; } else r.w -= 17; }
+      if (bar) { if (barSide) { r.x += 66; r.w -= 66; } else r.h -= 10; }
+      const kr = Math.min(r.w / world.w, r.h / world.h);
+      if (kr > k * 1.005) { k = kr; inner = r; }
+    }
+  }
   let scaleDenominator: number | null = null;
   if (floor.unitsPerMeter > 0) {
     if (page.scaleMode === 'fixed' && page.scale > 0) {
@@ -541,7 +646,7 @@ export function computeLayout(floor: Floor, variantId: string, page: PageSetup =
   }
   const tx = inner.x + (inner.w - world.w * k) / 2 - world.x * k;
   const ty = inner.y + (inner.h - world.h * k) / 2 - world.y * k;
-  return { w, h, paperW: paper.w, paperH: paper.h, s, m, theme: T, header, footer, side, blocks: placement?.rects, drawing, world, k, tx, ty, scaleDenominator, hs, numbersInHeader };
+  return { w, h, paperW: paper.w, paperH: paper.h, s, m, theme: T, header, footer, side, blocks: placement?.rects, drawing, world, k, tx, ty, scaleDenominator, hs, numbersInHeader, squeezed: !!placement?.squeezed };
 }
 
 /** Longueur « ronde » de barre d'échelle (m) pour viser ~30 mm. */
