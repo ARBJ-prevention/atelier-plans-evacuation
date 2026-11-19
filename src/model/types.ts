@@ -237,7 +237,24 @@ export interface ShapeElement extends BaseElement {
   textColor: string;
 }
 
+/** Cote : distance entre deux points, affichée en mètres une fois l'échelle étalonnée. */
+export interface DimensionElement extends BaseElement {
+  type: 'dimension';
+  /** Les deux points mesurés (toujours 2). */
+  points: Pt[];
+  /** Décalage de la ligne de cote, perpendiculaire au segment mesuré (u, signé). */
+  offset: number;
+  color: string;
+  fontSize: number;
+  strokeWidth: number;
+  /** Texte imposé à la place de la mesure ('' = mesure calculée). */
+  text: string;
+  /** Extrémités : traits obliques (architecture) ou flèches. */
+  ends: 'tick' | 'arrow' | 'dot';
+}
+
 export type Element =
+  | DimensionElement
   | WallElement
   | AreaElement
   | DoorElement

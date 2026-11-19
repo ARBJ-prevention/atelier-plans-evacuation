@@ -1,7 +1,10 @@
 # Journal des versions
 
-## Prochaine version
+## 2.0.21 - novembre 2026
 - **« Vous êtes ici » avec flèche** : le repère est relié à un cartouche rouge par une grosse flèche cernée de blanc. En position **Auto** (par défaut), le cartouche se place tout seul là où le plan est le moins chargé (hors des pictogrammes, textes, murs et itinéraires, de préférence dans le vide ou hors du bâtiment) et la taille du texte suit celle du dessin. Les positions Dessus / Dessous / Droite / Gauche restent disponibles dans les Propriétés, ainsi que quatre styles : Pastille, Sombre, Contour et Étiquette.
+- **Repère glissable** : attrapez le cartouche « Vous êtes ici » à la souris pour le poser où vous voulez, même en dehors du plan ; la flèche suit (position « Libre » dans les Propriétés, « Auto » pour revenir au placement automatique).
+- **Couleur de l'en-tête** réglable (onglet Mise en page et aperçu), avec retour à la couleur du thème.
+- **Agrandir le plan** : quand la page laisse de grands vides, des blocs passent à côté du plan pour qu'il soit imprimé plus grand (option dans l'aperçu).
 
 ## 2.0.20 - novembre 2026
 - **Nouveaux thèmes d'impression** : Indigo à droite, Sienne en bas et Pétrole à gauche. Les neuf thèmes précédents restent disponibles.
