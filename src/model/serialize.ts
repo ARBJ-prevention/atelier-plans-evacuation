@@ -37,7 +37,7 @@ export function parseProject(text: string): Project {
   return migrate(raw);
 }
 
-const KNOWN_TYPES = new Set(['wall', 'area', 'door', 'window', 'stairs', 'symbol', 'route', 'text', 'image', 'legend', 'shape', 'dimension']);
+const KNOWN_TYPES = new Set(['wall', 'area', 'door', 'window', 'stairs', 'symbol', 'route', 'text', 'image', 'legend', 'shape']);
 
 /** Correspondance des pictogrammes de la version 1 vers les pictogrammes ISO 7010 officiels. */
 export const LEGACY_SYMBOLS: Record<string, string> = {

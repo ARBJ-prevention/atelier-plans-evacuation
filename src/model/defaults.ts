@@ -169,8 +169,6 @@ export function elementDefaults(type: Element['type'], routeColor = '#00843d'): 
         ...common, layer: 'annotations', shape: 'rect', x: 0, y: 0, w: 160, h: 100, fill: '#e3f3ea', fillOpacity: 1, pattern: 'solid',
         patternColor: '#00843d', stroke: '#00843d', strokeWidth: 2, dash: 'solid', radius: 0, text: '', textSize: 16, textColor: '#111111',
       };
-    case 'dimension':
-      return { ...common, layer: 'annotations', points: [], offset: 0, color: '#1f4e8c', fontSize: 14, strokeWidth: 1.2, text: '', ends: 'tick' };
   }
 }
 
