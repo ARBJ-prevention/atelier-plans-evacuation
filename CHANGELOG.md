@@ -1,5 +1,10 @@
 # Journal des versions
 
+## 2.0.31 - novembre 2026
+- **Faire coulisser un mur** : la poignée au milieu d'un mur sélectionné le fait glisser parallèlement à lui-même, en restant droit ; les murs raccordés suivent et l'aimant le cale sur l'axe ou la face des murs voisins (Alt : réglage libre). Ctrl + glisser ajoute un point comme avant.
+- **Import DWG** : les morceaux d'un même mur de même épaisseur, décalés jusqu'à 15 cm, sont remis sur la même ligne.
+- **Aperçu DWG/DXF** : les hachures dont les bords sont dans le désordre ne dessinent plus de triangles gris en travers.
+
 ## 2.0.30 - novembre 2026
 - **Import DWG : murs droits et raccordés proprement.** Les murs presque droits deviennent exactement horizontaux ou verticaux, les morceaux d'un même mur (séparés par des portes ou fenêtres) sont remis sur une seule ligne, et chaque extrémité proche d'un mur perpendiculaire (jusqu'à 60 cm) le rejoint.
 
