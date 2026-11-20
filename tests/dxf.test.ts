@@ -145,8 +145,8 @@ describe('géométrie DXF', () => {
     expect(declaredUnit(0)).toBeNull();
   });
 
-  it('refuse un DXF binaire et un fichier quelconque', () => {
-    expect(() => decodeDxfBytes(new TextEncoder().encode('AutoCAD Binary DXF\r\n\u001a\u0000'))).toThrow(/binaire/);
+  it('refuse un DXF binaire vide et un fichier quelconque', () => {
+    expect(() => parseDxf(decodeDxfBytes(new TextEncoder().encode('AutoCAD Binary DXF\r\n\u001a\u0000')))).toThrow(DxfError);
     expect(() => parseDxf('bonjour\nle monde\n')).toThrow(DxfError);
     expect(decodeDxfBytes(new Uint8Array([0x63, 0x61, 0x66, 0xe9]))).toBe('café'); // Windows-1252
   });

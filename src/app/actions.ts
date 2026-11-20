@@ -9,6 +9,10 @@ import { api, bytesToDataUrl, MIME } from '../services/api';
 import { buildBatchPrintHtml, buildPrintHtml, renderPagePng, safeFileName, type ExportJob } from '../services/exporter';
 import { imageFromFile, pdfPageCount, renderPdfPage } from '../services/imports';
 import { decodeDxfBytes, DxfError, flattenDxf, parseDxf } from '../services/dxf';
+import { svgToDxf } from '../services/svgToDxf';
+import { floorToDxf } from '../services/cadExport';
+import { renderPageSvg } from '../render/PrintPage';
+import { normalizePlanFile } from '../services/planFormats';
 import { askDxfImport, type DxfImportChoice } from '../dialogs/DxfImport';
 import { askRecognition } from '../dialogs/Recognize';
 import { askImportPlan } from '../dialogs/ImportWizard';
@@ -218,8 +222,15 @@ export async function importBackgroundAction(): Promise<void> {
   const floor = currentFloor(s);
   const building = currentBuilding(s);
   if (!floor || !building || !s.project) return;
-  const file = await api().pickFile('plan');
-  if (!file) return;
+  const picked = await api().pickFile('plan');
+  if (!picked) return;
+  let file: typeof picked;
+  try {
+    file = await normalizePlanFile(picked);
+  } catch (e) {
+    await alertDialog('Import impossible', errMsg(e));
+    return;
+  }
   let pageCount = 1;
   try {
     if (file.ext === 'pdf') pageCount = await pdfPageCount(file.data);
@@ -264,8 +275,9 @@ export async function importBackgroundAction(): Promise<void> {
     }
   };
 
-  if (file.ext === 'dwg' || file.ext === 'dxf') {
+  if (file.ext === 'dwg' || file.ext === 'dxf' || file.ext === 'svg') {
     if (file.ext === 'dwg') await importDwgBackground(file.name, file.data);
+    else if (file.ext === 'svg') await importSvgBackground(file.name, file.data);
     else await importDxfBackground(file.name, file.data);
     dropIfEmpty();
     return;
@@ -330,6 +342,32 @@ export async function importDwgBackground(name: string, data: Uint8Array): Promi
 }
 
 /** Import d'un plan DXF : plan vectoriel net, échelle réelle reprise du fichier. */
+/**
+ * Import d'un plan vectoriel SVG (EdrawMax, Visio, Illustrator, Inkscape…) : converti en DXF,
+ * puis même fenêtre d'import (calques, unités, reconnaissance des murs) qu'un plan AutoCAD.
+ */
+export async function importSvgBackground(name: string, data: Uint8Array): Promise<void> {
+  let dxf: { dxf: string; count: number };
+  try {
+    dxf = svgToDxf(new TextDecoder('utf-8').decode(data));
+  } catch (e) {
+    await alertDialog('Import impossible', `Le fichier SVG n’a pas pu être lu : ${errMsg(e)}`);
+    return;
+  }
+  if (!dxf.count) {
+    // SVG sans tracés (image incorporée, texte seul…) : importé comme image de fond.
+    try {
+      const img = await imageFromFile({ name, ext: 'svg', data });
+      applyBackground(img.src, img.width, img.height, name, {});
+      S().toast('Ce SVG ne contient pas de tracés vectoriels : importé comme image de fond. Étalonnez l’échelle.', 'info');
+    } catch (e) {
+      await alertDialog('Import impossible', `Le fichier SVG n’a pas pu être lu : ${errMsg(e)}`);
+    }
+    return;
+  }
+  await importDxfBackground(name, new TextEncoder().encode(dxf.dxf));
+}
+
 export async function importDxfBackground(name: string, data: Uint8Array, dwgVersion?: string): Promise<void> {
   const kind = dwgVersion ? 'DWG' : 'DXF';
   try {
@@ -599,6 +637,45 @@ export async function exportPngAction(job: ExportJob | null = currentExportJob('
     await alertDialog('Échec de l’export PNG', errMsg(e));
   }
   return out;
+}
+
+/** Export du plan de l'étage pour les logiciels de dessin : DXF (universel), DWG (AutoCAD) ou SVG (vectoriel). */
+export async function exportCadAction(format: 'dxf' | 'dwg' | 'svg', job: ExportJob | null = currentExportJob('current')): Promise<string | null> {
+  if (!job) return null;
+  const variantId = job.variantIds[0] ?? job.floor.variants[0]?.id ?? '';
+  const base = exportBaseName(job, variantId);
+  try {
+    if (format === 'svg') {
+      const svg = renderPageSvg({ building: job.building, floor: job.floor, variantId, customSymbols: job.customSymbols, page: job.page, uniqueKey: 'svg' });
+      const xml = svg.startsWith('<?xml') ? svg : `<?xml version="1.0" encoding="UTF-8"?>\n${svg}`;
+      const p = await api().saveBinary({ data: new TextEncoder().encode(xml), suggestedName: `${base}.svg`, filterName: 'Dessin vectoriel SVG', ext: 'svg' });
+      if (p) S().toast('Affiche exportée au format SVG (Illustrator, Inkscape, EdrawMax, Visio, navigateurs).', 'success');
+      return p;
+    }
+    if (!job.floor.unitsPerMeter) {
+      const ok = await confirmDialog('Échelle non étalonnée', 'Cet étage n’est pas étalonné : le fichier sera exporté sans unité réelle (les cotes ne correspondront pas à des mètres). Exporter quand même ?');
+      if (!ok) return null;
+    }
+    const dxfBytes = new TextEncoder().encode(floorToDxf(job.floor, variantId));
+    if (format === 'dxf') {
+      const p = await api().saveBinary({ data: dxfBytes, suggestedName: `${base}.dxf`, filterName: 'Plan DXF (AutoCAD, EdrawMax, LibreCAD, Visio…)', ext: 'dxf' });
+      if (p) S().toast('Plan exporté au format DXF : ouvrable dans AutoCAD, EdrawMax, LibreCAD, Visio, SketchUp…', 'success');
+      return p;
+    }
+    const status = await api().dwgStatus();
+    if (!status.found) {
+      await alertDialog('Export DWG', 'L’écriture du format DWG utilise l’outil gratuit « ODA File Converter » (le même que pour lire les DWG). Il n’est pas installé sur ce poste.\n\nInstallez-le (Fichier › Importer un plan DWG vous guide), ou exportez en DXF : tous les logiciels qui lisent le DWG lisent aussi le DXF.');
+      return null;
+    }
+    S().toast('Conversion au format DWG…', 'info');
+    const dwg = await api().dwgFromDxf({ data: dxfBytes });
+    const p = await api().saveBinary({ data: dwg, suggestedName: `${base}.dwg`, filterName: 'Plan AutoCAD DWG', ext: 'dwg' });
+    if (p) S().toast('Plan exporté au format DWG (AutoCAD 2018).', 'success');
+    return p;
+  } catch (e) {
+    await alertDialog('Échec de l’export', errMsg(e));
+    return null;
+  }
 }
 
 export async function printAction(job: ExportJob | null = currentExportJob('current')): Promise<void> {

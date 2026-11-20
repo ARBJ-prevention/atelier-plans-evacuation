@@ -21,14 +21,14 @@ export interface ImportChoice {
 
 const KIND_LABEL: Record<string, string> = {
   pdf: 'PDF', dxf: 'DXF (AutoCAD, vectoriel)', dwg: 'DWG (AutoCAD, converti par ODA File Converter)',
-  png: 'image PNG', jpg: 'image JPEG', jpeg: 'image JPEG', gif: 'image GIF', webp: 'image WebP', bmp: 'image BMP', svg: 'image SVG',
+  png: 'image PNG', jpg: 'image JPEG', jpeg: 'image JPEG', gif: 'image GIF', webp: 'image WebP', bmp: 'image BMP', svg: 'SVG (vectoriel : EdrawMax, Visio, Illustrator…)', avif: 'image AVIF', ico: 'icône ICO',
 };
 
 /** Nombre maximal de vignettes de pages affichées. */
 const MAX_THUMBS = 30;
 
 export async function askImportPlan(file: PickedFile, pageCount: number, current: ImportFloorOption, buildings: { id: string; name: string; floors: number }[]): Promise<ImportChoice | null> {
-  const vector = file.ext === 'dxf' || file.ext === 'dwg';
+  const vector = file.ext === 'dxf' || file.ext === 'dwg' || file.ext === 'svg';
   const startNew = current.hasBackground || !current.empty;
   const curBuilding = buildings.find((b) => b.id === current.buildingId) ?? buildings[0];
   const r = await ask({

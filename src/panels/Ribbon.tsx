@@ -55,8 +55,9 @@ export const runAppCommand = (action: string, arg?: string) => window.dispatchEv
 const FILE_ITEMS: ([string, string, string] | '-')[] = [
   ['new', 'Nouveau projet', 'Ctrl+N'], ['open', 'Ouvrir…', 'Ctrl+O'], '-',
   ['save', 'Enregistrer', 'Ctrl+S'], ['save-as', 'Enregistrer sous…', 'Ctrl+Maj+S'], ['duplicate-project', 'Dupliquer le projet…', ''], '-',
-  ['import-background', 'Importer un plan de fond (DXF, DWG, PDF, image)…', ''], ['import-symbol', 'Importer un pictogramme…', ''], '-',
-  ['print-preview', 'Aperçu et vérification', 'Ctrl+P'], ['export-pdf', 'Exporter cette affiche (PDF, PNG)…', 'Ctrl+E'], ['export-building', 'Exporter le bâtiment…', ''], '-',
+  ['import-background', 'Importer un plan de fond (DWG, DXF, SVG, PDF, image)…', ''], ['import-symbol', 'Importer un pictogramme…', ''], '-',
+  ['print-preview', 'Aperçu et vérification', 'Ctrl+P'], ['export-pdf', 'Exporter cette affiche (PDF, PNG)…', 'Ctrl+E'], ['export-building', 'Exporter le bâtiment…', ''],
+  ['export-dxf', 'Exporter le plan en DXF (AutoCAD, EdrawMax, Visio…)…', ''], ['export-dwg', 'Exporter le plan en DWG (AutoCAD)…', ''], ['export-svg', 'Exporter l’affiche en SVG (vectoriel)…', ''], '-',
   ['help', 'Guide d’utilisation', 'F1'], ['shortcuts', 'Raccourcis clavier', ''],
 ];
 

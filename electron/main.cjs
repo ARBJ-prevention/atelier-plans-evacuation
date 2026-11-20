@@ -5,7 +5,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const { pathToFileURL } = require('node:url');
 const { buildMenu } = require('./menu.cjs');
-const { ODA_DOWNLOAD_URL, convertDwgToDxf, findOdaConverter, isOdaConverter } = require('./dwg.cjs');
+const { ODA_DOWNLOAD_URL, convertDwgToDxf, convertDxfToDwg, findOdaConverter, isOdaConverter } = require('./dwg.cjs');
 
 const APP_NAME = "Atelier Plans d'Évacuation";
 const PROJECT_EXT = 'planevac';
@@ -392,10 +392,12 @@ ipcMain.handle('project:save', async (_e, { path: target, content, suggestedName
 ipcMain.handle('file:pick', async (_e, kind) => {
   const filters = {
     plan: [
-      { name: 'Plans (DXF, DWG, PDF, images)', extensions: ['dxf', 'dwg', 'pdf', 'png', 'jpg', 'jpeg', 'bmp', 'webp', 'gif'] },
-      { name: 'Plans AutoCAD (DXF, DWG)', extensions: ['dxf', 'dwg'] },
+      { name: 'Tous les plans (DWG, DXF, SVG, PDF, images)', extensions: ['dwg', 'dxf', 'svg', 'svgz', 'pdf', 'png', 'jpg', 'jpeg', 'jfif', 'jpe', 'bmp', 'dib', 'webp', 'gif', 'avif', 'ico'] },
+      { name: 'Plans AutoCAD (DWG, DXF)', extensions: ['dwg', 'dxf'] },
+      { name: 'Dessins vectoriels SVG (EdrawMax, Visio, Illustrator, Inkscape)', extensions: ['svg', 'svgz'] },
       { name: 'Documents PDF', extensions: ['pdf'] },
-      { name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'bmp', 'webp', 'gif'] },
+      { name: 'Images (PNG, JPEG, BMP, WebP, GIF, AVIF, ICO)', extensions: ['png', 'jpg', 'jpeg', 'jfif', 'jpe', 'bmp', 'dib', 'webp', 'gif', 'avif', 'ico'] },
+      { name: 'Tous les fichiers', extensions: ['*'] },
     ],
     image: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'svg', 'webp', 'gif', 'bmp'] }],
     symbol: [{ name: 'Pictogrammes (SVG, PNG, JPEG)', extensions: ['svg', 'png', 'jpg', 'jpeg'] }],
@@ -448,6 +450,11 @@ ipcMain.handle('dwg:choose-converter', async () => {
   return p;
 });
 ipcMain.handle('dwg:download-page', async () => shell.openExternal(ODA_DOWNLOAD_URL));
+ipcMain.handle('dwg:from-dxf', async (_e, { data }) => {
+  const exe = dwgConverterPath();
+  if (!exe) throw new Error('ODA File Converter est introuvable.');
+  return new Uint8Array(await convertDxfToDwg(exe, Buffer.from(data)));
+});
 ipcMain.handle('dwg:convert', async (_e, { data, converter }) => {
   // Un convertisseur imposé par l'interface n'est accepté qu'en autotest (convertisseur simulé).
   const exe = (isSelfTest && converter) || dwgConverterPath();

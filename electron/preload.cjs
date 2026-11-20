@@ -14,6 +14,7 @@ contextBridge.exposeInMainWorld('evac', {
   dwgChooseConverter: () => ipcRenderer.invoke('dwg:choose-converter'),
   dwgDownloadPage: () => ipcRenderer.invoke('dwg:download-page'),
   dwgConvert: (args) => ipcRenderer.invoke('dwg:convert', args),
+  dwgFromDxf: (args) => ipcRenderer.invoke('dwg:from-dxf', args),
   exportPdf: (args) => ipcRenderer.invoke('render:pdf', args),
   createExportFolder: (name) => ipcRenderer.invoke('export:folder', name),
   print: (args) => ipcRenderer.invoke('render:print', args),

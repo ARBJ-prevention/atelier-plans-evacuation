@@ -22,6 +22,8 @@ export interface EvacBridge {
   dwgDownloadPage(): Promise<void>;
   /** Convertit un DWG en DXF ; `converter` force un exécutable (tests). */
   dwgConvert(a: { data: Uint8Array; converter?: string }): Promise<{ dxf: Uint8Array; version: string }>;
+  /** Convertit un DXF en DWG (ODA File Converter requis). */
+  dwgFromDxf(a: { data: Uint8Array }): Promise<Uint8Array>;
   exportPdf(a: { html: string; paper: string; landscape: boolean; suggestedName: string; path?: string }): Promise<string | null>;
   createExportFolder(name: string): Promise<string | null>;
   print(a: { html: string; paper: string; landscape: boolean }): Promise<{ success: boolean; reason: string; spooler?: 'running' | 'stopped' | 'unknown' }>;
@@ -60,4 +62,5 @@ export function bytesToDataUrl(data: Uint8Array, mime: string): string {
 export const MIME: Record<string, string> = {
   png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp',
   bmp: 'image/bmp', svg: 'image/svg+xml', pdf: 'application/pdf',
+  jfif: 'image/jpeg', jpe: 'image/jpeg', dib: 'image/bmp', avif: 'image/avif', ico: 'image/x-icon',
 };

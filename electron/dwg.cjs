@@ -97,4 +97,23 @@ async function convertDwgToDxf(converter, data, { timeoutMs = 180000 } = {}) {
   }
 }
 
-module.exports = { ODA_DOWNLOAD_URL, dwgVersion, findOdaConverter, isOdaConverter, convertDwgToDxf };
+/** Convertit un DXF (octets) en DWG AutoCAD 2018 (octets), pour l'export « Enregistrer au format DWG ». */
+async function convertDxfToDwg(converter, data, { timeoutMs = 180000 } = {}) {
+  if (!isOdaConverter(converter)) throw new Error('ODA File Converter est introuvable.');
+  const work = fs.mkdtempSync(path.join(os.tmpdir(), 'evac-dxf-'));
+  const inDir = path.join(work, 'entree');
+  const outDir = path.join(work, 'sortie');
+  fs.mkdirSync(inDir);
+  fs.mkdirSync(outDir);
+  try {
+    fs.writeFileSync(path.join(inDir, 'plan.dxf'), data);
+    const res = await run(converter, [inDir, outDir, 'ACAD2018', 'DWG', '0', '1', '*.DXF'], timeoutMs);
+    const dwg = fs.readdirSync(outDir).find((f) => /\.dwg$/i.test(f));
+    if (!dwg) throw new Error(`ODA File Converter n’a produit aucun fichier DWG (code ${res.code}).`);
+    return fs.readFileSync(path.join(outDir, dwg));
+  } finally {
+    fs.rmSync(work, { recursive: true, force: true });
+  }
+}
+
+module.exports = { ODA_DOWNLOAD_URL, dwgVersion, findOdaConverter, isOdaConverter, convertDwgToDxf, convertDxfToDwg };

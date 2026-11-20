@@ -134,10 +134,59 @@ function trueColor(n: number): string { return `#${(n & 0xffffff).toString(16).p
 // 1. Lecture
 // ---------------------------------------------------------------------------
 
+/** Type de valeur d'un code de groupe DXF (spécification AutoCAD). */
+function groupKind(c: number): 'str' | 'f64' | 'i16' | 'i32' | 'i64' | 'bool' | 'bin' {
+  if ((c >= 10 && c <= 59) || (c >= 110 && c <= 149) || (c >= 210 && c <= 239) || (c >= 460 && c <= 469) || (c >= 1010 && c <= 1059)) return 'f64';
+  if ((c >= 60 && c <= 79) || (c >= 170 && c <= 179) || (c >= 270 && c <= 289) || (c >= 370 && c <= 389) || (c >= 400 && c <= 409) || (c >= 1060 && c <= 1070)) return 'i16';
+  if ((c >= 90 && c <= 99) || (c >= 420 && c <= 429) || (c >= 440 && c <= 449) || c === 1071) return 'i32';
+  if (c >= 160 && c <= 169) return 'i64';
+  if (c >= 290 && c <= 299) return 'bool';
+  if ((c >= 310 && c <= 319) || c === 1004) return 'bin';
+  return 'str';
+}
+
+/** Convertit un DXF binaire en DXF texte équivalent (même suite de codes et de valeurs). */
+export function binaryDxfToText(data: Uint8Array): string {
+  const dv = new DataView(data.buffer, data.byteOffset, data.byteLength);
+  const latin = new TextDecoder('windows-1252');
+  let pos = 22;
+  // Codes sur 2 octets depuis R13 ; anciens fichiers : 1 octet (255 = code étendu sur 2 octets suivants).
+  const twoByte = data.length > 24 && data[23] === 0;
+  const out: string[] = [];
+  const readStr = () => {
+    let end = pos;
+    while (end < data.length && data[end] !== 0) end++;
+    const bytes = data.subarray(pos, end);
+    pos = end + 1;
+    try { return new TextDecoder('utf-8', { fatal: true }).decode(bytes); } catch { return latin.decode(bytes); }
+  };
+  try {
+    while (pos < data.length) {
+      let code: number;
+      if (twoByte) { code = dv.getUint16(pos, true); pos += 2; } else { code = data[pos++]; if (code === 255) { code = dv.getUint16(pos, true); pos += 2; } }
+      let value: string;
+      switch (groupKind(code)) {
+        case 'f64': value = String(dv.getFloat64(pos, true)); pos += 8; break;
+        case 'i16': value = String(dv.getInt16(pos, true)); pos += 2; break;
+        case 'i32': value = String(dv.getInt32(pos, true)); pos += 4; break;
+        case 'i64': value = String(dv.getBigInt64(pos, true)); pos += 8; break;
+        case 'bool': value = String(data[pos]); pos += 1; break;
+        case 'bin': { const len = data[pos]; pos += 1 + len; value = ''; break; }
+        default: value = readStr();
+      }
+      out.push(String(code), value);
+      if (code === 0 && value === 'EOF') break;
+    }
+  } catch {
+    if (!out.length) throw new DxfError('DXF binaire illisible (fichier endommagé ?).');
+  }
+  return out.join('\n');
+}
+
 /** Décode les octets d'un DXF (UTF-8, ou Windows-1252 pour les anciens fichiers). */
 export function decodeDxfBytes(data: Uint8Array): string {
   const head = new TextDecoder('latin1').decode(data.subarray(0, 22));
-  if (head.startsWith('AutoCAD Binary DXF')) throw new DxfError('Ce fichier est un DXF binaire. Réenregistrez-le au format DXF ASCII (texte) depuis votre logiciel de DAO.');
+  if (head.startsWith('AutoCAD Binary DXF')) return binaryDxfToText(data);
   try {
     return new TextDecoder('utf-8', { fatal: true }).decode(data);
   } catch {
@@ -648,7 +697,44 @@ export function flattenDxf(doc: DxfDocument): FlatDxf {
           for (const a of e.attribs ?? []) walk([a], ctx);
           break;
         }
-        case 'POINT': case 'ATTDEF': case 'VIEWPORT': case 'SEQEND': case 'XLINE': case 'RAY':
+        case 'MLINE': {
+          // Multiligne (souvent utilisée pour les murs) : chaque élément est décalé le long du vecteur d'onglet.
+          const nElem = Math.max(0, gi(e, 73, 0));
+          const closed = (gi(e, 71, 0) & 2) === 2;
+          const verts: { p: Vec; miter: Vec; offs: number[] }[] = [];
+          let cur: { p: Vec; miter: Vec; offs: number[] } | null = null;
+          let expectParams = 0, firstParam = true;
+          for (const [c, v] of e.pairs) {
+            const f = parseFloat(v);
+            if (c === 11) { cur = { p: [f, 0], miter: [0, 0], offs: [] }; verts.push(cur); }
+            else if (c === 21 && cur) cur.p[1] = f;
+            else if (c === 13 && cur) cur.miter[0] = f;
+            else if (c === 23 && cur) cur.miter[1] = f;
+            else if (c === 74 && cur) { expectParams = parseInt(v, 10) || 0; firstParam = true; if (!expectParams) cur.offs.push(0); }
+            else if (c === 41 && cur && expectParams > 0) { if (firstParam) cur.offs.push(f); firstParam = false; expectParams--; }
+          }
+          if (verts.length < 2) break;
+          const mm = ocs(e, m);
+          const count = Math.max(nElem, ...verts.map((vv) => vv.offs.length));
+          if (!count) { line(verts.map((vv) => tx(mm, vv.p[0], vv.p[1])), closed, base); break; }
+          for (let k = 0; k < count; k++) {
+            const pts = verts.map((vv) => { const o = vv.offs[k] ?? 0; return tx(mm, vv.p[0] + vv.miter[0] * o, vv.p[1] + vv.miter[1] * o); });
+            line(pts, closed, base);
+          }
+          // Extrémités fermées (murs) : relie les éléments extrêmes au début et à la fin.
+          if (!closed && count >= 2) {
+            for (const vv of [verts[0], verts[verts.length - 1]]) {
+              const offs = vv.offs.length ? vv.offs : [0];
+              const lo = Math.min(...offs), hi = Math.max(...offs);
+              if (hi - lo > 1e-9) line([tx(mm, vv.p[0] + vv.miter[0] * lo, vv.p[1] + vv.miter[1] * lo), tx(mm, vv.p[0] + vv.miter[0] * hi, vv.p[1] + vv.miter[1] * hi)], false, base);
+            }
+          }
+          break;
+        }
+        case 'ACAD_PROXY_ENTITY':
+          skip('Objets AutoCAD Architecture (murs « intelligents ») : utilisez « Exporter vers AutoCAD » / EXPLODE dans votre logiciel');
+          break;
+        case 'POINT': case 'ATTDEF': case 'VIEWPORT': case 'SEQEND': case 'XLINE': case 'RAY': case 'IMAGE': case 'WIPEOUT': case 'OLE2FRAME':
           break;
         default:
           skip(e.type);

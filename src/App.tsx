@@ -116,6 +116,9 @@ export function App() {
       case 'import-symbol': return has && A.importSymbolAction();
       case 'print-preview': return has && setPrintOpen('preview');
       case 'export-pdf': case 'export-png': return has && setPrintOpen('current');
+      case 'export-dxf': return has && A.exportCadAction('dxf');
+      case 'export-dwg': return has && A.exportCadAction('dwg');
+      case 'export-svg': return has && A.exportCadAction('svg');
       case 'export-building': {
         const b = currentBuilding(s);
         if (!b) return;
