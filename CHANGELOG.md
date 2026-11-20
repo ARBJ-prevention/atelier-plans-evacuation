@@ -1,5 +1,9 @@
 # Journal des versions
 
+## 2.0.29 - novembre 2026
+- **Import DWG : façades à pilastres redessinées en un seul mur.** Les ressauts devant la façade (pilastres, même doubles) ne coupent plus le mur en plusieurs murs parallèles ; les fenêtres restent dans le mur.
+- **Pictogrammes harmonisés à l'impression** (norme activée) : tous les pictogrammes de sécurité de l'affiche ont la même taille, entre 7 et 12 mm sur le papier. Le repère « Vous êtes ici » et le mobilier gardent leur propre taille.
+
 ## 2.0.28 - novembre 2026
 - **Bouton « ‹ Précédent » à l'import d'un plan** : on peut revenir à l'étape précédente si on s'est trompé. « ‹ Autre fichier » dans l'assistant d'import, « ‹ Précédent » dans la fenêtre des calques DWG/DXF et dans « Redessiner le plan ». Les réglages déjà saisis (étage, unité, calques, rotation) sont conservés et le fichier DWG n'est pas reconverti.
 
