@@ -644,9 +644,24 @@ function layoutOnce(floor: Floor, variantId: string, page: PageSetup): LayoutRes
       scaleDenominator = 1000 / (k * s * floor.unitsPerMeter);
     }
   }
+  // Feuille rognée au plan : le blanc inutile (haut/bas ou gauche/droite) est retiré de la page.
+  let pw = w, ph = h;
+  if (page.cropToPlan && !header && !footer && !side && !placement) {
+    const exH = inner.h - world.h * k, exW = inner.w - world.w * k;
+    if (exH > 0.5) { ph -= exH; inner = { ...inner, h: inner.h - exH }; }
+    if (exW > 0.5) { pw -= exW; inner = { ...inner, w: inner.w - exW }; }
+  }
+  const dr = { ...drawing, w: drawing.w - (w - pw), h: drawing.h - (h - ph) };
   const tx = inner.x + (inner.w - world.w * k) / 2 - world.x * k;
   const ty = inner.y + (inner.h - world.h * k) / 2 - world.y * k;
-  return { w, h, paperW: paper.w, paperH: paper.h, s, m, theme: T, header, footer, side, blocks: placement?.rects, drawing, world, k, tx, ty, scaleDenominator, hs, numbersInHeader, squeezed: !!placement?.squeezed };
+  return { w: pw, h: ph, paperW: Math.round(pw * s * 10) / 10, paperH: Math.round(ph * s * 10) / 10, s, m, theme: T, header, footer, side, blocks: placement?.rects, drawing: dr, world, k, tx, ty, scaleDenominator, hs, numbersInHeader, squeezed: !!placement?.squeezed };
+}
+
+/** Taille réelle de la feuille (mm), en tenant compte du rognage au plan. */
+export function sheetSizeMm(floor: Floor, variantId: string, page: PageSetup): { w: number; h: number } {
+  if (!page.cropToPlan) return pageSizeMm(page);
+  const L = computeLayout(floor, variantId, page);
+  return { w: L.paperW, h: L.paperH };
 }
 
 /** Longueur « ronde » de barre d'échelle (m) pour viser ~30 mm. */

@@ -353,6 +353,8 @@ export interface PageSetup {
   /** Cadre « Vue aérienne du site » dans le panneau latéral. */
   showAerial: boolean;
   /** Croquis de situation : miniature simplifiée de l'étage avec « Vous êtes ici ». */
+  /** Rogner la feuille au plan : supprime le blanc en haut/bas (ou à gauche/droite) quand seul le plan est affiché. */
+  cropToPlan?: boolean;
   showSketch: boolean;
 }
 

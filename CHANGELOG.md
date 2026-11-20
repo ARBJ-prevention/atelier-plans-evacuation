@@ -1,5 +1,8 @@
 # Journal des versions
 
+## 2.0.22 - novembre 2026
+- **Rogner la feuille au plan** : nouvelle option dans l'aperçu. Quand seul le plan est affiché, le blanc en haut et en bas (ou sur les côtés) est supprimé : la feuille prend la forme du plan, qui apparaît bien plus grand à l'écran et dans les exports PDF et image.
+
 ## 2.0.21 - novembre 2026
 - **« Vous êtes ici » avec flèche** : le repère est relié à un cartouche rouge par une grosse flèche cernée de blanc. En position **Auto** (par défaut), le cartouche se place tout seul là où le plan est le moins chargé (hors des pictogrammes, textes, murs et itinéraires, de préférence dans le vide ou hors du bâtiment) et la taille du texte suit celle du dessin. Les positions Dessus / Dessous / Droite / Gauche restent disponibles dans les Propriétés, ainsi que quatre styles : Pastille, Sombre, Contour et Étiquette.
 - **Repère glissable** : attrapez le cartouche « Vous êtes ici » à la souris pour le poser où vous voulez, même en dehors du plan ; la flèche suit (position « Libre » dans les Propriétés, « Auto » pour revenir au placement automatique).

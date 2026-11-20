@@ -173,6 +173,9 @@ export function PrintDialog({ onClose, onEdit, currentOnly = false, focusScale =
           <label className="check" title="Quand le plan laisse de grands vides sur la page, des blocs passent à côté de lui pour qu’il soit dessiné plus grand.">
             <input type="checkbox" checked={page.fillSpace !== false} onChange={(e) => set({ fillSpace: e.target.checked })} /> Agrandir le plan : placer des blocs dans l’espace libre
           </label>
+          <label className="check" title="Quand seul le plan est affiché, la feuille est recoupée à sa forme : le blanc en haut et en bas disparaît. Utile pour un export PDF ou image ; à l’impression, le plan garde la même taille.">
+            <input type="checkbox" checked={!!page.cropToPlan} onChange={(e) => set({ cropToPlan: e.target.checked })} /> Rogner la feuille au plan (supprimer le blanc)
+          </label>
           {Object.values(positions ?? {}).some(Boolean) && (
             <button className="btn small full" onClick={() => set({ blockPositions: { ...page.blockPositions, [page.theme]: {} } })}>
               Rétablir les placements du thème
