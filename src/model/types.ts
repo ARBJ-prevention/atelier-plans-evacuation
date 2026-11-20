@@ -92,7 +92,7 @@ export interface DoorElement extends BaseElement {
   y: number;
   width: number;
   swing: 'left' | 'right';
-  doorType: 'single' | 'double' | 'sliding' | 'slidingDouble' | 'revolving' | 'opening';
+  doorType: 'single' | 'double' | 'sliding' | 'slidingDouble' | 'revolving' | 'opening' | 'swingBoth' | 'unequal' | 'folding' | 'foldingDouble' | 'pocket' | 'garage';
   /** Issue de secours : marquage vert sur le seuil. */
   emergency: boolean;
   /** Porte coupe-feu : marquage rouge sur le seuil et libellé. */
@@ -112,6 +112,8 @@ export interface WindowElement extends BaseElement {
   color: string;
   /** Volet côté extérieur (côté A ; flipY : côté B). Absent = aucun volet. */
   shutter?: 'none' | 'rolling' | 'hinged';
+  /** Dessin de la fenêtre : standard (absent), à battants, coulissante, fixe ou à soufflet. */
+  windowStyle?: 'standard' | 'casement' | 'sliding' | 'fixed' | 'tilt';
 }
 
 export interface StairsElement extends BaseElement {

@@ -31,7 +31,7 @@ function normalizeSymbolWallGap(value: unknown): number {
 
 /** Préréglages des outils (choisis dans le ruban). */
 export interface ToolPresets {
-  doorType: 'single' | 'double' | 'sliding' | 'slidingDouble' | 'revolving' | 'opening';
+  doorType: 'single' | 'double' | 'sliding' | 'slidingDouble' | 'revolving' | 'opening' | 'swingBoth' | 'unequal' | 'folding' | 'foldingDouble' | 'pocket' | 'garage';
   /** Nouvelles portes coupe-feu. */
   doorFire: boolean;
   stairType: 'straight' | 'landing' | 'escalator';
@@ -44,6 +44,7 @@ export interface ToolPresets {
   wallThickness: number;
   /** Volet des nouvelles fenêtres (outil Fenêtre / Volet). */
   windowShutter: 'none' | 'rolling' | 'hinged';
+  windowStyle?: 'standard' | 'casement' | 'sliding' | 'fixed' | 'tilt';
 }
 
 const VIEW_KEY = 'evac.view.v2';
@@ -175,7 +176,7 @@ export const useStore = create<EditorState>((set, get) => ({
   grid: prefs.grid,
   guides: prefs.guides,
   rulers: prefs.rulers,
-  presets: { doorType: 'single', doorFire: false, stairType: 'straight', stairArrow: true, stairSplit: false, shape: 'rect', routeKind: 'principal', wallThickness: 12, windowShutter: 'none' },
+  presets: { doorType: 'single', doorFire: false, stairType: 'straight', stairArrow: true, stairSplit: false, shape: 'rect', routeKind: 'principal', wallThickness: 12, windowShutter: 'none', windowStyle: 'standard' },
   clipboard: [],
   toasts: [],
   fitRequest: 0,

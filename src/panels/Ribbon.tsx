@@ -166,7 +166,14 @@ export function Ribbon({ onPrintPreview, onQuickExport }: { onPrintPreview(): vo
                 title="Mur porteur épais (M) — cliquez point par point, double-clic pour terminer" />
               <Big icon="partition" label="Cloison" active={tool === 'wall' && presets.wallThickness < 18} onClick={() => use('wall', { wallThickness: 10 })}
                 title="Cloison fine — cliquez point par point, double-clic pour terminer" />
-              <Big icon="window" label="Fenêtre" active={tool === 'window' && (presets.windowShutter ?? 'none') === 'none'} onClick={() => use('window', { windowShutter: 'none' })} title="Fenêtre (F) — cliquez sur un mur" />
+              <Big icon="window" label="Fenêtre" active={tool === 'window' && (presets.windowShutter ?? 'none') === 'none' && (presets.windowStyle ?? 'standard') === 'standard'} onClick={() => use('window', { windowShutter: 'none', windowStyle: 'standard' })} title="Fenêtre (F) — cliquez sur un mur" />
+            </Group>
+            <Group title="Fenêtres" cols>
+              {([['casement', 'À battants', 'Fenêtre à deux battants, ouverture dessinée côté intérieur'], ['sliding', 'Coulissante', 'Fenêtre coulissante (deux vitrages décalés)'],
+                ['fixed', 'Fixe', 'Châssis fixe, sans ouvrant'], ['tilt', 'Soufflet', 'Fenêtre à soufflet (bascule vers l’intérieur)']] as const).map(([k, l, tip]) => (
+                <Small key={k} icon="window" label={l} title={`${tip} — cliquez sur un mur`} active={tool === 'window' && presets.windowStyle === k}
+                  onClick={() => use('window', { windowShutter: 'none', windowStyle: k })} />
+              ))}
             </Group>
             <Group title="Volets" cols>
               <Small icon="shutterRolling" label="Roulant" active={tool === 'window' && presets.windowShutter === 'rolling'}
@@ -177,7 +184,10 @@ export function Ribbon({ onPrintPreview, onQuickExport }: { onPrintPreview(): vo
             <Group title="Portes" cols>
               {([['single', 'Battante', 'door', 'Porte à un vantail qui pivote'], ['double', 'Double', 'doorDouble', 'Porte à deux vantaux'],
                 ['sliding', 'Coulissante', 'doorSliding', 'Porte qui glisse le long du mur'], ['slidingDouble', 'Coulis. double', 'doorSlidingDouble', 'Porte coulissante à deux vantaux qui s’écartent (sas, entrée automatique)'], ['revolving', 'Tambour', 'doorRevolving', 'Porte tournante'],
-                ['opening', 'Baie libre', 'doorOpening', 'Ouverture sans porte']] as const).map(([k, l, icon, tip]) => (
+                ['opening', 'Baie libre', 'doorOpening', 'Ouverture sans porte'], ['swingBoth', 'Va-et-vient', 'door', 'Porte qui s’ouvre des deux côtés'],
+                ['unequal', 'Tiercée', 'doorDouble', 'Porte à deux vantaux inégaux'], ['folding', 'Pliante', 'door', 'Porte pliante (accordéon)'],
+                ['foldingDouble', 'Pliante dble', 'doorDouble', 'Porte pliante à deux parties'], ['pocket', 'Galandage', 'doorSliding', 'Porte coulissante qui rentre dans le mur'],
+                ['garage', 'Garage', 'doorOpening', 'Porte de garage sectionnelle']] as const).map(([k, l, icon, tip]) => (
                 <Small key={k} icon={icon} label={l} title={`${tip} — cliquez sur un mur`} active={tool === 'door' && presets.doorType === k} onClick={() => use('door', { doorType: k })} />
               ))}
               <Small icon="door" label={presets.doorFire ? 'Coupe-feu : oui' : 'Coupe-feu : non'} active={!!presets.doorFire}

@@ -290,6 +290,51 @@ export function polygonCentroid(p: Pt[]): Pt {
   return [cx / (3 * a), cy / (3 * a)];
 }
 
+/** Dessins de fenêtres : à battants (vantaux et arcs côté intérieur), coulissante, fixe, à soufflet. */
+function WindowStyleView({ w, d, style, panes, color, flip }: { w: number; d: number; style: string; panes: number; color: string; flip: boolean }) {
+  const t = Math.min(d, Math.max(0.6, d * 0.07)), side = flip ? -1 : 1;
+  const thin = Math.max(0.6, w * 0.008), dash = `${w * 0.04} ${w * 0.03}`;
+  switch (style) {
+    case 'fixed':
+      // fixe : un seul vitrage épais, sans ouvrant
+      return <line x1={-w / 2} y1={0} x2={w / 2} y2={0} stroke={color} strokeWidth={t * 1.8} />;
+    case 'sliding': {
+      // coulissante : deux vitrages décalés qui se chevauchent
+      const o = d * 0.16, half = w * 0.55;
+      return (
+        <g>
+          <line x1={-w / 2} y1={-o} x2={-w / 2 + half} y2={-o} stroke={color} strokeWidth={t * 1.3} />
+          <line x1={w / 2 - half} y1={o} x2={w / 2} y2={o} stroke={color} strokeWidth={t * 1.3} />
+        </g>
+      );
+    }
+    case 'tilt':
+      // à soufflet : l'ouvrant bascule vers l'intérieur (trait en biais)
+      return (
+        <g>
+          <line x1={-w / 2} y1={0} x2={w / 2} y2={0} stroke={color} strokeWidth={t} />
+          <line x1={-w / 2} y1={side * d / 2} x2={w / 2} y2={side * (d / 2 + Math.max(d, w * 0.22))} stroke={color} strokeWidth={thin * 1.5} strokeDasharray={dash} />
+        </g>
+      );
+    default: {
+      // à battants : 1 ou 2 vantaux qui s'ouvrent côté intérieur, avec leur arc
+      const n = panes >= 2 ? 2 : 1, lw = w / n, y0 = (side * d) / 2;
+      const leaves: [number, 1 | -1][] = n === 2 ? [[-w / 2, 1], [w / 2, -1]] : [[-w / 2, 1]];
+      return (
+        <g>
+          <line x1={-w / 2} y1={0} x2={w / 2} y2={0} stroke={color} strokeWidth={t} />
+          {leaves.map(([hx, dir], i) => (
+            <g key={i}>
+              <line x1={hx} y1={y0} x2={hx} y2={y0 + side * lw} stroke={color} strokeWidth={thin * 1.5} />
+              <path d={`M ${hx} ${y0 + side * lw} A ${lw} ${lw} 0 0 ${(dir === 1) === (side === 1) ? 0 : 1} ${hx + dir * lw} ${y0}`} fill="none" stroke={color} strokeWidth={thin} strokeDasharray={dash} />
+            </g>
+          ))}
+        </g>
+      );
+    }
+  }
+}
+
 function SymbolView({ el: el0, ctx }: { el: SymbolElement; ctx: RenderCtx }) {
   // Norme : pictogrammes d'au moins 7 mm sur le papier.
   const obstacle = !!ctx.norm && NORM_OBSTACLE_CATS.has(getBuiltinSymbol(el0.symbolId)?.category ?? '');
@@ -604,6 +649,47 @@ function Inner({ el: el0, ctx }: { el: Element; ctx: RenderCtx }): React.ReactEl
           parts.push(<path key="x" d={`M ${-w * 0.45} 0 H ${w * 0.45} M 0 ${-w * 0.45} V ${w * 0.45}`} stroke={el.color} strokeWidth={sw} />);
           break;
         case 'opening': break;
+        case 'swingBoth': {
+          // va-et-vient : vantail fermé dans le mur, débattement dessiné des deux côtés
+          const hx = el.swing === 'left' ? -w / 2 : w / 2, dir = el.swing === 'left' ? 1 : -1;
+          const dash = `${w * 0.05} ${w * 0.035}`, aw = Math.max(0.8, w * 0.012);
+          parts.push(<line key="vl" x1={hx} y1={0} x2={hx + dir * w * 0.98} y2={0} stroke={el.color} strokeWidth={sw} strokeLinecap="round" />);
+          parts.push(<path key="v1" d={`M ${hx + dir * w} 0 A ${w} ${w} 0 0 ${dir === 1 ? 0 : 1} ${hx} ${-w}`} fill="none" stroke={el.color} strokeWidth={aw} strokeDasharray={dash} />);
+          parts.push(<path key="v2" d={`M ${hx + dir * w} 0 A ${w} ${w} 0 0 ${dir === 1 ? 1 : 0} ${hx} ${w}`} fill="none" stroke={el.color} strokeWidth={aw} strokeDasharray={dash} />);
+          break;
+        }
+        case 'unequal': {
+          // tiercée : un grand vantail (2/3) et un petit (1/3)
+          const big = (w * 2) / 3, small = w - big;
+          if (el.swing === 'left') { leaf(-w / 2, 1, big, 'a'); leaf(w / 2, -1, small, 'b'); }
+          else { leaf(-w / 2, 1, small, 'a'); leaf(w / 2, -1, big, 'b'); }
+          break;
+        }
+        case 'folding': case 'foldingDouble': {
+          // pliante : vantaux repliés en accordéon (zigzag) contre le tableau, course en pointillés
+          const zig = (x0: number, dir: 1 | -1, span: number, k: string) => {
+            const f = span / 2, h = f * 0.8;
+            parts.push(<path key={k} d={`M ${x0} 0 L ${x0 + dir * f * 0.6} ${-h} L ${x0 + dir * f * 1.2} 0`} fill="none" stroke={el.color} strokeWidth={sw} strokeLinejoin="round" strokeLinecap="round" />);
+            parts.push(<path key={`${k}a`} d={`M ${x0 + dir * f * 1.25} 0 L ${x0 + dir * span} 0`} fill="none" stroke={el.color} strokeWidth={Math.max(0.8, w * 0.012)} strokeDasharray={`${w * 0.04} ${w * 0.03}`} />);
+          };
+          if (el.doorType === 'folding') { if (el.swing === 'left') zig(-w / 2, 1, w, 'f'); else zig(w / 2, -1, w, 'f'); }
+          else { zig(-w / 2, 1, w / 2, 'f1'); zig(w / 2, -1, w / 2, 'f2'); }
+          break;
+        }
+        case 'pocket': {
+          // à galandage : le vantail rentre dans l'épaisseur du mur (partie cachée en pointillés)
+          const left = el.swing === 'left';
+          parts.push(<rect key="p1" x={left ? -w / 2 : -w / 2 + w * 0.05} y={-sw * 0.7} width={w * 0.95} height={sw * 1.4} fill="#fff" stroke={el.color} strokeWidth={sw * 0.6} />);
+          parts.push(<rect key="p2" x={left ? w / 2 : -w / 2 - w * 0.95} y={-sw * 0.7} width={w * 0.95} height={sw * 1.4} fill="#fff" stroke={el.color} strokeWidth={sw * 0.5} strokeDasharray={`${w * 0.04} ${w * 0.03}`} />);
+          break;
+        }
+        case 'garage': {
+          // porte de garage sectionnelle : tablier qui remonte vers l'intérieur (pointillés)
+          const depth = w * 0.45;
+          parts.push(<line key="g0" x1={-w / 2} y1={0} x2={w / 2} y2={0} stroke={el.color} strokeWidth={sw} />);
+          parts.push(<rect key="g1" x={-w / 2 + sw} y={-depth} width={w - sw * 2} height={depth} fill="none" stroke={el.color} strokeWidth={Math.max(0.8, w * 0.008)} strokeDasharray={`${w * 0.03} ${w * 0.02}`} />);
+          break;
+        }
         default: el.swing === 'left' ? leaf(-w / 2, 1, w, 'a') : leaf(w / 2, -1, w, 'a');
       }
       return (
@@ -640,8 +726,9 @@ function Inner({ el: el0, ctx }: { el: Element; ctx: RenderCtx }): React.ReactEl
       return (
         <g transform={`translate(${el.x} ${el.y}) rotate(${el.rotation})`}>
           <rect x={(frame - w) / 2} y={(frame - d) / 2} width={w - frame} height={d - frame} fill="#ffffff" stroke={el.color} strokeWidth={frame} />
-          <line x1={-w / 2} y1={0} x2={w / 2} y2={0} stroke={el.color} strokeWidth={Math.min(d, Math.max(0.6, d * 0.07))} />
-          {lines}
+          {(el.windowStyle ?? 'standard') === 'standard' && <line x1={-w / 2} y1={0} x2={w / 2} y2={0} stroke={el.color} strokeWidth={Math.min(d, Math.max(0.6, d * 0.07))} />}
+          {(el.windowStyle ?? 'standard') === 'standard' && lines}
+          {el.windowStyle && el.windowStyle !== 'standard' && <WindowStyleView w={w} d={d} style={el.windowStyle} panes={el.panes} color={el.color} flip={!!el.flipY} />}
           {el.shutter && el.shutter !== 'none' && <ShutterView w={w} d={d} kind={el.shutter} color={el.color} flip={!!el.flipY} />}
         </g>
       );

@@ -91,6 +91,25 @@ function doorBox(el: DoorElement, wallDepth?: number) {
       top = Math.min(top, -halfWidth);
       bottom = Math.max(bottom, halfWidth);
       break;
+    case 'swingBoth':
+      halfWidth += stroke / 2;
+      top = Math.min(top, -w - stroke / 2);
+      bottom = Math.max(bottom, w + stroke / 2);
+      break;
+    case 'unequal':
+      halfWidth += stroke / 2;
+      top = Math.min(top, -(w * 2) / 3 - stroke / 2);
+      break;
+    case 'folding': case 'foldingDouble':
+      halfWidth += stroke / 2;
+      top = Math.min(top, -(el.doorType === 'folding' ? w : w / 2) * 0.4 - stroke);
+      break;
+    case 'pocket':
+      halfWidth = w * 1.45;
+      break;
+    case 'garage':
+      top = Math.min(top, -w * 0.45 - stroke);
+      break;
   }
   return {
     cx: el.x,

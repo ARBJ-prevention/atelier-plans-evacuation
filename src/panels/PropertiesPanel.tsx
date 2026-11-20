@@ -465,9 +465,12 @@ function ElementProps({ el, floor }: { el: Element; floor: Floor }) {
                   <select value={e.doorType} onChange={(ev) => upd({ doorType: ev.target.value })}>
                     <option value="single">Battante simple</option><option value="double">Double battant</option><option value="sliding">Coulissante</option><option value="slidingDouble">Coulissante double</option>
                     <option value="revolving">Tambour</option><option value="opening">Baie libre</option>
+                    <option value="swingBoth">Va-et-vient</option><option value="unequal">Tiercée (vantaux inégaux)</option>
+                    <option value="folding">Pliante</option><option value="foldingDouble">Pliante double</option>
+                    <option value="pocket">À galandage</option><option value="garage">Porte de garage</option>
                   </select>
                 </Row>
-                {e.doorType === 'single' && <Row label="Ouverture"><Seg value={e.swing} options={[['left', 'Gauche'], ['right', 'Droite']]} onChange={(v) => upd({ swing: v })} /></Row>}
+                {['single', 'swingBoth', 'unequal', 'folding', 'pocket'].includes(e.doorType) && <Row label="Ouverture"><Seg value={e.swing} options={[['left', 'Gauche'], ['right', 'Droite']]} onChange={(v) => upd({ swing: v })} /></Row>}
                 <WidthRow value={e.width} u={u} max={800} onChange={(v) => upd({ width: v })} />
                 <Row label="Côté du débattement"><Seg value={e.flipY ? 'b' : 'a'} options={[['a', 'Côté A'], ['b', 'Côté B']]} onChange={(v) => upd({ flipY: v === 'b' })} /></Row>
                 <Row label="Issue de secours" hint="Marquage vert sur le seuil"><Toggle checked={e.emergency} onChange={(v) => upd({ emergency: v })} /></Row>
@@ -479,7 +482,16 @@ function ElementProps({ el, floor }: { el: Element; floor: Floor }) {
               <Section title="Fenêtre" icon="window">
                 <WidthRow value={e.width} u={u} max={1000} onChange={(v) => upd({ width: v })} />
                 <Row label="Épaisseur"><Num value={e.depth} min={2} max={80} onChange={(v) => upd({ depth: v })} /></Row>
+                <Row label="Modèle">
+                  <select value={e.windowStyle ?? 'standard'} onChange={(ev) => upd({ windowStyle: ev.target.value })}>
+                    <option value="standard">Standard</option><option value="casement">À battants (ouverture dessinée)</option>
+                    <option value="sliding">Coulissante</option><option value="fixed">Fixe</option><option value="tilt">À soufflet</option>
+                  </select>
+                </Row>
                 <Row label="Vantaux"><Num value={e.panes} min={1} max={8} onChange={(v) => upd({ panes: Math.round(v) })} /></Row>
+                {(e.windowStyle === 'casement' || e.windowStyle === 'tilt') && (e.shutter ?? 'none') === 'none' && (
+                  <Row label="Côté intérieur" hint="Côté où s'ouvre la fenêtre"><Seg value={e.flipY ? 'a' : 'b'} options={[['a', 'Côté A'], ['b', 'Côté B']]} onChange={(v) => upd({ flipY: v === 'a' })} /></Row>
+                )}
                 <Row label="Volet"><Seg value={e.shutter ?? 'none'} options={[['none', 'Aucun'], ['rolling', 'Roulant'], ['hinged', 'Battants']]} onChange={(v) => upd({ shutter: v })} /></Row>
                 {(e.shutter ?? 'none') !== 'none' && <Row label="Côté du volet" hint="Côté extérieur de la façade"><Seg value={e.flipY ? 'b' : 'a'} options={[['a', 'Côté A'], ['b', 'Côté B']]} onChange={(v) => upd({ flipY: v === 'b' })} /></Row>}
               </Section>
