@@ -318,6 +318,41 @@ export function recognizePlan(flat: FlatDxf, opt: RecognizeOptions): Recognized 
     }
   }
 
+  // 2 bis. Pilastres et ressauts : petit « U » (deux retours de même longueur et un trait parallèle) posé sur la face
+  // d'un mur, dont le trait est interrompu à cet endroit. Le contour du ressaut est écarté et la face du mur refermée,
+  // sinon les deux faces du mur ne se retrouvent plus et la façade se redessine en plusieurs murs parallèles.
+  // (plusieurs passes : un ressaut peut être posé sur un autre, la face refermée forme alors le « U » suivant)
+  for (let pass = 0, found = true; found && pass < 4; pass++) {
+    found = false;
+    const tol = 0.02 * m;
+    const ws = segs.filter((s) => isWallRole(s.role) && !used.has(s.id));
+    const endsAt = (p: P, not: Seg[]) => ws.filter((s) => !used.has(s.id) && !not.includes(s) && (dist(s.a, p) < tol || dist(s.b, p) < tol));
+    const far = (s: Seg, p: P): P => (dist(s.a, p) < tol ? s.b : s.a);
+    const extra: Seg[] = [];
+    for (const S of ws) {
+      if (used.has(S.id) || S.L < 0.1 * m || S.L > 1.6 * m) continue;
+      const [r1, r2] = [endsAt(S.a, [S]), endsAt(S.b, [S])].map((list, i) => list.filter((r) => {
+        const v = unit(sub(far(r, i ? S.b : S.a), i ? S.b : S.a));
+        return !used.has(r.id) && Math.abs(dot(v, S.u)) < 0.05 && r.L <= 0.6 * m;
+      }));
+      if (r1.length !== 1 || r2.length !== 1) continue;
+      const [R1, R2] = [r1[0], r2[0]];
+      const e1 = far(R1, S.a), e2 = far(R2, S.b);
+      const v1 = sub(e1, S.a), v2 = sub(e2, S.b);
+      if (Math.abs(R1.L - R2.L) > tol || dot(v1, v2) <= 0) continue; // deux retours du même côté et de même longueur
+      // la face du mur reprend de part et d'autre : un trait parallèle à S s'arrête à chaque pied du ressaut
+      const onFace = (e: P, away: P) => endsAt(e, [R1, R2]).find((f) => Math.abs(dot(f.u, S.u)) > 0.99 && dot(sub(far(f, e), e), away) > 0);
+      const f1 = onFace(e1, mulv(S.u, -1)), f2 = onFace(e2, S.u);
+      if (!f1 || !f2 || f1 === f2) continue;
+      // la face refermée reprend les deux morceaux de part et d'autre : un seul trait, comme si le ressaut n'existait pas
+      const a = far(f1, e1), b = far(f2, e2);
+      for (const s of [S, R1, R2, f1, f2]) used.add(s.id);
+      extra.push({ a, b, u: unit(sub(b, a)), L: dist(a, b), layer: f1.layer, role: f1.role, free: [[0, dist(a, b)]], id: segs.length + extra.length });
+      found = true;
+    }
+    segs.push(...extra);
+  }
+
   // 3. Murs : paires de traits parallèles
   const walls: { a: P; b: P; t: number }[] = [];
   {

@@ -483,3 +483,33 @@ describe('pictogrammes de volets', () => {
     }
   });
 });
+
+/**
+ * Tranche d'une façade réelle de 49 cm (dessin en cm) : la face extérieure n'existe qu'au droit des trumeaux, coupée par
+ * des pilastres de 25 cm ; aux fenêtres, seules les menuiseries sont dessinées. Elle doit rester un seul mur, sans mur
+ * parallèle pour les pilastres ni pour la face intérieure.
+ */
+it('une façade à pilastres et fenêtres reste un seul mur', () => {
+  const MEN = '154_AR_EXT_Menuiserie_ext';
+  const L = (layer: string, ...pts: Vec[]) => line(layer, pts);
+  const prims: DxfPrim[] = [
+    L(WALL, [100, 1656], [149, 1656], [149, 1684]), L(WALL, [100, 1656], [100, 1712]),
+    L(WALL, [100, 1712], [75, 1712], [75, 1773], [100, 1773]), L(WALL, [100, 1773], [100, 1792]),
+    L(WALL, [100, 1792], [124, 1792], [149, 1782]), L(WALL, [149, 1684], [149, 1782]),
+    L(MEN, [119, 1792], [119, 1972]), L(MEN, [124, 1792], [124, 1976]),
+    L(WALL, [100, 1972], [119, 1972], [119, 1975], [149, 1983]), L(WALL, [100, 1972], [100, 1992]),
+    L(WALL, [100, 1992], [75, 1992], [75, 2053], [100, 2053]), L(WALL, [100, 2053], [100, 2072]),
+    L(WALL, [100, 2072], [123, 2072], [149, 2065]), L(WALL, [149, 1983], [149, 2065]),
+    L(MEN, [118, 2072], [118, 2252]), L(MEN, [124, 2072], [124, 2256]),
+    L(WALL, [100, 2252], [118, 2252], [149, 2265]), L(WALL, [100, 2252], [100, 2400], [149, 2400], [149, 2265]),
+  ];
+  const layers = [...new Set(prims.map((p) => p.layer))].map((name) => ({ name, count: 1, color: '#000000', defaultVisible: true }));
+  const rec = recognizeArchitect({ prims, layers, insUnits: 4, skipped: {} }, 'cm');
+  const vertical = rec.walls.filter((w) => Math.abs(w.points[0][0] - w.points[1][0]) < 0.05 * UPM);
+  const xs = vertical.map((w) => (w.points[0][0] + w.points[1][0]) / 2);
+  // un seul mur dans l'épaisseur de la façade (pas de mur pour les pilastres ni pour la face intérieure)
+  expect(new Set(xs.map((x) => Math.round(x / (0.2 * UPM)))).size).toBe(1);
+  const span = Math.max(...vertical.flatMap((w) => w.points.map((p) => p[1]))) - Math.min(...vertical.flatMap((w) => w.points.map((p) => p[1])));
+  expect(span / UPM).toBeGreaterThan(6);
+  expect(rec.windows.length).toBe(2);
+});
