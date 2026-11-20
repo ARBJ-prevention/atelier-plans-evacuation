@@ -44,6 +44,8 @@ export async function runSelfTest(outDir: string): Promise<void> {
     const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect width="10" height="10" fill="#1f5fbf"/><circle cx="5" cy="5" r="3" fill="#fff"/></svg>';
     p.customSymbols.push({ id: 'sym_test', name: 'Pictogramme importé (test)', category: 'Mes pictogrammes', src: `data:image/svg+xml;base64,${btoa(svg)}` });
     p.buildings[0].floors[0].elements.push(makeElement('symbol', { x: 300, y: 120, symbolId: 'sym_test' }));
+    // les contrôles de format portent sur la mise en page demandée (A4…), sans le format minimal imposé par la norme
+    for (const b of p.buildings) for (const fl of b.floors) fl.page.norm = false;
     S().loadProject(p, null);
     const f = currentFloor(S())!;
     assert(f.variants.length === 2, 'deux affiches attendues');
@@ -389,6 +391,7 @@ export async function runSelfTest(outDir: string): Promise<void> {
   await check('Export du bâtiment avec formats mixtes', async () => {
     const project = buildReviewDemo();
     const building = project.buildings[0];
+    for (const fl of building.floors) fl.page.norm = false; // formats mixtes voulus : sans le format commun de la norme
     const html = buildBatchPrintHtml(building.floors.map((floor) => ({
       building, floor, page: floor.page, variantIds: [floor.variants[0].id], customSymbols: project.customSymbols,
     })), project.name);
