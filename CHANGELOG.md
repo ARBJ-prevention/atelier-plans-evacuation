@@ -1,5 +1,10 @@
 # Journal des versions
 
+## 2.0.33 - novembre 2026
+- **Nouvelles portes** : va-et-vient, tiercée (vantaux inégaux), pliante, pliante double, à galandage et porte de garage sectionnelle.
+- **Nouveaux modèles de fenêtres** : à battants (ouverture dessinée côté intérieur), coulissante, fixe et à soufflet (ruban « Fenêtres » et champ « Modèle »).
+- **Numéros des locaux** : la section est toujours visible (elle explique quoi faire s'il n'y a pas de pièce) et une surface peut passer de « Zone » à « Pièce ».
+
 ## 2.0.32 - novembre 2026
 - **Aimant entre escaliers** : en étirant un escalier, chaque bord tiré se cale sur le bord le plus proche d'un autre escalier, pour aligner parfaitement des escaliers empilés (Alt : réglage libre).
 
