@@ -711,6 +711,7 @@ function TextTab({ el, upd, textRef, floor }: { el: Element; upd(p: Record<strin
     return (
       <Section title="Nom de la pièce" icon="textIcon">
         <textarea ref={textRef} className="ta" rows={2} value={e.label} placeholder="Fonction du local (ex. Bureau)" onChange={(ev) => upd({ label: ev.target.value })} />
+        <Row label="Type" hint="Seules les pièces reçoivent un numéro de local"><Seg value={e.kind === 'room' ? 'room' : 'zone'} options={[['room', 'Pièce'], ['zone', 'Zone']]} onChange={(v) => upd({ kind: v })} /></Row>
         {e.kind === 'room' && <Row label="Numéro" hint="Norme : chiffre de l’étage + deux chiffres (ex. 012, 105)">
           <input type="text" value={e.number ?? ''} style={{ width: 80 }} onChange={(ev) => upd({ number: ev.target.value })} />
         </Row>}
@@ -871,7 +872,17 @@ export function PageScopeNote() {
 function RoomNumbering({ floor }: { floor: Floor }) {
   const S = useStore.getState;
   const rooms = floor.elements.filter((e) => e.type === 'area' && e.kind === 'room');
-  if (!rooms.length) return null;
+  if (!rooms.length) {
+    const zones = floor.elements.filter((e) => e.type === 'area' && e.kind !== 'room').length;
+    return (
+      <Section title="Numéros des locaux" icon="floor">
+        <p className="muted tiny">
+          Aucune pièce sur cet étage : la numérotation porte sur les pièces (outil « Pièce » de l’onglet Plan).
+          {zones ? ` Les ${zones} surface(s) dessinée(s) ici sont des zones : sélectionnez-les et choisissez « Type : Pièce » pour les numéroter.` : ''}
+        </p>
+      </Section>
+    );
+  }
   const ok = rooms.filter((r) => r.type === 'area' && isoRoomNumberOk(r.number, floor.level)).length;
   const side = floor.page.streetSide ?? 'bottom';
   const run = (s = side) => {
