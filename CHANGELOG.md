@@ -1,5 +1,12 @@
 # Journal des versions
 
+## 2.0.27 - novembre 2026
+- **Orientation automatique du plan** (norme ISO 23601) : le plan est tourné pour que le mur d'affichage, le plus proche du repère « Vous êtes ici », soit en haut. Textes et pictogrammes restent droits. Réglable dans l'aperçu (Auto, 0°, 90°, 180°, 270°).
+- **Voies d'évacuation en zone verte transparente** avec flèches vert foncé le long du chemin.
+- **Obstacles à demeure en gris clair** : mobilier, sanitaires, cuisine, équipements techniques et formes du calque Bâtiment.
+- **Vue d'ensemble du site** : le bâtiment (ou la partie affichée) ressort en couleur sur le plan de situation.
+- L'orientation de la feuille (portrait / paysage) est changée automatiquement si elle permet une meilleure échelle.
+
 ## 2.0.26 - novembre 2026
 - **Redresser un plan DWG/DXF dessiné de travers** : à l'import, le logiciel détecte l'orientation des murs et redresse le plan automatiquement (aperçu immédiat). L'angle se règle librement au dixième de degré (champ, curseur, boutons ↺ / ↻ 90°) ; murs, portes et pièces reconnus sont droits eux aussi.
 
