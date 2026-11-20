@@ -664,3 +664,127 @@ kbd { background: var(--panel-2); border: 1px solid var(--line-2); border-bottom
 
 /* Bouton « Précédent » des assistants à étapes : à gauche, séparé des actions */
 .modal-actions .btn-back { margin-right: auto; }
+
+/* ——— Ruban façon EdrawMax : une couleur par onglet, onglet contextuel, ruban réductible ——— */
+.rb-tabs button[role=tab] { box-shadow: inset 0 -3px 0 var(--c); margin: 0 1px; }
+.rb-tabs button[role=tab]:hover { box-shadow: inset 0 -5px 0 var(--c); background: color-mix(in srgb, var(--c) 22%, transparent); color: #fff; }
+.rb-tabs button[role=tab].on { color: #fff; box-shadow: none; background: var(--c); }
+.rb-tabs button[role=tab].on::after { background: var(--c); height: 3px; bottom: -3px; }
+.ribbon .rb-panel { position: relative; background: color-mix(in srgb, var(--tab-c) 9%, var(--ribbon-surface)); border-top: 3px solid var(--tab-c); padding-right: 30px; }
+.ribbon .rb-title { color: color-mix(in srgb, var(--tab-c) 70%, var(--text-2)); border-top-color: color-mix(in srgb, var(--tab-c) 30%, var(--line-2)); }
+.ribbon .rb-big.on, .ribbon .rb-small.on { background: color-mix(in srgb, var(--tab-c) 14%, #fff); border-color: color-mix(in srgb, var(--tab-c) 45%, #fff); color: color-mix(in srgb, var(--tab-c) 80%, #000); }
+.ribbon { border-bottom-color: var(--tab-c); }
+.ribbon.reduced { border-bottom: 3px solid var(--tab-c); }
+.ribbon.reduced .rb-tabs button[role=tab].on::after { display: none; }
+/* Pastille : nombre d'éléments sélectionnés sur l'onglet Atelier */
+.rb-count { display: inline-grid; place-items: center; min-width: 17px; height: 17px; margin-left: 6px; padding: 0 5px; border-radius: 9px;
+  font-size: 10.5px; font-weight: 700; line-height: 1; background: #f5b301; color: #2b1d00; vertical-align: 1px; animation: rb-pop .25s cubic-bezier(.3,1.6,.5,1); }
+@keyframes rb-pop { from { transform: scale(0); } to { transform: none; } }
+.rb-top { overflow: visible; }
+.rb-collapse { position: absolute; right: 6px; bottom: 6px; width: 22px; height: 22px; display: grid; place-items: center; border: 0; border-radius: 5px; background: transparent; color: var(--muted); cursor: pointer; transform: rotate(180deg); }
+.rb-collapse:hover { background: rgba(15, 27, 42, .08); color: var(--text); }
+
+/* ——— Menu Fichier plein écran (« backstage ») ——— */
+.backstage { position: fixed; inset: 0; z-index: 90; display: grid; grid-template-columns: 300px 1fr; background: var(--bg); color: var(--text); animation: section-in .15s ease-out; }
+.bs-nav { background: linear-gradient(180deg, #13233a 0%, var(--ink) 100%); color: #dfe7f0; padding: 14px 10px; overflow-y: auto; border-right: 4px solid var(--accent); }
+.bs-back { display: flex; align-items: center; gap: 10px; width: 100%; padding: 10px 12px; margin-bottom: 8px; border: 0; border-radius: 8px; background: var(--accent); color: #fff; font: inherit; font-weight: 700; cursor: pointer; }
+.bs-back:hover { background: var(--accent-bright); }
+.bs-back span { font-size: 18px; line-height: 1; }
+.bs-sec { padding: 6px 0; border-top: 1px solid rgba(255,255,255,.08); }
+.bs-head { padding: 6px 12px 4px; font-size: 10.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: #7fd3a3; }
+.bs-nav .bs-sec button { display: grid; grid-template-columns: 22px 1fr auto; align-items: center; gap: 10px; width: 100%; padding: 7px 12px; border: 0; border-radius: 7px; background: transparent; color: #dfe7f0; font: inherit; font-size: 13px; text-align: left; cursor: pointer; }
+.bs-nav .bs-sec button:hover, .bs-nav .bs-sec button:focus-visible { background: rgba(255,255,255,.09); color: #fff; box-shadow: inset 3px 0 0 var(--accent-bright); }
+.bs-nav kbd { font: 11px system-ui, sans-serif; color: #8a9bb0; background: none; border: 0; }
+.bs-main { padding: 32px 44px; overflow-y: auto; }
+.bs-main h2 { margin: 0 0 14px; font-size: 18px; color: var(--ink); }
+.bs-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px; margin-bottom: 32px; }
+.bs-cards button { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; padding: 18px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); color: var(--text); font: inherit; text-align: left; cursor: pointer; box-shadow: 0 1px 2px rgba(15,27,42,.06); }
+.bs-cards button svg { color: var(--accent); }
+.bs-cards button:hover { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-ring); }
+.bs-cards span { font-size: 12px; color: var(--muted); }
+.bs-recent { display: flex; flex-direction: column; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.bs-recent button { display: flex; align-items: center; gap: 12px; padding: 10px 14px; border: 0; border-bottom: 1px solid var(--line); background: transparent; font: inherit; text-align: left; cursor: pointer; color: var(--text); }
+.bs-recent button:last-child { border-bottom: 0; }
+.bs-recent button:hover { background: var(--accent-soft); }
+.bs-recent span { display: flex; flex-direction: column; min-width: 0; }
+.bs-recent small { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bs-empty { color: var(--muted); }
+@media (max-width: 760px) { .backstage { grid-template-columns: 1fr; } .bs-main { display: none; } }
+
+/* ——— Boutons à menu déroulant (▾) ——— */
+.rb-drop { position: relative; display: inline-flex; border: 1px solid transparent; border-radius: 6px; transition: background .15s, border-color .15s, box-shadow .15s; }
+.rb-drop button { background: none; border: 0; font: inherit; color: var(--text); cursor: pointer; transition: transform .1s, background .12s; }
+.rb-drop button:disabled { opacity: .38; cursor: default; }
+.rb-drop.big { flex-direction: column; align-items: stretch; min-width: 58px; }
+.rb-drop.big .rb-drop-main { display: grid; place-items: center; padding: 6px 8px 2px; border-radius: 6px 6px 0 0; }
+.rb-drop.big .rb-drop-arrow { display: flex; flex-direction: column; align-items: center; gap: 0; padding: 1px 6px 4px; font-size: 11.5px; line-height: 1.15; border-radius: 0 0 6px 6px; max-width: 84px; }
+.rb-drop.big .rb-drop-arrow.whole { gap: 3px; padding: 6px 8px 4px; border-radius: 6px; height: 100%; justify-content: center; }
+.rb-drop.small .rb-drop-arrow.whole, .rb-drop.small .rb-drop-main { display: inline-flex; align-items: center; gap: 5px; padding: 4px 7px; font-size: 12px; }
+.rb-drop.small.split .rb-drop-arrow { padding: 4px 4px; }
+.rb-drop:hover:not(:has(button:disabled)) { background: rgba(255,255,255,.7); border-color: color-mix(in srgb, var(--tab-c, var(--accent)) 30%, var(--line-2)); }
+.rb-drop.split .rb-drop-main:hover, .rb-drop.split .rb-drop-arrow:hover { background: color-mix(in srgb, var(--tab-c, var(--accent)) 12%, #fff); }
+.rb-drop.on { background: color-mix(in srgb, var(--tab-c, var(--accent)) 14%, #fff); border-color: color-mix(in srgb, var(--tab-c, var(--accent)) 45%, #fff); }
+.rb-drop.on svg { color: color-mix(in srgb, var(--tab-c, var(--accent)) 85%, #000); }
+.rb-drop.open { background: #fff; border-color: var(--tab-c, var(--accent)); box-shadow: 0 0 0 3px color-mix(in srgb, var(--tab-c, var(--accent)) 18%, transparent); }
+.rb-drop .rb-drop-arrow svg:last-child { transition: transform .2s ease; }
+.rb-drop.open .rb-drop-arrow svg:last-child { transform: rotate(180deg); }
+.rb-drop button:active:not(:disabled) { transform: scale(.96); }
+
+.rb-menu {
+  position: fixed; z-index: 120; min-width: 220px; max-width: 460px; max-height: calc(100vh - 140px); overflow-y: auto;
+  padding: 6px; background: #fff; color: var(--text); border: 1px solid var(--line); border-radius: 10px;
+  border-top: 3px solid var(--tab-c, var(--accent)); box-shadow: 0 12px 32px rgba(15,27,42,.18), 0 2px 6px rgba(15,27,42,.08);
+  transform-origin: top left; animation: rb-menu-in .16s cubic-bezier(.2,.9,.3,1.2);
+}
+.rb-menu.wide { min-width: 300px; }
+@keyframes rb-menu-in { from { opacity: 0; transform: translateY(-6px) scale(.96); } to { opacity: 1; transform: none; } }
+.rb-menu > * { animation: rb-item-in .2s ease-out backwards; }
+.rb-menu > *:nth-child(2) { animation-delay: .02s; } .rb-menu > *:nth-child(3) { animation-delay: .04s; } .rb-menu > *:nth-child(4) { animation-delay: .06s; }
+.rb-menu > *:nth-child(5) { animation-delay: .08s; } .rb-menu > *:nth-child(6) { animation-delay: .1s; } .rb-menu > *:nth-child(n+7) { animation-delay: .12s; }
+@keyframes rb-item-in { from { opacity: 0; transform: translateX(-4px); } to { opacity: 1; transform: none; } }
+.rb-mi { display: grid; grid-template-columns: 22px 1fr auto; align-items: center; gap: 8px; width: 100%; padding: 7px 10px; border: 0; border-radius: 6px; background: transparent; font: inherit; font-size: 13px; text-align: left; color: var(--text); cursor: pointer; transition: background .12s, padding-left .12s; }
+.rb-mi:hover:not(:disabled), .rb-mi:focus-visible { background: color-mix(in srgb, var(--tab-c, var(--accent)) 11%, #fff); padding-left: 13px; }
+.rb-mi:disabled { opacity: .4; cursor: default; }
+.rb-mi.on { font-weight: 600; color: color-mix(in srgb, var(--tab-c, var(--accent)) 85%, #000); }
+.rb-mi.on .rb-mi-ico svg { color: var(--tab-c, var(--accent)); }
+.rb-mi kbd { font: 11px system-ui, sans-serif; color: var(--muted); background: none; border: 0; }
+.rb-mi-ico { display: grid; place-items: center; }
+.rb-menu-sep { height: 1px; margin: 5px 6px; background: var(--line); }
+.rb-menu-head { padding: 6px 10px 3px; font-size: 10.5px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: color-mix(in srgb, var(--tab-c, var(--accent)) 75%, var(--muted)); }
+.rb-menu-pane { padding: 6px 8px; display: flex; flex-direction: column; gap: 8px; }
+.rb-menu-field { justify-content: space-between; }
+.rb-menu-grid { display: grid; grid-template-columns: repeat(4, 72px); gap: 4px; }
+.rb-tile { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 8px 4px; border: 1px solid transparent; border-radius: 8px; background: transparent; font: inherit; font-size: 11px; color: var(--text); cursor: pointer; transition: transform .12s, background .12s, border-color .12s; }
+.rb-tile:hover { background: color-mix(in srgb, var(--tab-c, var(--accent)) 10%, #fff); border-color: color-mix(in srgb, var(--tab-c, var(--accent)) 35%, #fff); transform: translateY(-2px); }
+.rb-tile.on { border-color: var(--tab-c, var(--accent)); background: color-mix(in srgb, var(--tab-c, var(--accent)) 14%, #fff); }
+.theme-row.in-menu { display: grid; grid-template-columns: repeat(4, auto); gap: 6px; }
+.arrow-presets.in-menu { display: grid; grid-template-columns: repeat(6, auto); gap: 4px; max-width: none; }
+
+/* Cases à cocher (groupe Afficher) */
+.rb-checks-col { display: grid; grid-template-rows: repeat(3, auto); grid-auto-flow: column; gap: 4px 14px; align-content: center; }
+.rb-check-box { display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; cursor: pointer; user-select: none; position: relative; }
+.rb-check-box input { position: absolute; opacity: 0; pointer-events: none; }
+.rb-cb { width: 15px; height: 15px; border: 1.5px solid var(--line-menu); border-radius: 4px; background: #fff; display: inline-grid; place-items: center; transition: background .15s, border-color .15s; flex: none; }
+.rb-cb::after { content: ""; width: 8px; height: 4px; border: 2px solid #fff; border-top: 0; border-right: 0; transform: rotate(-45deg) scale(0); margin-top: -2px; transition: transform .18s cubic-bezier(.3,1.6,.5,1); }
+.rb-cb.on, .rb-check-box input:checked + .rb-cb { background: var(--tab-c, var(--accent)); border-color: var(--tab-c, var(--accent)); }
+.rb-cb.on::after, .rb-check-box input:checked + .rb-cb::after { transform: rotate(-45deg) scale(1); }
+.rb-check-box input:focus-visible + .rb-cb { box-shadow: 0 0 0 3px var(--accent-ring); }
+
+/* ——— Petites animations du ruban ——— */
+.ribbon .rb-panel > .rb-group { animation: rb-group-in .22s ease-out backwards; }
+.ribbon .rb-panel > .rb-group:nth-child(2) { animation-delay: .03s; } .ribbon .rb-panel > .rb-group:nth-child(3) { animation-delay: .06s; }
+.ribbon .rb-panel > .rb-group:nth-child(4) { animation-delay: .09s; } .ribbon .rb-panel > .rb-group:nth-child(n+5) { animation-delay: .12s; }
+@keyframes rb-group-in { from { opacity: 0; transform: translateY(-5px); } to { opacity: 1; transform: none; } }
+.rb-big, .rb-small { transition: background .15s, border-color .15s, transform .1s; }
+.rb-big:active:not(:disabled), .rb-small:active:not(:disabled) { transform: scale(.95); }
+.rb-big svg { transition: transform .15s; }
+.rb-big:hover:not(:disabled) svg { transform: translateY(-1px); }
+.rb-tabs button[role=tab] { transition: background .18s, color .18s, box-shadow .18s; }
+.backstage .bs-nav { animation: bs-nav-in .22s cubic-bezier(.2,.9,.3,1); }
+.backstage .bs-main { animation: section-in .3s ease-out; }
+@keyframes bs-nav-in { from { transform: translateX(-24px); opacity: .4; } to { transform: none; opacity: 1; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .rb-menu, .rb-menu > *, .ribbon .rb-panel > .rb-group, .backstage .bs-nav, .backstage .bs-main { animation: none !important; }
+  .rb-drop .rb-drop-arrow svg:last-child, .rb-cb::after, .rb-tile, .rb-mi { transition: none; }
+}

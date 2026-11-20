@@ -10,16 +10,44 @@ import { headerColorValue, horizonNight, THEMES, themePatch, themeColor } from '
 import { api } from '../services/api';
 import { currentBuilding, currentFloor, currentVariantId, MAX_SYMBOL_WALL_GAP, useStore, type Tool, type ToolPresets } from '../store/store';
 import { Icon } from '../ui/icons';
+import { DropButton, MenuHead, MenuItem, MenuPane, MenuSep, RibbonCheck, useCloseMenu } from './RibbonMenu';
+
+const DOOR_ICON: Record<string, string> = { single: 'door', double: 'doorDouble', sliding: 'doorSliding', slidingDouble: 'doorSlidingDouble', revolving: 'doorRevolving', opening: 'doorOpening', swingBoth: 'door', unequal: 'doorDouble', folding: 'door', foldingDouble: 'doorDouble', pocket: 'doorSliding', garage: 'doorOpening' };
+const STAIR_ICON: Record<string, string> = { straight: 'stairs', landing: 'stairsLanding', escalator: 'escalator' };
+const DOORS = [['single', 'Battante', 'door'], ['double', 'Double', 'doorDouble'], ['sliding', 'Coulissante', 'doorSliding'],
+  ['slidingDouble', 'Coulissante double', 'doorSlidingDouble'], ['revolving', 'Tambour', 'doorRevolving'], ['opening', 'Baie libre', 'doorOpening'],
+  ['swingBoth', 'Va-et-vient', 'door'], ['unequal', 'Tiercée', 'doorDouble'], ['folding', 'Pliante', 'door'], ['foldingDouble', 'Pliante double', 'doorDouble'],
+  ['pocket', 'Galandage', 'doorSliding'], ['garage', 'Garage', 'doorOpening']] as const;
+const SHAPES = [['rect', 'shapeRect', 'Rectangle'], ['ellipse', 'shapeEllipse', 'Ellipse'], ['triangle', 'shapeTriangle', 'Triangle'], ['diamond', 'shapeDiamond', 'Losange'],
+  ['hexagon', 'shapeHexagon', 'Hexagone'], ['line', 'shapeLine', 'Ligne'], ['arrow', 'shapeArrow', 'Flèche pleine'], ['star', 'shapeStar', 'Étoile']] as const;
+
+/** Vignette de galerie déroulante (ferme le menu au choix). */
+function Tile({ icon, label, active, onPick }: { icon: string; label: string; active: boolean; onPick(): void }) {
+  const close = useCloseMenu();
+  return (
+    <button className={active ? 'rb-tile on' : 'rb-tile'} title={label} onClick={() => { onPick(); close(); }}>
+      <Icon name={icon} size={22} /><span>{label}</span>
+    </button>
+  );
+}
+
 
 type Tab = 'plan' | 'evac' | 'edit' | 'page' | 'check' | 'view';
 /** Onglets dans l'ordre du travail : dessiner le plan, l'évacuation, mettre en page, vérifier et exporter. */
+/** Couleur propre à chaque onglet (palette de l'Atelier) : on sait d'un coup d'œil dans quel menu on se trouve. */
+const TAB_COLOR: Record<Tab, string> = {
+  plan: '#1f6fd1', evac: '#00843d', edit: '#c26a00', page: '#7a4fc9', check: '#c4291c', view: '#4f6378',
+};
+const REDUCED_KEY = 'evac.ribbonReduced';
+/** Six onglets calqués sur l'organisation d'EdrawMax (Accueil, Insérer, Conception, Symboles, Avancé, Affichage),
+ *  avec des noms propres à l'Atelier. */
 const TABS: { id: Tab; label: string; title: string }[] = [
-  { id: 'plan', label: 'Plan', title: 'Plan de fond, étalonnage, murs, portes, fenêtres, escaliers, pièces, textes et formes' },
-  { id: 'evac', label: 'Évacuation', title: 'Affiches, « Vous êtes ici », itinéraires, flèches, pictogrammes, légende, circulations probables' },
-  { id: 'edit', label: 'Édition', title: 'Presse-papiers, sélection, organiser, aligner, supprimer' },
-  { id: 'page', label: 'Mise en page', title: 'Thème, couleur, papier, blocs de la page — tous les réglages dans l’aperçu' },
-  { id: 'check', label: 'Vérifier et exporter', title: 'Statut, points à vérifier, aperçu, PDF, PNG, export du bâtiment' },
-  { id: 'view', label: 'Affichage', title: 'Zoom, grille, aimantage, règles, repères' },
+  { id: 'edit', label: 'Atelier', title: 'Outils de base : sélection, presse-papiers, organiser, aligner, supprimer' },
+  { id: 'plan', label: 'Construire', title: 'Plan de fond, étalonnage, murs, portes, fenêtres, escaliers, pièces, textes et formes' },
+  { id: 'page', label: 'Habillage', title: 'Thème, couleur, papier, blocs de la page — tous les réglages dans l’aperçu' },
+  { id: 'evac', label: 'Sécurité', title: 'Affiches, « Vous êtes ici », itinéraires, flèches, pictogrammes, légende, circulations probables' },
+  { id: 'check', label: 'Contrôle', title: 'Statut, points à vérifier, aperçu, PDF, PNG, export du bâtiment' },
+  { id: 'view', label: 'Vue', title: 'Zoom, grille, aimantage, règles, repères' },
 ];
 
 export const TOOL_KEYS: Record<string, Tool> = {
@@ -61,38 +89,62 @@ const FILE_ITEMS: ([string, string, string] | '-')[] = [
   ['help', 'Guide d’utilisation', 'F1'], ['shortcuts', 'Raccourcis clavier', ''],
 ];
 
+const BACKSTAGE: { title: string; items: [string, string, string, string][] }[] = [
+  { title: 'Démarrer', items: [['new', 'new', 'Nouveau projet', 'Ctrl+N'], ['open', 'open', 'Ouvrir…', 'Ctrl+O']] },
+  { title: 'Conserver', items: [['save', 'save', 'Enregistrer', 'Ctrl+S'],
+    ['save-as', 'save', 'Enregistrer sous…', 'Ctrl+Maj+S'], ['duplicate-project', 'copy', 'Dupliquer le projet…', '']] },
+  { title: 'Apporter', items: [['import-background', 'import', 'Plan de fond (DWG, DXF, SVG, PDF, image)…', ''], ['import-symbol', 'symbol', 'Pictogramme…', '']] },
+  { title: 'Diffuser', items: [['print-preview', 'print', 'Aperçu et vérification', 'Ctrl+P'], ['export-pdf', 'pdf', 'Cette affiche (PDF, PNG)…', 'Ctrl+E'],
+    ['export-building', 'building', 'Tout le bâtiment…', ''], ['export-dxf', 'layers', 'Plan en DXF (AutoCAD, EdrawMax, Visio…)…', ''],
+    ['export-dwg', 'layers', 'Plan en DWG (AutoCAD)…', ''], ['export-svg', 'image', 'Affiche en SVG (vectoriel)…', '']] },
+  { title: 'Assistance', items: [['help', 'help', 'Guide d’utilisation', 'F1'], ['shortcuts', 'textIcon', 'Raccourcis clavier', '']] },
+];
+
+/** Menu Fichier plein écran (« backstage ») : commandes à gauche, projets récents à droite. */
 function FileMenu() {
   const [open, setOpen] = useState(false);
   const [recent, setRecent] = useState<string[]>([]);
-  const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!open) return;
     api().recentList().then(setRecent).catch(() => setRecent([]));
-    const close = (e: MouseEvent | KeyboardEvent) => {
-      if (e instanceof KeyboardEvent ? e.key === 'Escape' : !ref.current?.contains(e.target as Node)) setOpen(false);
-    };
-    window.addEventListener('mousedown', close);
+    const close = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
     window.addEventListener('keydown', close);
-    return () => { window.removeEventListener('mousedown', close); window.removeEventListener('keydown', close); };
+    return () => window.removeEventListener('keydown', close);
   }, [open]);
   const go = (action: string, arg?: string) => { setOpen(false); runAppCommand(action, arg); };
   return (
-    <div className="rb-file-wrap" ref={ref}>
-      <button className="rb-file" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen(!open)}>Fichier <Icon name="chevronDown" size={13} /></button>
+    <div className="rb-file-wrap">
+      <button className="rb-file" aria-haspopup="dialog" aria-expanded={open} onClick={() => setOpen(true)}>Dossier</button>
       {open && (
-        <div className="file-menu" role="menu">
-          {FILE_ITEMS.map((item, i) => item === '-'
-            ? <div key={i} className="file-sep" role="separator" />
-            : <button key={item[0]} role="menuitem" onClick={() => go(item[0])}><span>{item[1]}</span><kbd>{item[2]}</kbd></button>)}
-          {recent.length > 0 && (
-            <>
-              <div className="file-sep" role="separator" />
-              <div className="file-head">Récents</div>
-              {recent.slice(0, 6).map((p) => (
-                <button key={p} role="menuitem" title={p} onClick={() => go('open-recent', p)}><span>{p.split(/[\\/]/).pop()}</span><kbd /></button>
-              ))}
-            </>
-          )}
+        <div className="backstage" role="dialog" aria-label="Dossier">
+          <nav className="bs-nav">
+            <button className="bs-back" onClick={() => setOpen(false)} title="Revenir au plan (Échap)">
+              <span aria-hidden>←</span> Revenir au plan
+            </button>
+            {BACKSTAGE.map((sec) => (
+              <div key={sec.title} className="bs-sec">
+                <div className="bs-head">{sec.title}</div>
+                {sec.items.map(([action, icon, label, key]) => (
+                  <button key={action} onClick={() => go(action)}><Icon name={icon} size={17} /><span>{label}</span><kbd>{key}</kbd></button>
+                ))}
+              </div>
+            ))}
+          </nav>
+          <section className="bs-main">
+            <h2>Démarrer</h2>
+            <div className="bs-cards">
+              <button onClick={() => go('import-background')}><Icon name="import" size={26} /><b>Nouveau projet depuis un plan</b><span>PDF, image, DXF ou DWG</span></button>
+              <button onClick={() => go('new')}><Icon name="new" size={26} /><b>Nouveau projet vide</b><span>Partir d’un étage vide</span></button>
+              <button onClick={() => go('open')}><Icon name="open" size={26} /><b>Ouvrir un projet</b><span>Fichier .planevac</span></button>
+            </div>
+            <h2>Projets récents</h2>
+            {recent.length === 0
+              ? <p className="bs-empty">Aucun projet récent pour l’instant.</p>
+              : <div className="bs-recent">{recent.slice(0, 10).map((p) => (
+                  <button key={p} title={p} onClick={() => go('open-recent', p)}>
+                    <Icon name="folder" size={18} /><span><b>{p.split(/[\\/]/).pop()}</b><small>{p}</small></span>
+                  </button>))}</div>}
+          </section>
         </div>
       )}
     </div>
@@ -100,7 +152,9 @@ function FileMenu() {
 }
 
 export function Ribbon({ onPrintPreview, onQuickExport }: { onPrintPreview(): void; onQuickExport(): void }) {
-  const [tab, setTab] = useState<Tab>('plan');
+  const [tab, setTab] = useState<Tab>('edit');
+  const [reduced, setReduced] = useState(() => { try { return localStorage.getItem(REDUCED_KEY) === '1'; } catch { return false; } });
+  const toggleReduced = (v = !reduced) => { setReduced(v); try { localStorage.setItem(REDUCED_KEY, v ? '1' : '0'); } catch { /* sans stockage */ } };
   const pendingSymbol = useStore((s) => s.pendingSymbol);
   const newScope = useStore((s) => s.newScope);
   const showCirculation = useStore((s) => s.showCirculation);
@@ -118,7 +172,7 @@ export function Ribbon({ onPrintPreview, onQuickExport }: { onPrintPreview(): vo
   const use = (t: Tool, p?: Partial<ToolPresets>) => { if (p) S().setPreset(p); S().setTool(t); };
 
   return (
-    <header className="ribbon">
+    <header className={reduced ? 'ribbon reduced' : 'ribbon'} style={{ '--tab-c': TAB_COLOR[tab] } as React.CSSProperties}>
       <div className="rb-top">
         <div className="rb-brand" title="Atelier Plans d’Évacuation">
           <img src={brandIcon} width={22} height={22} alt="" />
@@ -131,9 +185,12 @@ export function Ribbon({ onPrintPreview, onQuickExport }: { onPrintPreview(): vo
         <nav className="rb-tabs" role="tablist">
           <FileMenu />
           {TABS.map((t) => (
-            <button key={t.id} role="tab" aria-selected={tab === t.id} title={t.title}
-              className={`${tab === t.id ? 'on' : ''}${t.id === 'edit' && sel && tab !== 'edit' ? ' has-sel' : ''}`} onClick={() => setTab(t.id)}>
-              {t.label}{t.id === 'edit' && sel > 0 && tab !== 'edit' && <span className="rb-dot" title={`${sel} élément(s) sélectionné(s)`} />}
+            <button key={t.id} role="tab" aria-selected={tab === t.id} title={`${t.title}
+Double-clic : réduire ou déplier le ruban`}
+              style={{ '--c': TAB_COLOR[t.id] } as React.CSSProperties}
+              className={`${tab === t.id ? 'on' : ''}`}
+              onClick={() => { setTab(t.id); if (reduced) toggleReduced(false); }} onDoubleClick={() => toggleReduced()}>
+              {t.label}{t.id === 'edit' && sel > 0 && <span className="rb-count" title={`${sel} élément(s) sélectionné(s)`}>{sel}</span>}
             </button>
           ))}
         </nav>
@@ -149,7 +206,7 @@ export function Ribbon({ onPrintPreview, onQuickExport }: { onPrintPreview(): vo
         </div>
       </div>
 
-      <div className="rb-panel" key={tab}>
+      {!reduced && <div className="rb-panel" key={tab}>
         {tab === 'plan' && (
           <>
             <Group title="Plan de fond">
@@ -157,69 +214,64 @@ export function Ribbon({ onPrintPreview, onQuickExport }: { onPrintPreview(): vo
                 title="Assistant d’import : PDF, image, DXF ou DWG ; étage, page, préparation du fond et échelle" />
               <Big icon="calibrate" label="Étalonner" active={tool === 'calibrate'} onClick={() => use('calibrate')} title="Étalonner l’échelle (K) — tracez une cote connue sur le plan et indiquez sa longueur réelle" />
             </Group>
-            <Group title="Outils">
-              <Big icon="select" label="Sélection" active={tool === 'select'} onClick={() => use('select')} title="Sélection (V)" />
-              <Big icon="pan" label="Main" active={tool === 'pan'} onClick={() => use('pan')} title="Déplacer la vue (H)" />
+            <Group title="Murs">
+              <DropButton big icon={presets.wallThickness < 18 ? 'partition' : 'wall'} label={presets.wallThickness < 18 ? 'Cloison' : 'Mur'}
+                active={tool === 'wall'} onMain={() => use('wall')} title="Mur (M) — cliquez point par point, double-clic pour terminer">
+                <MenuItem icon="wall" label="Mur porteur épais" hint="M" active={presets.wallThickness >= 18} onClick={() => use('wall', { wallThickness: 22 })} />
+                <MenuItem icon="partition" label="Cloison fine" active={presets.wallThickness < 18} onClick={() => use('wall', { wallThickness: 10 })} />
+              </DropButton>
             </Group>
-            <Group title="Murs et ouvertures">
-              <Big icon="wall" label="Mur" active={tool === 'wall' && presets.wallThickness >= 18} onClick={() => use('wall', { wallThickness: 22 })}
-                title="Mur porteur épais (M) — cliquez point par point, double-clic pour terminer" />
-              <Big icon="partition" label="Cloison" active={tool === 'wall' && presets.wallThickness < 18} onClick={() => use('wall', { wallThickness: 10 })}
-                title="Cloison fine — cliquez point par point, double-clic pour terminer" />
-              <Big icon="window" label="Fenêtre" active={tool === 'window' && (presets.windowShutter ?? 'none') === 'none' && (presets.windowStyle ?? 'standard') === 'standard'} onClick={() => use('window', { windowShutter: 'none', windowStyle: 'standard' })} title="Fenêtre (F) — cliquez sur un mur" />
-            </Group>
-            <Group title="Fenêtres" cols>
-              {([['casement', 'À battants', 'Fenêtre à deux battants, ouverture dessinée côté intérieur'], ['sliding', 'Coulissante', 'Fenêtre coulissante (deux vitrages décalés)'],
-                ['fixed', 'Fixe', 'Châssis fixe, sans ouvrant'], ['tilt', 'Soufflet', 'Fenêtre à soufflet (bascule vers l’intérieur)']] as const).map(([k, l, tip]) => (
-                <Small key={k} icon="window" label={l} title={`${tip} — cliquez sur un mur`} active={tool === 'window' && presets.windowStyle === k}
-                  onClick={() => use('window', { windowShutter: 'none', windowStyle: k })} />
-              ))}
-            </Group>
-            <Group title="Volets" cols>
-              <Small icon="shutterRolling" label="Roulant" active={tool === 'window' && presets.windowShutter === 'rolling'}
-                title="Fenêtre avec volet roulant (coffre côté extérieur) — cliquez sur un mur" onClick={() => use('window', { windowShutter: 'rolling' })} />
-              <Small icon="shutterHinged" label="Battants" active={tool === 'window' && presets.windowShutter === 'hinged'}
-                title="Fenêtre avec volets battants ouverts contre la façade — cliquez sur un mur" onClick={() => use('window', { windowShutter: 'hinged' })} />
-            </Group>
-            <Group title="Portes" cols>
-              {([['single', 'Battante', 'door', 'Porte à un vantail qui pivote'], ['double', 'Double', 'doorDouble', 'Porte à deux vantaux'],
-                ['sliding', 'Coulissante', 'doorSliding', 'Porte qui glisse le long du mur'], ['slidingDouble', 'Coulis. double', 'doorSlidingDouble', 'Porte coulissante à deux vantaux qui s’écartent (sas, entrée automatique)'], ['revolving', 'Tambour', 'doorRevolving', 'Porte tournante'],
-                ['opening', 'Baie libre', 'doorOpening', 'Ouverture sans porte'], ['swingBoth', 'Va-et-vient', 'door', 'Porte qui s’ouvre des deux côtés'],
-                ['unequal', 'Tiercée', 'doorDouble', 'Porte à deux vantaux inégaux'], ['folding', 'Pliante', 'door', 'Porte pliante (accordéon)'],
-                ['foldingDouble', 'Pliante dble', 'doorDouble', 'Porte pliante à deux parties'], ['pocket', 'Galandage', 'doorSliding', 'Porte coulissante qui rentre dans le mur'],
-                ['garage', 'Garage', 'doorOpening', 'Porte de garage sectionnelle']] as const).map(([k, l, icon, tip]) => (
-                <Small key={k} icon={icon} label={l} title={`${tip} — cliquez sur un mur`} active={tool === 'door' && presets.doorType === k} onClick={() => use('door', { doorType: k })} />
-              ))}
-              <Small icon="door" label={presets.doorFire ? 'Coupe-feu : oui' : 'Coupe-feu : non'} active={!!presets.doorFire}
-                title="Poser les nouvelles portes comme portes coupe-feu (seuil rouge et libellé « CF »)"
-                onClick={() => use('door', { doorFire: !presets.doorFire })} />
-            </Group>
-            <Group title="Escaliers" cols>
-              {([['straight', 'Droit', 'stairs', 'Escalier droit'], ['landing', 'Avec palier', 'stairsLanding', 'Escalier en U avec palier'],
-                ['escalator', 'Escalator', 'escalator', 'Escalier mécanique']] as const).map(([k, l, icon, tip]) => (
-                <Small key={k} icon={icon} label={l} title={`${tip} — tracez un rectangle sur le plan`} active={tool === 'stairs' && presets.stairType === k} onClick={() => use('stairs', { stairType: k })} />
-              ))}
-              <Small icon="stairArrow" label={presets.stairArrow !== false ? 'Flèche : oui' : 'Flèche : non'} active={presets.stairArrow !== false}
-                title="Dessiner la flèche de sens sur les nouveaux escaliers"
-                onClick={() => { const on = presets.stairArrow === false; use('stairs', on ? { stairArrow: true } : { stairArrow: false, stairSplit: true }); }} />
-              <Small icon="stairSplit" label={presets.stairSplit ? 'Séparé : oui' : 'Séparé : non'} active={!!presets.stairSplit}
-                title="Séparation au milieu (deux côtés : montée / descente) sur les nouveaux escaliers droits"
-                onClick={() => use('stairs', { stairSplit: !presets.stairSplit })} />
+            <Group title="Ouvertures">
+              <DropButton big icon={DOOR_ICON[presets.doorType] ?? 'door'} label="Porte" active={tool === 'door'} onMain={() => use('door')} title="Porte (P) — cliquez sur un mur">
+                <MenuHead>Type de porte</MenuHead>
+                {DOORS.map(([k, l, icon]) => (
+                  <MenuItem key={k} icon={icon} label={l} active={presets.doorType === k} onClick={() => use('door', { doorType: k })} />
+                ))}
+                <MenuSep />
+                <MenuItem check label="Porte coupe-feu (seuil rouge, « CF »)" active={!!presets.doorFire} keepOpen onClick={() => use('door', { doorFire: !presets.doorFire })} />
+              </DropButton>
+              <DropButton big icon={presets.windowShutter === 'rolling' ? 'shutterRolling' : presets.windowShutter === 'hinged' ? 'shutterHinged' : 'window'} label="Fenêtre"
+                active={tool === 'window'} onMain={() => use('window')} title="Fenêtre (F) — cliquez sur un mur">
+                <MenuHead>Type de fenêtre</MenuHead>
+                {([['standard', 'Fenêtre simple'], ['casement', 'À battants'], ['sliding', 'Coulissante'], ['fixed', 'Fixe'], ['tilt', 'Soufflet']] as const).map(([k, l]) => (
+                  <MenuItem key={k} icon="window" label={l} hint={k === 'standard' ? 'F' : undefined}
+                    active={(presets.windowShutter ?? 'none') === 'none' && (presets.windowStyle ?? 'standard') === k} onClick={() => use('window', { windowShutter: 'none', windowStyle: k })} />
+                ))}
+                <MenuSep />
+                <MenuHead>Avec volets</MenuHead>
+                <MenuItem icon="shutterRolling" label="Avec volet roulant" active={presets.windowShutter === 'rolling'} onClick={() => use('window', { windowShutter: 'rolling' })} />
+                <MenuItem icon="shutterHinged" label="Avec volets battants" active={presets.windowShutter === 'hinged'} onClick={() => use('window', { windowShutter: 'hinged' })} />
+              </DropButton>
+              <DropButton big icon={STAIR_ICON[presets.stairType] ?? 'stairs'} label="Escalier" active={tool === 'stairs'} onMain={() => use('stairs')}
+                title="Escalier (E) — tracez un rectangle sur le plan">
+                <MenuHead>Type d’escalier</MenuHead>
+                {([['straight', 'Droit', 'stairs'], ['landing', 'En U avec palier', 'stairsLanding'], ['escalator', 'Escalator', 'escalator']] as const).map(([k, l, icon]) => (
+                  <MenuItem key={k} icon={icon} label={l} active={presets.stairType === k} onClick={() => use('stairs', { stairType: k })} />
+                ))}
+                <MenuSep />
+                <MenuItem check label="Flèche de sens" active={presets.stairArrow !== false} keepOpen
+                  onClick={() => { const on = presets.stairArrow === false; use('stairs', on ? { stairArrow: true } : { stairArrow: false, stairSplit: true }); }} />
+                <MenuItem check label="Séparation montée / descente" active={!!presets.stairSplit} keepOpen onClick={() => use('stairs', { stairSplit: !presets.stairSplit })} />
+              </DropButton>
             </Group>
             <Group title="Espaces">
               <Big icon="room" label="Pièce" active={tool === 'room'} onClick={() => use('room')} title="Pièce (R) — tracez un rectangle, puis nommez-la" />
               <Big icon="zone" label="Zone" active={tool === 'zone'} onClick={() => use('zone')} title="Zone de danger, refuge… (Z)" />
             </Group>
-            <Group title="Annotations">
+            <Group title="Illustrations">
               <Big icon="textIcon" label="Texte" active={tool === 'text'} onClick={() => use('text')} title="Texte (T)" />
               <Big icon="image" label="Image / logo" onClick={() => A.insertImageAction()} />
-            </Group>
-            <Group title="Formes">
-              <div className="rb-grid4">
-                {([['rect', 'shapeRect', 'Rectangle'], ['ellipse', 'shapeEllipse', 'Ellipse'], ['triangle', 'shapeTriangle', 'Triangle'], ['diamond', 'shapeDiamond', 'Losange'],
-                  ['hexagon', 'shapeHexagon', 'Hexagone'], ['line', 'shapeLine', 'Ligne'], ['arrow', 'shapeArrow', 'Flèche pleine'], ['star', 'shapeStar', 'Étoile']] as const)
-                  .map(([k, icon, label]) => <Small key={k} icon={icon} title={label} active={tool === 'shape' && presets.shape === k} onClick={() => use('shape', { shape: k })} />)}
-              </div>
+              <DropButton big icon={SHAPES.find((x) => x[0] === presets.shape)?.[1] ?? 'shapeRect'} label="Formes" active={tool === 'shape'}
+                onMain={() => use('shape')} title="Formes (S)">
+                <MenuHead>Formes</MenuHead>
+                <MenuPane>
+                  <div className="rb-menu-grid">
+                    {SHAPES.map(([k, icon, label]) => (
+                      <Tile key={k} icon={icon} label={label} active={tool === 'shape' && presets.shape === k} onPick={() => use('shape', { shape: k })} />
+                    ))}
+                  </div>
+                </MenuPane>
+              </DropButton>
             </Group>
           </>
         )}
@@ -231,13 +283,11 @@ export function Ribbon({ onPrintPreview, onQuickExport }: { onPrintPreview(): vo
               <Big icon="symbol" label="Vous êtes ici" active={tool === 'symbol' && pendingSymbol === 'you-are-here'} onClick={() => S().setTool('symbol', 'you-are-here')}
                 title="Placer le repère « Vous êtes ici » de l’affiche active" />
               {(floor?.variants.length ?? 0) > 1 && (
-                <div className="rb-stack">
-                  <span className="rb-field">Nouveaux éléments</span>
-                  <div className="seg">
-                    <button className={newScope === 'all' ? 'on' : ''} onClick={() => S().setNewScope('all')} title="Les éléments dessinés ou posés vont sur toutes les affiches de l’étage">Toutes</button>
-                    <button className={newScope === 'variant' ? 'on' : ''} onClick={() => S().setNewScope('variant')} title={`Les éléments dessinés ou posés ne vont que sur « ${variantName ?? ''} »`}>Cette affiche</button>
-                  </div>
-                </div>
+                <DropButton big icon="layers" label={newScope === 'all' ? 'Sur toutes' : 'Sur celle-ci'} title="Où vont les nouveaux éléments dessinés ou posés">
+                  <MenuHead>Nouveaux éléments</MenuHead>
+                  <MenuItem icon="layers" label="Sur toutes les affiches de l’étage" active={newScope === 'all'} onClick={() => S().setNewScope('all')} />
+                  <MenuItem icon="image" label={`Seulement sur « ${variantName ?? ''} »`} active={newScope === 'variant'} onClick={() => S().setNewScope('variant')} />
+                </DropButton>
               )}
             </Group>
             <Group title="Itinéraires">
@@ -246,8 +296,14 @@ export function Ribbon({ onPrintPreview, onQuickExport }: { onPrintPreview(): vo
             </Group>
             <Group title="Flèches d’évacuation">
               <div className="arrow-presets">
-                {ARROW_PRESETS.map((p) => <ArrowPresetButton key={p.id} preset={p} />)}
+                {ARROW_PRESETS.slice(0, 6).map((p) => <ArrowPresetButton key={p.id} preset={p} />)}
               </div>
+              {ARROW_PRESETS.length > 6 && (
+                <DropButton big icon="plus" label="Toutes" title="Toutes les flèches prêtes à poser">
+                  <MenuHead>Flèches prêtes à poser</MenuHead>
+                  <MenuPane><div className="arrow-presets in-menu">{ARROW_PRESETS.map((p) => <ArrowPresetButton key={p.id} preset={p} />)}</div></MenuPane>
+                </DropButton>
+              )}
             </Group>
             <Group title="Pictogrammes">
               <Big icon="symbol" label="Bibliothèque" onClick={() => window.dispatchEvent(new CustomEvent('evac:show-library'))} title="Pictogrammes ISO 7010 et compléments (panneau Symboles)" />
@@ -263,39 +319,66 @@ export function Ribbon({ onPrintPreview, onQuickExport }: { onPrintPreview(): vo
 
         {tab === 'edit' && (
           <>
-            <Group title="Presse-papiers" cols>
-              <Small icon="paste" label="Coller" onClick={() => S().paste()} />
-              <Small icon="cut" label="Couper" onClick={() => S().cutSelection()} disabled={!sel} />
-              <Small icon="copy" label="Copier" onClick={() => S().copySelection()} disabled={!sel} />
-              <Small icon="copy" label="Dupliquer" onClick={() => S().duplicateSelection()} disabled={!sel} />
-            </Group>
-            <Group title="Sélectionner" cols>
-              <Small icon="select" label="Semblables" title="Sélectionne tous les éléments du même genre que la sélection (même type de zone, même pictogramme…)" onClick={() => S().selectWhere('similar')} disabled={!sel} />
-              <Small icon="room" label="Zones et pièces" title="Sélectionne toutes les zones et pièces du plan" onClick={() => S().selectWhere('areas')} />
-              <Small icon="text" label="Textes" title="Sélectionne tous les textes du plan (noms de locaux importés…)" onClick={() => S().selectWhere('texts')} />
-              <Small icon="image" label="Pictogrammes" title="Sélectionne tous les pictogrammes du plan" onClick={() => S().selectWhere('symbols')} />
-            </Group>
-            <Group title="Organiser" cols>
-              <Small icon="group" label="Grouper" onClick={() => S().groupSelection()} disabled={sel < 2} />
-              <Small icon="group" label="Dégrouper" onClick={() => S().ungroupSelection()} disabled={!sel} />
-              <Small icon="front" label="Premier plan" onClick={() => S().reorderSelection('front')} disabled={!sel} />
-              <Small icon="back" label="Arrière-plan" onClick={() => S().reorderSelection('back')} disabled={!sel} />
-              <Small icon="forward" label="Avancer" title="Avancer d’un cran (Ctrl+Page préc.)" onClick={() => S().reorderSelection('forward')} disabled={!sel} />
-              <Small icon="backward" label="Reculer" title="Reculer d’un cran, y compris sous les éléments des autres calques (Ctrl+Page suiv.)" onClick={() => S().reorderSelection('backward')} disabled={!sel} />
-              <Small icon="rotate" label="Pivoter 90°" onClick={() => S().rotateSelection(90)} disabled={!sel} />
-              <Small icon="flipH" label="Retourner ↔" onClick={() => S().flipSelection('h')} disabled={!sel} />
-              <Small icon="flipV" label="Retourner ↕" onClick={() => S().flipSelection('v')} disabled={!sel} />
-              <Small icon="lockOn" label="Verrouiller" onClick={() => S().toggleLockSelection()} disabled={!sel} />
-            </Group>
-            <Group title="Aligner et répartir">
-              <div className="rb-grid4">
-                {([['left', 'alignLeft', 'Aligner à gauche'], ['hcenter', 'alignHCenter', 'Centrer horizontalement'], ['right', 'alignRight', 'Aligner à droite'], ['hdist', 'distH', 'Répartir horizontalement'],
-                  ['top', 'alignTop', 'Aligner en haut'], ['vcenter', 'alignVCenter', 'Centrer verticalement'], ['bottom', 'alignBottom', 'Aligner en bas'], ['vdist', 'distV', 'Répartir verticalement']] as const)
-                  .map(([k, icon, label]) => <Small key={k} icon={icon} title={label} onClick={() => S().alignSelection(k)} disabled={sel < 2} />)}
+            <Group title="Presse-papiers">
+              <DropButton big icon="paste" label="Coller" onMain={() => S().paste()} title="Coller (Ctrl+V)">
+                <MenuItem icon="paste" label="Coller" hint="Ctrl+V" onClick={() => S().paste()} />
+                <MenuItem icon="copy" label="Dupliquer la sélection" hint="Ctrl+D" onClick={() => S().duplicateSelection()} disabled={!sel} />
+              </DropButton>
+              <div className="rb-items cols">
+                <Small icon="cut" label="Couper" title="Couper (Ctrl+X)" onClick={() => S().cutSelection()} disabled={!sel} />
+                <Small icon="copy" label="Copier" title="Copier (Ctrl+C)" onClick={() => S().copySelection()} disabled={!sel} />
+                <Small icon="copy" label="Dupliquer" title="Dupliquer (Ctrl+D)" onClick={() => S().duplicateSelection()} disabled={!sel} />
               </div>
             </Group>
+            <Group title="Outils">
+              <DropButton big icon="select" label="Sélection" active={tool === 'select'} onMain={() => use('select')} title="Sélection (V)">
+                <MenuItem icon="select" label="Outil Sélection" hint="V" active={tool === 'select'} onClick={() => use('select')} />
+                <MenuItem icon="pan" label="Outil Main (déplacer la vue)" hint="H" active={tool === 'pan'} onClick={() => use('pan')} />
+                <MenuSep />
+                <MenuHead>Sélectionner d’un coup</MenuHead>
+                <MenuItem icon="select" label="Les éléments semblables" onClick={() => S().selectWhere('similar')} disabled={!sel} />
+                <MenuItem icon="room" label="Toutes les zones et pièces" onClick={() => S().selectWhere('areas')} />
+                <MenuItem icon="text" label="Tous les textes" onClick={() => S().selectWhere('texts')} />
+                <MenuItem icon="image" label="Tous les pictogrammes" onClick={() => S().selectWhere('symbols')} />
+              </DropButton>
+              <Big icon="pan" label="Main" active={tool === 'pan'} onClick={() => use('pan')} title="Déplacer la vue (H)" />
+              <Big icon="textIcon" label="Texte" active={tool === 'text'} onClick={() => use('text')} title="Texte (T)" />
+            </Group>
+            <Group title="Organiser">
+              <DropButton big icon="front" label="Position" disabled={!sel} title="Ordre de superposition">
+                <MenuItem icon="front" label="Premier plan" onClick={() => S().reorderSelection('front')} />
+                <MenuItem icon="forward" label="Avancer d’un cran" hint="Ctrl+Pg préc." onClick={() => S().reorderSelection('forward')} />
+                <MenuItem icon="backward" label="Reculer d’un cran" hint="Ctrl+Pg suiv." onClick={() => S().reorderSelection('backward')} />
+                <MenuItem icon="back" label="Arrière-plan" onClick={() => S().reorderSelection('back')} />
+              </DropButton>
+              <DropButton big icon="alignHCenter" label="Aligner" disabled={sel < 2} title="Aligner et répartir (2 éléments ou plus)">
+                <MenuItem icon="alignLeft" label="Aligner à gauche" onClick={() => S().alignSelection('left')} />
+                <MenuItem icon="alignHCenter" label="Centrer horizontalement" onClick={() => S().alignSelection('hcenter')} />
+                <MenuItem icon="alignRight" label="Aligner à droite" onClick={() => S().alignSelection('right')} />
+                <MenuSep />
+                <MenuItem icon="alignTop" label="Aligner en haut" onClick={() => S().alignSelection('top')} />
+                <MenuItem icon="alignVCenter" label="Centrer verticalement" onClick={() => S().alignSelection('vcenter')} />
+                <MenuItem icon="alignBottom" label="Aligner en bas" onClick={() => S().alignSelection('bottom')} />
+                <MenuSep />
+                <MenuItem icon="distH" label="Répartir horizontalement" onClick={() => S().alignSelection('hdist')} />
+                <MenuItem icon="distV" label="Répartir verticalement" onClick={() => S().alignSelection('vdist')} />
+              </DropButton>
+              <DropButton big icon="rotate" label="Rotation" disabled={!sel} title="Pivoter ou retourner">
+                <MenuItem icon="rotate" label="Pivoter de 90° à droite" onClick={() => S().rotateSelection(90)} />
+                <MenuItem icon="rotate" label="Pivoter de 90° à gauche" onClick={() => S().rotateSelection(-90)} />
+                <MenuItem icon="rotate" label="Pivoter de 180°" onClick={() => S().rotateSelection(180)} />
+                <MenuSep />
+                <MenuItem icon="flipH" label="Retourner horizontalement" onClick={() => S().flipSelection('h')} />
+                <MenuItem icon="flipV" label="Retourner verticalement" onClick={() => S().flipSelection('v')} />
+              </DropButton>
+              <DropButton big icon="group" label="Grouper" disabled={!sel} onMain={() => S().groupSelection()} title="Grouper (2 éléments ou plus)">
+                <MenuItem icon="group" label="Grouper" onClick={() => S().groupSelection()} disabled={sel < 2} />
+                <MenuItem icon="group" label="Dégrouper" onClick={() => S().ungroupSelection()} />
+              </DropButton>
+              <Big icon="lockOn" label="Verrouiller" onClick={() => S().toggleLockSelection()} disabled={!sel} title="Verrouiller / déverrouiller la sélection" />
+            </Group>
             <Group title="Suppression">
-              <Big icon="trash" label="Supprimer" onClick={() => S().deleteSelection()} disabled={!sel} />
+              <Big icon="trash" label="Supprimer" onClick={() => S().deleteSelection()} disabled={!sel} title="Supprimer (Suppr)" />
             </Group>
           </>
         )}
@@ -303,7 +386,10 @@ export function Ribbon({ onPrintPreview, onQuickExport }: { onPrintPreview(): vo
         {tab === 'check' && floor && <CheckTab onPreview={onPrintPreview} onQuickExport={onQuickExport} />}
         {tab === 'page' && floor && <PageTab page={floor.page} onPreview={onPrintPreview} />}
         {tab === 'view' && <ViewTab />}
-      </div>
+        <button className="rb-collapse" title="Réduire le ruban (double-clic sur un onglet pour le déplier)" onClick={() => toggleReduced(true)}>
+          <Icon name="chevronDown" size={14} />
+        </button>
+      </div>}
     </header>
   );
 }
@@ -435,38 +521,54 @@ function PageTab({ page, onPreview }: { page: PageSetup; onPreview(): void }) {
     <>
       <Group title="Thème">
         <div className="theme-row">
-          {(Object.keys(THEMES) as PageTheme[]).map((t) => <ThemeThumb key={t} theme={t} accent={page.accentColor} active={page.theme === t} onClick={() => set(themePatch(t))} />)}
+          {(Object.keys(THEMES) as PageTheme[]).slice(0, 5).map((t) => <ThemeThumb key={t} theme={t} accent={page.accentColor} active={page.theme === t} onClick={() => set(themePatch(t))} />)}
         </div>
+        <DropButton big icon="theme" label="Tous" title="Tous les thèmes de mise en page" wide>
+          <MenuHead>Thèmes</MenuHead>
+          <MenuPane>
+            <div className="theme-row in-menu">
+              {(Object.keys(THEMES) as PageTheme[]).map((t) => <ThemeThumb key={t} theme={t} accent={page.accentColor} active={page.theme === t} onClick={() => set(themePatch(t))} />)}
+            </div>
+          </MenuPane>
+        </DropButton>
       </Group>
-      <Group title="Couleur d’accent">
-        <div className="accent-row">
-          {ACCENTS.map((c) => <button key={c} className={page.accentColor === c ? 'swatch on' : 'swatch'} style={{ background: c }} title={c} onClick={() => set({ accentColor: c })} />)}
-          <input type="color" value={page.accentColor} onChange={(e) => set({ accentColor: e.target.value })} title="Couleur personnalisée" />
-        </div>
+      <Group title="Couleurs">
+        <DropButton big icon="fill" label="Accent" title="Couleur d’accent de l’affiche">
+          <MenuHead>Couleur d’accent</MenuHead>
+          <MenuPane>
+            <div className="accent-row">
+              {ACCENTS.map((c) => <button key={c} className={page.accentColor === c ? 'swatch on' : 'swatch'} style={{ background: c }} title={c} onClick={() => set({ accentColor: c })} />)}
+            </div>
+            <label className="rb-field rb-menu-field">Personnalisée <input type="color" value={page.accentColor} onChange={(e) => set({ accentColor: e.target.value })} /></label>
+          </MenuPane>
+        </DropButton>
+        <DropButton big icon="layout" label="En-tête" title="Couleur de fond de l’en-tête">
+          <MenuHead>Couleur de l’en-tête</MenuHead>
+          <MenuPane>
+            <label className="rb-field rb-menu-field">Couleur <input type="color" value={headerColorValue(page)} onChange={(e) => set({ headerColor: e.target.value })} /></label>
+          </MenuPane>
+          <MenuItem icon="theme" label="Couleur prévue par le thème" disabled={!page.headerColor} onClick={() => set({ headerColor: undefined })} />
+        </DropButton>
       </Group>
-      <Group title="Couleur de l’en-tête">
-        <div className="accent-row">
-          <input type="color" value={headerColorValue(page)} onChange={(e) => set({ headerColor: e.target.value })} title="Couleur de fond de l’en-tête" />
-          <button className="btn small" disabled={!page.headerColor} onClick={() => set({ headerColor: undefined })} title="Revenir à la couleur d’en-tête prévue par le thème">Par défaut</button>
-        </div>
-      </Group>
-      <Group title="Papier" cols>
-        <div className="seg">
-          {(['A4', 'A3', 'A2', 'A1', 'A0'] as const).map((p) => <button key={p} className={page.paper === p ? 'on' : ''} onClick={() => set({ paper: p })}>{p}</button>)}
-        </div>
-        <div className="seg">
-          <button className={page.orientation === 'portrait' ? 'on' : ''} onClick={() => set({ orientation: 'portrait' })}><Icon name="portrait" size={14} /> Portrait</button>
-          <button className={page.orientation === 'landscape' ? 'on' : ''} onClick={() => set({ orientation: 'landscape' })}><Icon name="landscape" size={14} /> Paysage</button>
-        </div>
+      <Group title="Papier">
+        <DropButton big icon="paper" label={`Taille : ${page.paper}`} title="Format du papier">
+          <MenuHead>Format</MenuHead>
+          {(['A4', 'A3', 'A2', 'A1', 'A0'] as const).map((p) => <MenuItem key={p} icon="paper" label={p} active={page.paper === p} onClick={() => set({ paper: p })} />)}
+        </DropButton>
+        <DropButton big icon={page.orientation} label="Orientation" title="Portrait ou paysage">
+          <MenuItem icon="portrait" label="Portrait" active={page.orientation === 'portrait'} onClick={() => set({ orientation: 'portrait' })} />
+          <MenuItem icon="landscape" label="Paysage" active={page.orientation === 'landscape'} onClick={() => set({ orientation: 'landscape' })} />
+        </DropButton>
       </Group>
       <Group title="Disposition" cols>
         <button className="btn small" onClick={() => runAppCommand('layout-settings')}>Placer les blocs…</button>
         <label className="rb-field">Marges <input type="number" min={0} max={40} value={page.marginMm} onChange={(e) => set({ marginMm: Math.max(0, Math.min(40, Number(e.target.value) || 0)) })} /> mm</label>
       </Group>
       <Group title="Éléments de la page">
-        <div className="rb-toggles">
-          {toggles.map(([k, l, icon]) => <Small key={k} icon={icon} label={l} active={!!page[k]} onClick={() => set({ [k]: !page[k] } as any)} />)}
-        </div>
+        <DropButton big icon="legendIcon" label="Blocs affichés" title="Choisir les blocs présents sur la page" wide>
+          <MenuHead>Afficher sur la page</MenuHead>
+          {toggles.map(([k, l]) => <MenuItem key={k} check keepOpen label={l} active={!!page[k]} onClick={() => set({ [k]: !page[k] } as any)} />)}
+        </DropButton>
       </Group>
       <Group title="Réglages">
         <Big icon="paper" label="Tous les réglages" onClick={() => runAppCommand('layout-settings')} title="Échelle, zone imprimée, cadres, angle du nord… dans l’aperçu, page sous les yeux" />
@@ -516,6 +618,11 @@ function CheckTab({ onPreview, onQuickExport }: { onPreview(): void; onQuickExpo
         <Big icon="pdf" label="Cette affiche" onClick={onQuickExport} title="PDF ou PNG de l’affiche active (Ctrl+E)" />
         <Big icon="building" label="Bâtiment" onClick={() => runAppCommand('export-building')} title="Toutes les pages du bâtiment : un PDF regroupé ou un PDF par page" />
         <Big icon="print" label="Imprimer…" onClick={onPreview} title="L’impression se lance depuis l’aperçu" />
+        <DropButton big icon="layers" label="Autres formats" title="Exporter le plan pour d’autres logiciels">
+          <MenuItem icon="layers" label="Plan en DXF (AutoCAD, Visio…)" onClick={() => runAppCommand('export-dxf')} />
+          <MenuItem icon="layers" label="Plan en DWG (AutoCAD)" onClick={() => runAppCommand('export-dwg')} />
+          <MenuItem icon="image" label="Affiche en SVG (vectoriel)" onClick={() => runAppCommand('export-svg')} />
+        </DropButton>
       </Group>
     </>
   );
@@ -537,50 +644,63 @@ function ViewTab() {
   };
   return (
     <>
+      <Group title="Afficher">
+        <div className="rb-checks-col">
+          <RibbonCheck label="Grille" checked={grid.show} onChange={(v) => S().setGrid({ show: v })} />
+          <RibbonCheck label="Règles" checked={rulers} onChange={() => S().toggleRulers()} />
+          <RibbonCheck label="Repères" checked={guides} onChange={() => S().toggleGuides()} />
+          <RibbonCheck label="Circulations" checked={circulation} onChange={() => S().toggleCirculation()}
+            title="Circulations probables : chemin le plus court vers une sortie et zones sans accès (non imprimées)" />
+        </div>
+      </Group>
       <Group title="Zoom">
         <Big icon="zoomIn" label="Avant" onClick={() => zoomBy(1.25)} />
         <Big icon="zoomOut" label="Arrière" onClick={() => zoomBy(0.8)} />
-        <Big icon="fit" label="Ajuster" onClick={() => S().requestFit()} />
-        <div className="rb-zoomval">{Math.round(zoom * 100)} %</div>
+        <Big icon="fit" label="Page entière" onClick={() => S().requestFit()} />
+        <DropButton big icon="zoomIn" label={`${Math.round(zoom * 100)} %`} title="Niveau de zoom">
+          <MenuItem icon="fit" label="Page entière" onClick={() => S().requestFit()} />
+          <MenuSep />
+          {[25, 50, 75, 100, 150, 200, 400].map((z) => <MenuItem key={z} label={`${z} %`} active={Math.round(zoom * 100) === z} onClick={() => zoomBy(z / 100 / zoom)} />)}
+        </DropButton>
       </Group>
-      <Group title="Grille">
-        <Big icon="grid" label="Afficher" active={grid.show} onClick={() => S().setGrid({ show: !grid.show })} />
+      <Group title="Grille et aimantage">
+        <DropButton big icon="grid" label="Grille" active={grid.show} title="Réglages de la grille" wide>
+          <MenuItem check keepOpen label="Afficher la grille" active={grid.show} onClick={() => S().setGrid({ show: !grid.show })} />
+          <MenuItem check keepOpen label="Magnétisme sur la grille" active={grid.snap} onClick={() => S().setGrid({ snap: !grid.snap })} />
+          <MenuSep />
+          <MenuPane>
+            <div className="seg">
+              <button className={grid.style === 'lines' ? 'on' : ''} onClick={() => S().setGrid({ style: 'lines' })}><Icon name="grid" size={14} /> Lignes</button>
+              <button className={grid.style === 'dots' ? 'on' : ''} onClick={() => S().setGrid({ style: 'dots' })}><Icon name="dots" size={14} /> Points</button>
+            </div>
+            <label className="rb-field rb-menu-field">Pas
+              <select value={grid.size} onChange={(e) => S().setGrid({ size: Number(e.target.value) })}>
+                {[5, 10, 20, 25, 50, 100].map((v) => <option key={v} value={v}>{v} u</option>)}
+              </select>
+            </label>
+            <label className="rb-field rb-menu-field">Maillage
+              <select value={grid.majorEvery} onChange={(e) => S().setGrid({ majorEvery: Number(e.target.value) })}>
+                {[2, 4, 5, 10].map((v) => <option key={v} value={v}>1 / {v}</option>)}
+              </select>
+            </label>
+            <label className="rb-field rb-menu-field">Intensité
+              <input type="range" min={0} max={1} step={0.05} value={grid.intensity} onChange={(e) => S().setGrid({ intensity: Number(e.target.value) })} />
+            </label>
+          </MenuPane>
+        </DropButton>
         <Big icon="magnet" label="Magnétisme" active={grid.snap} onClick={() => S().setGrid({ snap: !grid.snap })} />
-        <div className="rb-stack">
-          <div className="seg">
-            <button className={grid.style === 'lines' ? 'on' : ''} onClick={() => S().setGrid({ style: 'lines' })}><Icon name="grid" size={14} /> Lignes</button>
-            <button className={grid.style === 'dots' ? 'on' : ''} onClick={() => S().setGrid({ style: 'dots' })}><Icon name="dots" size={14} /> Points</button>
-          </div>
-          <label className="rb-field">Pas
-            <select value={grid.size} onChange={(e) => S().setGrid({ size: Number(e.target.value) })}>
-              {[5, 10, 20, 25, 50, 100].map((v) => <option key={v} value={v}>{v} u</option>)}
-            </select>
-            Maillage
-            <select value={grid.majorEvery} onChange={(e) => S().setGrid({ majorEvery: Number(e.target.value) })}>
-              {[2, 4, 5, 10].map((v) => <option key={v} value={v}>1 / {v}</option>)}
-            </select>
-          </label>
-          <label className="rb-field">Intensité
-            <input type="range" min={0} max={1} step={0.05} value={grid.intensity} onChange={(e) => S().setGrid({ intensity: Number(e.target.value) })} />
-          </label>
-        </div>
-      </Group>
-      <Group title="Pictogrammes">
-        <Big icon="magnet" label="Aimantage" title="Aimantage des pictogrammes" active={grid.symbolSnapEnabled}
-          onClick={() => S().setGrid({ symbolSnapEnabled: !grid.symbolSnapEnabled })} />
-        <label className="rb-stack rb-field" title="Espace entre le bord du pictogramme et la face du mur après l’aimantage">
-          <span>Retrait des murs · {grid.symbolWallGap} u</span>
-          <input type="range" min={1} max={MAX_SYMBOL_WALL_GAP} step={1}
-            value={grid.symbolWallGap} aria-label="Retrait des pictogrammes par rapport aux murs"
-            aria-valuetext={`${grid.symbolWallGap} unités du plan`} disabled={!grid.symbolSnapEnabled}
-            onChange={(e) => S().setGrid({ symbolWallGap: Number(e.target.value) })} />
-        </label>
-      </Group>
-      <Group title="Aides">
-        <Big icon="route" label="Circulations" active={circulation} onClick={() => S().toggleCirculation()}
-          title="Circulations probables : chemin le plus court vers une sortie et zones sans accès (aide à la vérification, non imprimée)" />
-        <Big icon="ruler" label="Règles" active={rulers} onClick={() => S().toggleRulers()} />
-        <Big icon="guides" label="Repères" active={guides} onClick={() => S().toggleGuides()} />
+        <DropButton big icon="magnet" label="Pictos" active={grid.symbolSnapEnabled} onMain={() => S().setGrid({ symbolSnapEnabled: !grid.symbolSnapEnabled })}
+          title="Aimantage des pictogrammes contre les murs" wide>
+          <MenuItem check keepOpen label="Aimanter les pictogrammes aux murs" active={grid.symbolSnapEnabled} onClick={() => S().setGrid({ symbolSnapEnabled: !grid.symbolSnapEnabled })} />
+          <MenuPane>
+            <label className="rb-field rb-menu-field" title="Espace entre le bord du pictogramme et la face du mur après l’aimantage">
+              Retrait des murs · {grid.symbolWallGap} u
+              <input type="range" min={1} max={MAX_SYMBOL_WALL_GAP} step={1} value={grid.symbolWallGap}
+                aria-label="Retrait des pictogrammes par rapport aux murs" disabled={!grid.symbolSnapEnabled}
+                onChange={(e) => S().setGrid({ symbolWallGap: Number(e.target.value) })} />
+            </label>
+          </MenuPane>
+        </DropButton>
       </Group>
     </>
   );

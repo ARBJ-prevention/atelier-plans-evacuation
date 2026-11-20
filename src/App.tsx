@@ -527,8 +527,8 @@ function HelpDialog({ kind, onClose, version }: { kind: 'guide' | 'shortcuts' | 
           <>
             <h2>Guide d’utilisation rapide</h2>
             <ol>
-              <li><b>Créer un projet</b> (<i>Fichier › Nouveau projet</i>, ou <i>Nouveau projet depuis un plan</i> sur l’accueil) ou partir d’un <b>plan d’exemple</b>, puis organiser bâtiments, étages et affiches dans l’onglet <i>Projet</i>.</li>
-              <li><b>Importer un plan de fond</b> : ruban <i>Plan › Importer un plan</i> : l’assistant demande l’étage, la page d’un PDF (vignettes), la préparation du fond et enchaîne l’étalonnage. Un fichier DXF (AutoCAD) est importé en vectoriel à l’échelle réelle, sans étalonnage. Opacité, niveaux de gris et taille dans l’onglet <i>Fond</i> des propriétés.</li>
+              <li><b>Créer un projet</b> (<i>Dossier › Nouveau projet</i>, ou <i>Nouveau projet depuis un plan</i> sur l’accueil) ou partir d’un <b>plan d’exemple</b>, puis organiser bâtiments, étages et affiches dans l’onglet <i>Projet</i>.</li>
+              <li><b>Importer un plan de fond</b> : ruban <i>Construire › Importer un plan</i> : l’assistant demande l’étage, la page d’un PDF (vignettes), la préparation du fond et enchaîne l’étalonnage. Un fichier DXF (AutoCAD) est importé en vectoriel à l’échelle réelle, sans étalonnage. Opacité, niveaux de gris et taille dans l’onglet <i>Fond</i> des propriétés.</li>
               <li><b>Étalonner l’échelle</b> (K) : cliquez deux points d’une cote connue et saisissez la distance réelle.</li>
               <li><b>Dessiner</b> depuis le ruban <i>Plan</i> : murs (M), portes (P), fenêtres (F), escaliers (E), pièces (R), zones (Z).</li>
               <li><b>Placer les pictogrammes ISO 7010</b> depuis l’onglet <i>Symboles</i> (recherche par nom ou code, clic puis clic, ou glisser-déposer).</li>
