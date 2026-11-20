@@ -590,6 +590,7 @@ export function recognizePlan(flat: FlatDxf, opt: RecognizeOptions): Recognized 
   joinCorners(walls, m, 0.6 * m, openings);
   touchCollinear(walls, openings, m);
   dropLooseOpeningWalls(walls, m);
+  squareWalls(walls, m);
   const hosted = snapOpenings(openings, walls, m);
   // une fenêtre qui ne repose sur aucun mur (battant ou appui mal interprété) n'est pas gardée
   for (let i = windows.length - 1; i >= 0; i--) if (!hosted.has(windows[i])) windows.splice(i, 1);
@@ -1262,6 +1263,74 @@ function snapOpenings(openings: Opening[], walls: RawWall[], m: number): Set<Ope
     hosted.add(o);
   }
   return hosted;
+}
+
+/**
+ * Équerrage final, comme un plan tracé à la main avec l'aimant : les murs presque alignés sur la direction principale
+ * du bâtiment (ou à 90°) deviennent exactement droits ; les morceaux d'un même mur (décalés de quelques cm) sont
+ * mis sur le même axe ; chaque extrémité proche d'un mur perpendiculaire (jusqu'à 60 cm) s'arrête sur son axe.
+ */
+export function squareWalls(walls: { a: [number, number]; b: [number, number]; t: number }[], m: number) {
+  if (!walls.length) return;
+  // direction principale : moyenne circulaire des angles modulo 90° (pondérée par la longueur)
+  let cs = 0, sn = 0;
+  for (const w of walls) {
+    const a = Math.atan2(w.b[1] - w.a[1], w.b[0] - w.a[0]) * 4, L = dist(w.a, w.b);
+    cs += Math.cos(a) * L; sn += Math.sin(a) * L;
+  }
+  let th = Math.atan2(sn, cs) / 4;
+  if (Math.abs(deg(th)) <= 4) th = 0; // plan (presque) droit sur la feuille : murs exactement horizontaux et verticaux
+  const d: P = [Math.cos(th), Math.sin(th)], n = perp(d);
+  const toLocal = (p: P): P => [dot(p, d), dot(p, n)];
+  const toWorld = (q: P): P => add(mulv(d, q[0]), mulv(n, q[1]));
+  type Sq = { w: RawWall; o: 0 | 1; c: number; lo: number; hi: number; flip: boolean };
+  const sq: Sq[] = [];
+  for (const w of walls) {
+    const A = toLocal(w.a), B = toLocal(w.b);
+    const ang = deg(Math.atan2(B[1] - A[1], B[0] - A[0]));
+    const r = ((ang % 90) + 90) % 90, off = Math.min(r, 90 - r);
+    if (off > 4) continue; // mur volontairement en biais : laissé tel quel
+    const o: 0 | 1 = Math.abs(B[0] - A[0]) >= Math.abs(B[1] - A[1]) ? 0 : 1;
+    const ia = o === 0 ? 0 : 1, ic = 1 - ia;
+    sq.push({ w, o, c: (A[ic] + B[ic]) / 2, lo: Math.min(A[ia], B[ia]), hi: Math.max(A[ia], B[ia]), flip: A[ia] > B[ia] });
+  }
+  // mêmes axes pour les morceaux alignés (écart ≤ 8 cm), moyenne pondérée par la longueur
+  for (const o of [0, 1] as const) {
+    const list = sq.filter((x) => x.o === o).sort((x, y) => x.c - y.c);
+    for (let i = 0; i < list.length;) {
+      let j = i + 1;
+      while (j < list.length && list[j].c - list[j - 1].c <= 0.08 * m) j++;
+      const grp = list.slice(i, j);
+      if (grp.length > 1) {
+        const tot = grp.reduce((s, x) => s + (x.hi - x.lo), 0) || 1;
+        const c = grp.reduce((s, x) => s + x.c * (x.hi - x.lo), 0) / tot;
+        for (const x of grp) x.c = c;
+      }
+      i = j;
+    }
+  }
+  // extrémités : rejoindre l'axe du mur perpendiculaire le plus proche
+  for (const x of sq) {
+    for (const end of ['lo', 'hi'] as const) {
+      let best: number | null = null, bd = Infinity;
+      for (const y of sq) {
+        if (y.o === x.o) continue;
+        if (x.c < y.lo - y.w.t / 2 - 0.05 * m || x.c > y.hi + y.w.t / 2 + 0.05 * m) continue;
+        const gap = Math.abs(y.c - x[end]);
+        if (gap > Math.max(0.6 * m, y.w.t)) continue;
+        const other = end === 'lo' ? x.hi : x.lo;
+        if ((y.c - other) * (x[end] - other) <= 0 || Math.abs(y.c - other) < 0.3 * m) continue; // ne pas retourner le mur
+        if (gap < bd) { bd = gap; best = y.c; }
+      }
+      if (best != null) x[end] = best;
+    }
+  }
+  for (const x of sq) {
+    const pt = (s: number): P => toWorld(x.o === 0 ? [s, x.c] : [x.c, s]);
+    const [p0, p1] = [pt(x.lo), pt(x.hi)];
+    const i = walls.indexOf(x.w);
+    walls[i] = { ...x.w, a: x.flip ? p1 : p0, b: x.flip ? p0 : p1 };
+  }
 }
 
 /** « E.i. 30' », « EI 60 », « CF 30 » posé près d'une porte : porte coupe-feu avec son degré. */

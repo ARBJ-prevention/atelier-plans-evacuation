@@ -53,3 +53,20 @@ describe('aimantation des murs entre eux', () => {
     expect(joints.some((j) => j.id === stem.id && j.index === 1)).toBe(false);
   });
 });
+
+describe('équerrage des murs à l’import', () => {
+  it('redresse, aligne les morceaux et prolonge jusqu’au mur voisin', async () => {
+    const { squareWalls } = await import('../src/services/recognize');
+    const m = 50;
+    const walls: { a: [number, number]; b: [number, number]; t: number }[] = [
+      { a: [0, 0], b: [500, 2], t: 10 },          // façade légèrement en biais
+      { a: [0, 100], b: [200, 101], t: 10 },      // deux morceaux d'un même mur, décalés de 2 cm
+      { a: [200, 99], b: [500, 99.5], t: 10 },
+      { a: [250, 105], b: [251, 300], t: 7 },     // cloison qui s'arrête 5 cm avant le mur
+    ];
+    squareWalls(walls, m);
+    for (const w of walls) expect(Math.abs(w.a[0] - w.b[0]) < 1e-6 || Math.abs(w.a[1] - w.b[1]) < 1e-6).toBe(true);
+    expect(walls[1].a[1]).toBeCloseTo(walls[2].a[1], 6);
+    expect(Math.min(walls[3].a[1], walls[3].b[1])).toBeCloseTo(walls[1].a[1], 6);
+  });
+});
