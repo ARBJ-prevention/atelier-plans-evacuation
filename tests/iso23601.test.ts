@@ -99,7 +99,7 @@ describe('fiche pratique : orientation, voies, obstacles, vue d’ensemble', () 
 describe('harmonisation des pictogrammes', () => {
   it('même taille pour tous, entre 7 et 12 mm imprimés ; repère et obstacles à part', async () => {
     const { harmonizedSymbolSize } = await import('../src/render/ElementView');
-    const f = newFloor('RDC', 0);
+    const f = newFloor('RDC', 0, 'BE');
     const v = f.variants[0].id;
     const sym = (symbolId: string, size: number) => makeElement('symbol', { x: 100, y: 100, symbolId, size });
     const mmPerUnit = 0.1; // 10 unités plan = 1 mm
