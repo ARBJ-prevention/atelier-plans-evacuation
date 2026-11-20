@@ -40,6 +40,45 @@ const RULER = 22;
 /** Écart (pixels écran) entre le tracé et le cadre d'étirement d'un itinéraire, d'un mur ou d'une zone. */
 const STRETCH_GAP = 22;
 
+/** Rectangle (repère de la page) d'un escalier tourné d'un multiple de 90°, sinon null. */
+function stairsAxisBox(el: Element): Rect | null {
+  if (el.type !== 'stairs') return null;
+  const q = ((Math.round(el.rotation) % 360) + 360) % 360;
+  if (q % 90) return null;
+  const [w, h] = q % 180 ? [el.h, el.w] : [el.w, el.h];
+  return { x: el.x - w / 2, y: el.y - h / 2, w, h };
+}
+
+/**
+ * Aimant entre escaliers au redimensionnement : chaque bord qui bouge se cale sur le bord le plus proche
+ * d'un autre escalier (même alignement, escaliers empilés de même largeur).
+ */
+function snapStairsBox(el: Element, orig: Element, floor: Floor, variantId: string, tol: number): Element {
+  const b = stairsAxisBox(el), o = stairsAxisBox(orig);
+  if (!b || !o || el.type !== 'stairs') return el;
+  const xs: number[] = [], ys: number[] = [];
+  for (const x of floor.elements) {
+    if (x.id === el.id || x.type !== 'stairs' || !isVisibleInVariant(x, variantId)) continue;
+    const r = stairsAxisBox(x);
+    if (r) { xs.push(r.x, r.x + r.w); ys.push(r.y, r.y + r.h); }
+  }
+  const near = (v: number, cands: number[]) => {
+    let best = v, d = tol;
+    for (const c of cands) if (Math.abs(c - v) < d) { d = Math.abs(c - v); best = c; }
+    return best;
+  };
+  let x0 = b.x, x1 = b.x + b.w, y0 = b.y, y1 = b.y + b.h;
+  const eps = 1e-6;
+  if (Math.abs(x0 - o.x) > eps) x0 = near(x0, xs);
+  if (Math.abs(x1 - (o.x + o.w)) > eps) x1 = near(x1, xs);
+  if (Math.abs(y0 - o.y) > eps) y0 = near(y0, ys);
+  if (Math.abs(y1 - (o.y + o.h)) > eps) y1 = near(y1, ys);
+  if (x1 - x0 < 20 || y1 - y0 < 20) return el;
+  const q = ((Math.round(el.rotation) % 360) + 360) % 360;
+  const [w, h] = q % 180 ? [y1 - y0, x1 - x0] : [x1 - x0, y1 - y0];
+  return { ...el, x: (x0 + x1) / 2, y: (y0 + y1) / 2, w, h };
+}
+
 function resizeHandle(key: string, [x, y]: Pt, [sx, sy]: Pt, zoom: number, rotation = 0) {
   const angle = Math.atan2(sy, sx) * 180 / Math.PI + rotation;
   const cursor = ['ew-resize', 'nwse-resize', 'ns-resize', 'nesw-resize'][((Math.round(angle / 45) % 4) + 4) % 4];
@@ -662,6 +701,7 @@ export function Canvas({ onCalibrate }: CanvasProps) {
           const fit = resized.type === 'window' && canAlign
             ? windowResizeWallFit(floor, variantId, resized, sy, tolerance)
             : undefined;
+          if (resized.type === 'stairs' && canAlign) resized = snapStairsBox(resized, d.orig, floor, variantId, 8 / s.view.zoom);
           const aligned = fit?.window ?? resized;
           const glass = aligned.type === 'window' && canAlign && sx
             ? windowGlassWallFit(floor, variantId, aligned, sx, tolerance)
