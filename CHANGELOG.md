@@ -1,5 +1,16 @@
 # Journal des versions
 
+## 2.0.25 - novembre 2026
+- **Norme ISO 23601 appliquée automatiquement** (fiche pratique « Réalisation d'un plan d'évacuation ») à l'aperçu, à l'impression et aux exports, désactivable dans l'aperçu :
+  - format **A3 minimum** (A4 seulement pour une chambre individuelle), nouveaux formats **A1 et A0** ;
+  - échelle **1:100 puis 1:250** et format choisis automatiquement pour que le plan tienne en entier, **identiques pour tous les étages du bâtiment** ;
+  - titre « Plan d'évacuation » à la hauteur de lettre minimale du format (13, 18, 26 ou 36 mm) ;
+  - murs en noir : porteurs au moins 1,6 mm, autres parois au moins 0,6 mm ; pictogrammes d'au moins 7 mm ; fond blanc ;
+  - escaliers des voies d'évacuation en vert foncé transparent.
+- **Numéros des locaux** : champ « Numéro » sur chaque pièce et numérotation automatique (chiffre de l'étage + deux chiffres, depuis la rue principale, de gauche à droite).
+- **N° du plan** dans le cartouche, inscrit en bas du plan avec la date et la version. Plan de situation activé par défaut.
+- Nouveaux contrôles avant export : échelle hors norme ou non étalonnée, vue du site absente, locaux non numérotés, numéro de plan manquant, plan à revérifier (3 fois par an).
+
 ## 2.0.24 - novembre 2026
 - **Import DWG/DXF : unité mieux détectée**. Les plans dessinés en centimètres mais déclarés en millimètres ne basculent plus en « pieds » à cause des petits arcs des sanitaires : seuls les arcs des calques de portes et menuiseries comptent quand il y en a, et une unité qui donnerait un bâtiment invraisemblable (moins de 4 m ou plus de 600 m) est écartée.
 - **Murs redessinés plus complets** : la face d'un mur n'est plus « volée » par une ligne voisine d'un autre calque (ex. « Mur vu » à côté de « Mur coupé ») ; les murs sont tracés sur toute leur longueur.
