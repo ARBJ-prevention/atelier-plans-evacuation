@@ -4,6 +4,7 @@ import { floorContentBounds, isVisibleInVariant, usedSymbolIds } from '../model/
 import type { AreaElement, Building, CustomSymbol, Floor, PageSetup, RouteElement, SymbolElement, ValidationStatus, WallElement } from '../model/types';
 import { FONT, symbolName, SymbolGraphic } from './ElementView';
 import { FloorDrawing } from './FloorDrawing';
+import { orientFloor, type OrientedFloor } from './orient';
 import { computeLayout, normalizePage, normOn, ISO_SCALES, frameOn, frameStroke, headerColors, horizonNight, isLightHex, INSTRUCTION_FONT, instructionColumns, instructionLines, instructionsHeight, legendColumnLimit, mixHex, niceScaleBarMeters, themeColor, wrapText, type PageLayout } from './layout';
 
 export const STATUS_LABEL: Record<ValidationStatus, string> = {
@@ -13,7 +14,9 @@ export const STATUS_LABEL: Record<ValidationStatus, string> = {
 };
 const STATUS_COLOR: Record<ValidationStatus, string> = { draft: '#6b7a89', to_validate: '#c27400', validated: '#00843d' };
 const FIRE = '#d52b1e';
-const SAFE = '#00843d';   // vert sécurité (évacuation)
+const SAFE = '#00843d';
+/** Couleur du bâtiment concerné sur la vue d'ensemble du site (se détache du vert, du rouge et du jaune de sécurité). */
+const SITE_HIGHLIGHT = '#2f6fd6';   // vert sécurité (évacuation)
 const FIRE_INK = '#a1261e';
 const SAFE_INK = '#00663a';
 
@@ -84,9 +87,11 @@ export interface PrintPageProps {
 }
 
 /** Page complète (SVG en millimètres) selon le thème choisi. */
-export function PrintPage({ building, floor, variantId, customSymbols, page: rawPage = floor.page, uniqueKey = 'p' }: PrintPageProps) {
+export function PrintPage({ building, floor: rawFloor, variantId, customSymbols, page: rawPage = rawFloor.page, uniqueKey = 'p' }: PrintPageProps) {
   // Consignes de la fiche pratique (ISO 23601) appliquées automatiquement : format, échelle commune au bâtiment…
-  const page = normalizePage(floor, rawPage, building, variantId);
+  const page = normalizePage(rawFloor, rawPage, building, variantId);
+  // … et plan tourné pour que le mur d'affichage soit en haut du repère « Vous êtes ici ».
+  const floor = orientFloor(rawFloor, variantId, page);
   const norm = normOn(page);
   const L = computeLayout(floor, variantId, page, building);
   const T = L.theme;
@@ -136,7 +141,7 @@ export function PrintPage({ building, floor, variantId, customSymbols, page: raw
           stroke={planFrame.color} strokeWidth={planFrame.w} />
       )}
       {page.showScaleBar && floor.unitsPerMeter > 0 && <ScaleBar L={L} floor={floor} page={page} />}
-      {page.showNorth && <North L={L} angle={page.northAngle} ink={T.ink} />}
+      {page.showNorth && <North L={L} angle={page.northAngle + ((floor as OrientedFloor).orient?.deg ?? 0)} ink={T.ink} />}
 
       {(L.side || L.blocks) && <Side L={L} page={page} floor={floor} variantId={variantId} customSymbols={customSymbols} accent={accent} grads={grads} />}
       {L.footer && <Footer L={L} page={page} floor={floor} building={building} accent={accent} />}
@@ -650,8 +655,9 @@ export function isoRoomNumberOk(num: string | undefined, level: number): boolean
   return !!m && Number(m[1]) === level;
 }
 
-export function printIssues(floor: Floor, variantId: string, rawPage = floor.page, building?: Building): PrintIssue[] {
-  const page = normalizePage(floor, rawPage, building, variantId);
+export function printIssues(rawFloor: Floor, variantId: string, rawPage = rawFloor.page, building?: Building): PrintIssue[] {
+  const page = normalizePage(rawFloor, rawPage, building, variantId);
+  const floor = orientFloor(rawFloor, variantId, page);
   const L = computeLayout(floor, variantId, page, building);
   const issues: PrintIssue[] = [];
   const { drawing, world, k, tx, ty } = L;
@@ -903,7 +909,12 @@ export function SiteSketch({ floor, variantId, page, x, y, w, h, accent, ink }: 
   const area = page.area === 'custom' && page.customArea.w > 0 ? page.customArea : null;
   return (
     <g>
-      {areas.map((a) => <polygon key={a.id} points={P(a.points)} fill={a.kind === 'zone' ? '#fde7e4' : '#eef1f4'} stroke="#c3cbd3" strokeWidth={0.12} />)}
+      {areas.map((a) => {
+        // Norme : le bâtiment (ou la partie affichée sur le plan) se détache en couleur sur la vue d'ensemble.
+        const shown = !area || a.points.some((p) => p[0] >= area.x && p[0] <= area.x + area.w && p[1] >= area.y && p[1] <= area.y + area.h);
+        const fill = normOn(page) && a.kind === 'room' ? (shown ? SITE_HIGHLIGHT : '#e3e7eb') : a.kind === 'zone' ? '#fde7e4' : '#eef1f4';
+        return <polygon key={a.id} points={P(a.points)} fill={fill} fillOpacity={normOn(page) && shown && a.kind === 'room' ? 0.55 : 1} stroke="#c3cbd3" strokeWidth={0.12} />;
+      })}
       {walls.map((wl) => (
         <polyline key={wl.id} points={P(wl.closed ? [...wl.points, wl.points[0]] : wl.points)} fill="none" stroke={ink}
           strokeWidth={Math.max(0.25, Math.min(0.9, wl.thickness * k))} strokeLinejoin="round" strokeLinecap="round" />

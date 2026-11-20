@@ -21,7 +21,7 @@ export function buildBatchPrintHtml(jobs: ExportJob[], title: string): string {
   let index = 0;
   const pages = jobs.flatMap((job) => {
     const { w, h } = sheetSizeMm(job.floor, job.variantIds[0] ?? '', job.page, job.building);
-    const name = job.page.cropToPlan ? `sheet-crop-${index}` : `sheet-${normalizePage(job.floor, job.page, job.building).paper}-${job.page.orientation}`;
+    const name = job.page.cropToPlan ? `sheet-crop-${index}` : `sheet-${normalizePage(job.floor, job.page, job.building).paper}-${normalizePage(job.floor, job.page, job.building).orientation}`;
     sizes.set(name, `@page ${name} { size: ${w}mm ${h}mm; margin: 0; }
 .${name} { page: ${name}; width: ${w}mm; height: ${h}mm; }
 .${name} > svg { width: ${w}mm; height: ${h}mm; }`);

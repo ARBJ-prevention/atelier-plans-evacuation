@@ -5,6 +5,7 @@ import type { PageSetup, PageTheme, PrintBlockPosition } from '../model/types';
 import { PageScopeNote } from '../panels/PropertiesPanel';
 import { ThemeThumb } from '../panels/Ribbon';
 import { printIssues } from '../render/PrintPage';
+import { planRotation } from '../render/orient';
 import { FRAME_ZONES, frameOn, headerColorValue, normalizePage, normOn, preferredBlockPosition, PRINT_BLOCKS, PRINT_POSITIONS, THEMES, themePatch } from '../render/layout';
 import { currentBuilding, currentFloor, currentVariantId, useStore } from '../store/store';
 import { Icon } from '../ui/icons';
@@ -142,10 +143,19 @@ export function PrintDialog({ onClose, onEdit, currentOnly = false, focusScale =
             <label className="check" title="Seuls les plans affichés dans une chambre individuelle peuvent être réduits au format A4">
               <input type="checkbox" checked={!!page.smallRoom} onChange={(e) => set({ smallRoom: e.target.checked })} /> Plan pour une chambre individuelle (A4 admis)
             </label>
+            <label className="field inline" title="Le mur sur lequel le plan est fixé doit se trouver en haut du repère « Vous êtes ici »"><span>Orientation du plan</span>
+              <select value={String(page.planRotation ?? 'auto')} onChange={(e) => set({ planRotation: e.target.value === 'auto' ? 'auto' : Number(e.target.value) as 0 | 90 | 180 | 270 })}>
+                <option value="auto">Auto : mur d’affichage en haut{page.area !== 'custom' ? ` (${planRotation(floor, previewVariant, eff)}°)` : ''}</option>
+                <option value="0">Comme le dessin</option><option value="90">Quart de tour à droite</option>
+                <option value="180">Demi-tour</option><option value="270">Quart de tour à gauche</option>
+              </select>
+            </label>
+            {page.area === 'custom' && <p className="muted tiny">Zone imprimée personnalisée : le plan n’est pas tourné.</p>}
             <p className="muted tiny">
               Appliqué automatiquement : {eff.paper}{eff.paper !== page.paper ? ` (au lieu de ${page.paper})` : ''}
+              {eff.orientation !== page.orientation ? ` ${eff.orientation === 'portrait' ? 'portrait' : 'paysage'}` : ''}
               {eff.scaleMode === 'fixed' && calibrated ? ` · échelle 1:${eff.scale}${page.scaleMode === 'fit' ? ' (choisie pour tout le bâtiment)' : ''}` : ''}
-              {' '}· titre ≥ {({ A4: 13, A3: 13, A2: 18, A1: 26, A0: 36 } as Record<string, number>)[eff.paper]} mm · murs porteurs noirs ≥ 1,6 mm, cloisons ≥ 0,6 mm · pictogrammes ≥ 7 mm · fond blanc · escaliers des voies d’évacuation en vert foncé · date, n° et version du plan en bas.
+              {' '}· titre ≥ {({ A4: 13, A3: 13, A2: 18, A1: 26, A0: 36 } as Record<string, number>)[eff.paper]} mm · murs porteurs noirs ≥ 1,6 mm, cloisons ≥ 0,6 mm · pictogrammes ≥ 7 mm · fond blanc · voies d’évacuation en zone verte et flèches vert foncé · escaliers des voies en vert foncé · mobilier et obstacles en gris clair · bâtiment en couleur sur la vue d’ensemble · date, n° et version du plan en bas.
             </p>
           </>}
           <h3>Papier</h3>

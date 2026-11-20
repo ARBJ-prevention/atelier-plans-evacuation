@@ -370,6 +370,11 @@ export interface PageSetup {
   smallRoom?: boolean;
   /** Côté de la rue principale sur le plan (numérotation des locaux). Absent = en bas. */
   streetSide?: 'bottom' | 'top' | 'left' | 'right';
+  /**
+   * Orientation du plan imprimé (degrés, sens horaire). « auto » : le mur le plus proche du repère « Vous êtes ici »
+   * (mur d'affichage) est placé en haut. Absent = « auto » avec la norme, 0 sinon.
+   */
+  planRotation?: 'auto' | 0 | 90 | 180 | 270;
 }
 
 export interface Floor {

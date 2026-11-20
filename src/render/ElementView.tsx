@@ -19,7 +19,9 @@ export interface RenderCtx {
 }
 
 /** Murs porteurs ≥ 1,6 mm, autres parois ≥ 0,6 mm (noirs) ; pictogrammes ≥ 7 mm. */
-const NORM_LOAD_WALL_MM = 1.6, NORM_WALL_MM = 0.6, NORM_SYMBOL_MM = 7;
+const NORM_LOAD_WALL_MM = 1.6, NORM_WALL_MM = 0.6, NORM_SYMBOL_MM = 7, NORM_OBSTACLE_MM = 0.15;
+/** Catégories de symboles de plan traitées comme obstacles à demeure (gris clair). */
+const NORM_OBSTACLE_CATS = new Set(['Mobilier', 'Sanitaires et cuisine', 'Équipements techniques']);
 const NORM_STAIRS = '#00663a';
 
 /** Mur porteur : style « hachuré » (mur porteur) ou épaisseur réelle d'au moins 20 cm. */
@@ -271,7 +273,12 @@ export function polygonCentroid(p: Pt[]): Pt {
 
 function SymbolView({ el: el0, ctx }: { el: SymbolElement; ctx: RenderCtx }) {
   // Norme : pictogrammes d'au moins 7 mm sur le papier.
-  const el = ctx.norm ? { ...el0, size: Math.max(el0.size, NORM_SYMBOL_MM / ctx.norm.mmPerUnit) } : el0;
+  const obstacle = !!ctx.norm && NORM_OBSTACLE_CATS.has(getBuiltinSymbol(el0.symbolId)?.category ?? '');
+  const el = ctx.norm && !obstacle ? { ...el0, size: Math.max(el0.size, NORM_SYMBOL_MM / ctx.norm.mmPerUnit) } : el0;
+  if (obstacle) {
+    // Norme : mobilier et équipements fixes dessinés en gris clair.
+    return <g style={{ filter: 'grayscale(1)' }} opacity={0.45}><SymbolView el={el0} ctx={{ ...ctx, norm: undefined }} /></g>;
+  }
   const here = hereCallout(el, ctx.floor, ctx.variantId);
   const ls = el.labelSize > 0 ? el.labelSize : Math.max(8, el.size * 0.26);
   const pos = el.labelPosition === 'auto' ? 'below' : el.labelPosition;
@@ -453,10 +460,10 @@ function Inner({ el: el0, ctx }: { el: Element; ctx: RenderCtx }): React.ReactEl
   }
   if (N && el.type === 'stairs' && ctx.routes?.length) {
     // Norme : escaliers des voies d'évacuation en vert foncé transparent.
-    const r = Math.hypot(el.w, el.h) / 2;
-    const hit = ctx.routes.some((s) => segmentHitsRect(s, el.x - r * 0.75, el.y - r * 0.75, el.x + r * 0.75, el.y + r * 0.75));
+    const st = el;
+    const r = Math.hypot(st.w, st.h) / 2;
+    const hit = ctx.routes.some((s) => segmentHitsRect(s, st.x - r * 0.75, st.y - r * 0.75, st.x + r * 0.75, st.y + r * 0.75));
     if (hit) {
-      const st = el;
       return (
         <g>
           <Inner el={{ ...st }} ctx={{ ...ctx, routes: undefined }} />
@@ -465,6 +472,24 @@ function Inner({ el: el0, ctx }: { el: Element; ctx: RenderCtx }): React.ReactEl
         </g>
       );
     }
+  }
+  if (N && el.type === 'route' && el.points.length > 1) {
+    // Norme : voie d'évacuation en zone verte transparente, chemin marqué par des flèches vert foncé.
+    const upm = ctx.floor.unitsPerMeter;
+    const band = Math.max(el.width * 3, upm > 0 ? 1.1 * upm : el.width * 5);
+    const r = el;
+    return (
+      <g>
+        <polyline points={r.points.map((p) => p.join(',')).join(' ')} fill="none" stroke="#2fae66" strokeOpacity={0.3}
+          strokeWidth={band} strokeLinejoin="round" strokeLinecap="butt" />
+        <RouteView el={{ ...r, color: NORM_STAIRS, outline: '', arrowEnd: true,
+          arrowRepeat: r.arrowRepeat > 0 ? r.arrowRepeat : upm > 0 ? 3 * upm : r.width * 14 }} />
+      </g>
+    );
+  }
+  if (N && el.type === 'shape' && el.layer === 'building' && el.shape !== 'arrow') {
+    // Norme : obstacles à demeure (chaudière, paillasses, éviers…) en gris clair, trait ≥ 0,15 mm.
+    el = { ...el, stroke: '#a9b1b9', fill: '#eceff1', pattern: 'solid', strokeWidth: Math.max(el.strokeWidth, NORM_OBSTACLE_MM / N.mmPerUnit), textColor: '#6b7680' };
   }
   switch (el.type) {
     case 'wall': {

@@ -1,6 +1,7 @@
 import { floorContentBounds, isVisibleInVariant, usedSymbolIds, type Rect } from '../model/geometry';
 import type { Building, FrameKey, Floor, PageSetup, PageTheme, PrintBlock, PrintBlockPosition, PrintBlockPositions } from '../model/types';
 import { getBuiltinSymbol } from '../symbols/library';
+import { orientFloor } from './orient';
 
 export const PAPER_MM: Record<string, [number, number]> = { A4: [210, 297], A3: [297, 420], A2: [420, 594], A1: [594, 841], A0: [841, 1189] };
 
@@ -43,7 +44,7 @@ function normBase(floor: Floor, page: PageSetup): PageSetup {
 
 /** Le plan entier tient-il dans sa zone à l'échelle fixée ? */
 function fitsAtScale(floor: Floor, variantId: string, page: PageSetup): boolean {
-  const L = layoutOnce(floor, variantId, page);
+  const L = layoutOnce(orientFloor(floor, variantId, page), variantId, page);
   const sb = page.showScaleBar ? 10 : 0;
   return L.world.w * L.k <= L.drawing.w - 2 + 0.01 && L.world.h * L.k <= L.drawing.h - 2 - sb + 0.01;
 }
@@ -68,10 +69,14 @@ export function normalizePage(floor: Floor, page: PageSetup = floor.page, buildi
     ...papers.filter((p) => p === 'A4' || p === 'A3' || p === 'A2').map((p) => [p, 100] as [string, number]),
     ...papers.map((p) => [p, 250] as [string, number]),
   ];
+  // Orientation de la feuille choisie d'abord ; l'autre est essayée si elle permet une meilleure échelle / un plus petit format.
+  const flip = base.orientation === 'portrait' ? 'landscape' : 'portrait';
   for (const [paper, scale] of tries) {
-    const fits = (f: Floor, v: string) => fitsAtScale(f, v, { ...normBase(f, f === floor ? page : f.page), paper: paper as PageSetup['paper'], scaleMode: 'fixed', scale });
-    if (fits(floor, vid) && others.every((f) => f.variants.every((v) => fits(f, v.id)))) {
-      return { ...base, paper: paper as PageSetup['paper'], scaleMode: 'fixed', scale };
+    for (const orientation of [base.orientation, flip] as const) {
+      const fits = (f: Floor, v: string) => fitsAtScale(f, v, { ...normBase(f, f === floor ? page : f.page), paper: paper as PageSetup['paper'], orientation, scaleMode: 'fixed', scale });
+      if (fits(floor, vid) && others.every((f) => f.variants.every((v) => fits(f, v.id)))) {
+        return { ...base, paper: paper as PageSetup['paper'], orientation, scaleMode: 'fixed', scale };
+      }
     }
   }
   return base;   // trop grand même au 1:250 sur A0 : plan ajusté (n'afficher qu'une partie du bâtiment)
@@ -536,6 +541,7 @@ const SPARE_EDGE: Record<PrintBlockPosition, PrintBlockPosition> = { bottom: 'ri
  */
 export function computeLayout(floor: Floor, variantId: string, page: PageSetup = floor.page, building?: Building): PageLayout {
   page = normalizePage(floor, page, building, variantId);
+  floor = orientFloor(floor, variantId, page);
   const base = layoutOnce(floor, variantId, page);
   const fixed = floor.unitsPerMeter > 0 && page.scaleMode === 'fixed' && page.scale > 0;
   if (page.fillSpace === false || fixed || (!base.blocks && !base.side)) return strip(base);

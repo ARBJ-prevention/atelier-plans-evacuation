@@ -72,3 +72,26 @@ describe('fiche pratique ISO 23601 appliquée automatiquement', () => {
     expect(isoRoomNumberOk('-103', -1)).toBe(true);
   });
 });
+
+describe('fiche pratique : orientation, voies, obstacles, vue d’ensemble', () => {
+  it('tourne le plan pour mettre le mur le plus proche du repère en haut', async () => {
+    const { autoRotation, orientFloor } = await import('../src/render/orient');
+    const f = newFloor('Niveau 0', 0, 'BE');
+    f.elements.push(makeElement('wall', { points: [[100, 0], [100, 200]] }));   // mur à droite du repère
+    f.elements.push(makeElement('symbol', { symbolId: 'you-are-here', x: 90, y: 100 }));
+    expect(autoRotation(f, f.variants[0].id)).toBe(270);
+    const o = orientFloor(f, f.variants[0].id, f.page);
+    const wall = o.elements[0] as { points: [number, number][] };
+    const here = o.elements[1] as { x: number; y: number };
+    expect(wall.points[0][1]).toBeCloseTo(wall.points[1][1]);
+    expect(wall.points[0][1]).toBeLessThan(here.y);   // le mur est au-dessus du repère
+    expect(orientFloor(f, f.variants[0].id, { ...f.page, norm: false }).orient).toBeUndefined();
+  });
+
+  it('voies en zone verte, bâtiment coloré sur la vue d’ensemble', () => {
+    const { project, building, floor, variantId } = offices();
+    const svg = renderPageSvg({ building, floor, variantId, customSymbols: project.customSymbols });
+    expect(svg).toContain('stroke="#2fae66"');
+    expect(svg).toContain('#2f6fd6');
+  });
+});

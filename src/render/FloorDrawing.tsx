@@ -2,6 +2,7 @@ import { LAYER_ORDER } from '../model/defaults';
 import { isVisibleInVariant } from '../model/geometry';
 import type { CustomSymbol, Floor } from '../model/types';
 import { ElementView, routeSegments } from './ElementView';
+import type { OrientedFloor } from './orient';
 
 /**
  * Dessin vectoriel d'un étage (coordonnées plan). Utilisé à la fois par
@@ -20,7 +21,7 @@ export function FloorDrawing({ floor, variantId, customSymbols, interactive = fa
   return (
     <g>
       {bg && bgLayer.visible && (
-        <image href={bg.src} x={bg.x} y={bg.y} width={bg.naturalWidth * bg.scale} height={bg.naturalHeight * bg.scale}
+        <image transform={(floor as OrientedFloor).orient ? `rotate(${(floor as OrientedFloor).orient!.deg} ${(floor as OrientedFloor).orient!.cx} ${(floor as OrientedFloor).orient!.cy})` : undefined} href={bg.src} x={bg.x} y={bg.y} width={bg.naturalWidth * bg.scale} height={bg.naturalHeight * bg.scale}
           opacity={bg.opacity} preserveAspectRatio="none"
           style={{ ...(bg.grayscale ? { filter: 'grayscale(1) contrast(1.05)' } : {}), ...(interactive ? { pointerEvents: bg.locked || bgLayer.locked ? 'none' : 'auto' } : {}) } as any}
           {...(interactive ? { 'data-bg': '1' } : {})} />

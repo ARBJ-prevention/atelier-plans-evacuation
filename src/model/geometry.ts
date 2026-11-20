@@ -611,7 +611,16 @@ export function floorContentBounds(floor: Floor, variantId: string): Rect {
   const rects: Rect[] = [];
   if (floor.background) {
     const b = floor.background;
-    rects.push({ x: b.x, y: b.y, w: b.naturalWidth * b.scale, h: b.naturalHeight * b.scale });
+    const r = { x: b.x, y: b.y, w: b.naturalWidth * b.scale, h: b.naturalHeight * b.scale };
+    // Étage tourné pour l'impression (render/orient.ts) : le fond est dessiné tourné autour de ce centre.
+    const o = (floor as Floor & { orient?: { deg: number; cx: number; cy: number } }).orient;
+    if (o && (o.deg === 90 || o.deg === 270)) {
+      const c = Math.round(Math.cos(o.deg * Math.PI / 180)), s = Math.round(Math.sin(o.deg * Math.PI / 180));
+      const mx = r.x + r.w / 2 - o.cx, my = r.y + r.h / 2 - o.cy;
+      const nx = o.cx + mx * c - my * s, ny = o.cy + mx * s + my * c;
+      rects.push({ x: nx - r.h / 2, y: ny - r.w / 2, w: r.h, h: r.w });
+    } else if (o && o.deg === 180) rects.push({ x: 2 * o.cx - r.x - r.w, y: 2 * o.cy - r.y - r.h, w: r.w, h: r.h });
+    else rects.push(r);
   }
   const visibleLayers = new Set(floor.layers.filter((l) => l.visible).map((l) => l.id));
   let legendItems: number | undefined;
