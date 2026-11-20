@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import {
-  checkUnitByDoors, declaredUnit, DXF_UNITS, dxfMaxDim, guessUnit, renderDxfSvg, unitMeters, type DxfRenderResult, type FlatDxf,
+  checkUnitByDoors, declaredUnit, detectStraightenAngle, rotateFlat, DXF_UNITS, dxfMaxDim, guessUnit, renderDxfSvg, unitMeters, type DxfRenderResult, type FlatDxf,
 } from '../services/dxf';
 import { ask } from '../ui/dialogs';
 
@@ -12,6 +12,10 @@ export interface DxfImportChoice {
   monochrome: boolean;
   /** Lancer la reconnaissance (murs, portes, fenêtres, escaliers, pièces) après l'import. */
   recognize: boolean;
+  /** Dessin effectivement importé (tourné si le plan a été redressé). */
+  flat: FlatDxf;
+  /** Rotation appliquée au dessin, en degrés. */
+  rotation: number;
 }
 
 const fmtM = (v: number) => v.toLocaleString('fr-BE', { maximumFractionDigits: v < 10 ? 2 : 1 });
@@ -29,9 +33,16 @@ export async function askDxfImport(flat: FlatDxf, fileName: string, unitsPerMete
   const doorCheck = checkUnitByDoors(flat, new Set(defaultVisible), base);
   const unit = doorCheck?.unit ?? base;
   const correction = doorCheck ? { from: base, to: doorCheck.unit, doorM: doorCheck.doorM } : null;
+  const autoAngle = detectStraightenAngle(flat, new Set(defaultVisible));
+  const rotated = new Map<number, FlatDxf>();
+  const flatAt = (deg: number): FlatDxf => {
+    const d = Number(deg) || 0;
+    if (!rotated.has(d)) rotated.set(d, rotateFlat(flat, d));
+    return rotated.get(d)!;
+  };
   const render = (v: Record<string, any>): DxfRenderResult | string => {
     try {
-      return renderDxfSvg(flat, { visibleLayers: new Set(v.visible as string[]), metersPerUnit: unitMeters(v.unit), unitsPerMeter, monochrome: !!v.mono });
+      return renderDxfSvg(flatAt(v.rotation), { visibleLayers: new Set(v.visible as string[]), metersPerUnit: unitMeters(v.unit), unitsPerMeter, monochrome: !!v.mono });
     } catch (e) {
       return e instanceof Error ? e.message : String(e);
     }
@@ -42,29 +53,31 @@ export async function askDxfImport(flat: FlatDxf, fileName: string, unitsPerMete
     message: dwgVersion ? `Fichier ${dwgVersion} lu grâce à ODA File Converter.` : undefined,
     wide: true,
     large: true,
-    initial: { unit, visible: defaultVisible, mono: true, recognize: true },
+    initial: { unit, visible: defaultVisible, mono: true, recognize: true, rotation: autoAngle },
     invalid: (v) => ((v.visible as string[]).length ? null : 'Aucun calque'),
-    render: (v, set) => <DxfPanel flat={flat} values={v} set={set} declared={declared} render={render} skipped={skippedTypes} correction={correction} />,
+    render: (v, set) => <DxfPanel flat={flat} values={v} set={set} declared={declared} render={render} skipped={skippedTypes} correction={correction} autoAngle={autoAngle} />,
     buttons: [{ label: 'Annuler', value: 'cancel' }, { label: 'Continuer', value: 'ok', primary: true }],
   });
   if (r.button !== 'ok') return null;
   const res = render(r.values);
   if (typeof res === 'string') throw new Error(res);
-  return { result: res, unit: r.values.unit, unitDeclared: declared === r.values.unit, visibleLayers: r.values.visible, monochrome: !!r.values.mono, recognize: !!r.values.recognize };
+  return { result: res, unit: r.values.unit, unitDeclared: declared === r.values.unit, visibleLayers: r.values.visible, monochrome: !!r.values.mono, recognize: !!r.values.recognize, flat: flatAt(r.values.rotation), rotation: Number(r.values.rotation) || 0 };
 }
 
 export interface UnitCorrection { from: string; to: string; doorM: number }
 
 const unitLabel = (key: string) => DXF_UNITS.find((u) => u.key === key)?.label.toLowerCase() ?? key;
+const normDeg = (d: number) => Math.round((((d + 180) % 360 + 360) % 360 - 180) * 10) / 10;
+const quarter = (d: unknown) => Math.round((Number(d) || 0) / 90) * 90;
 const fmtLen = (m: number) => (m < 1 ? `${Math.round(m * 100)} cm` : `${fmtM(m)} m`);
 
-export function DxfPanel({ flat, values, set, declared, render, skipped, correction = null }: {
+export function DxfPanel({ flat, values, set, declared, render, skipped, correction = null, autoAngle = 0 }: {
   flat: FlatDxf; values: Record<string, any>; set(p: Record<string, any>): void; declared: string | null;
-  render(v: Record<string, any>): DxfRenderResult | string; skipped: [string, number][]; correction?: UnitCorrection | null;
+  render(v: Record<string, any>): DxfRenderResult | string; skipped: [string, number][]; correction?: UnitCorrection | null; autoAngle?: number;
 }) {
   const [filter, setFilter] = useState('');
   const visible = new Set(values.visible as string[]);
-  const preview = useMemo(() => render(values), [values.unit, values.mono, values.visible]); // eslint-disable-line react-hooks/exhaustive-deps
+  const preview = useMemo(() => render(values), [values.unit, values.mono, values.visible, values.rotation]); // eslint-disable-line react-hooks/exhaustive-deps
   const shown = flat.layers.filter((l) => l.name.toLowerCase().includes(filter.trim().toLowerCase()));
   const toggle = (name: string, on: boolean) => {
     const next = new Set(visible);
@@ -102,6 +115,24 @@ export function DxfPanel({ flat, values, set, declared, render, skipped, correct
               {preview.outliers > 0 && <> · {preview.outliers} objet(s) très éloigné(s) ignoré(s)</>}</span>
           </p>
         )}
+        <div className="field">
+          <span>Rotation du plan</span>
+          <div className="row gap">
+            <button type="button" className="btn small" title="Tourner de 90° à gauche" onClick={() => set({ rotation: normDeg((Number(values.rotation) || 0) + 90) })}>↺ 90°</button>
+            <input type="number" step={0.1} min={-180} max={180} style={{ width: '6em' }} aria-label="Angle de rotation en degrés"
+              value={values.rotation ?? 0} onChange={(e) => set({ rotation: normDeg(Number(e.target.value) || 0) })} /> °
+            <button type="button" className="btn small" title="Tourner de 90° à droite" onClick={() => set({ rotation: normDeg((Number(values.rotation) || 0) - 90) })}>↻ 90°</button>
+          </div>
+          <input type="range" min={-45} max={45} step={0.1} aria-label="Réglage fin de la rotation"
+            value={(Number(values.rotation) || 0) - quarter(values.rotation)} onChange={(e) => set({ rotation: normDeg(quarter(values.rotation) + Number(e.target.value)) })} />
+          <div className="row gap">
+            <button type="button" className="btn small" disabled={!autoAngle} onClick={() => set({ rotation: autoAngle })}>Redresser automatiquement</button>
+            <button type="button" className="btn small" disabled={!Number(values.rotation)} onClick={() => set({ rotation: 0 })}>Aucune rotation</button>
+          </div>
+          <small>{autoAngle
+            ? <>Le plan est dessiné de travers dans le fichier : il est redressé de {fmtM(autoAngle)}° pour que les murs soient droits. Ajustez si besoin.</>
+            : 'Le plan est déjà droit dans le fichier.'}</small>
+        </div>
         <label className="field check">
           <input type="checkbox" checked={!!values.mono} onChange={(e) => set({ mono: e.target.checked })} /> <span>Tout dessiner en noir</span>
         </label>

@@ -386,7 +386,7 @@ export async function importDxfBackground(name: string, data: Uint8Array, dwgVer
     const dims = `${result.widthM.toFixed(2).replace('.', ',')} m × ${result.heightM.toFixed(2).replace('.', ',')} m`;
     if (choice.recognize) {
       const bg = dxfBackground(name, choice);
-      const rec = await askRecognition(flat, choice.visibleLayers, result.origin, floor, bg, upm);
+      const rec = await askRecognition(choice.flat, choice.visibleLayers, result.origin, floor, bg, upm);
       if (!rec) return;
       applyDxfBackground(name, choice, upm, rec.elements);
       if (rec.elements.length) {

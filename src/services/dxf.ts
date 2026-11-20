@@ -916,3 +916,53 @@ export function dxfMaxDim(flat: FlatDxf, visible: Set<string>): number {
   const { box } = dxfExtent(flat, visible);
   return box ? Math.max(box.maxX - box.minX, box.maxY - box.minY) : 0;
 }
+
+// ---------------------------------------------------------------------------
+// Redressement (plan dessiné de travers dans le fichier)
+// ---------------------------------------------------------------------------
+
+/**
+ * Angle (en degrés, dans ]-45, 45]) dont il faut tourner le dessin pour que ses murs
+ * deviennent horizontaux / verticaux : histogramme des directions des segments, pondéré
+ * par leur longueur, replié modulo 90°. Renvoie 0 si le plan est déjà droit (< 0,3°).
+ */
+export function detectStraightenAngle(flat: FlatDxf, visible: Set<string>): number {
+  const BINS = 900; // pas de 0,1°
+  const hist = new Float64Array(BINS);
+  for (const p of flat.prims) {
+    if (p.kind !== 'line' || p.arc || !visible.has(p.layer)) continue;
+    for (let i = 1; i < p.pts.length; i++) {
+      const dx = p.pts[i][0] - p.pts[i - 1][0], dy = p.pts[i][1] - p.pts[i - 1][1];
+      const len = Math.hypot(dx, dy);
+      if (!len) continue;
+      let a = (Math.atan2(dy, dx) * 180) / Math.PI;
+      a = ((a % 90) + 90) % 90;
+      hist[Math.floor(a * 10) % BINS] += len;
+    }
+  }
+  // lissage circulaire ±0,5° pour regrouper les segments presque parallèles
+  let best = -1, bestV = 0;
+  for (let i = 0; i < BINS; i++) {
+    let v = 0;
+    for (let d = -5; d <= 5; d++) v += hist[(i + d + BINS) % BINS];
+    if (v > bestV) { bestV = v; best = i; }
+  }
+  if (best < 0) return 0;
+  let a = best / 10; // direction dominante dans [0, 90[
+  if (a > 45) a -= 90;
+  const rot = Math.round(-a * 10) / 10;
+  return Math.abs(rot) < 0.3 ? 0 : rot;
+}
+
+/** Copie du dessin tournée de `deg` degrés (sens trigonométrique) autour de l'origine. */
+export function rotateFlat(flat: FlatDxf, deg: number): FlatDxf {
+  if (!deg) return flat;
+  const rad = deg * DEG, c = Math.cos(rad), s = Math.sin(rad);
+  const R = (v: Vec): Vec => [v[0] * c - v[1] * s, v[0] * s + v[1] * c];
+  const prims = flat.prims.map((p): DxfPrim => {
+    if (p.kind === 'line') return { ...p, pts: p.pts.map(R), ...(p.arc ? { arc: { ...p.arc, c: R(p.arc.c), p0: R(p.arc.p0), p1: R(p.arc.p1) } } : {}) };
+    if (p.kind === 'fill') return { ...p, rings: p.rings.map((r) => r.map(R)) };
+    return { ...p, at: R(p.at), rotation: p.rotation + rad };
+  });
+  return { ...flat, prims };
+}

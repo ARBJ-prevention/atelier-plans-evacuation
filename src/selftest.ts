@@ -317,7 +317,7 @@ export async function runSelfTest(outDir: string): Promise<void> {
     f0.background = null;
     f0.unitsPerMeter = 0;
     S().loadProject(p, null);
-    A.applyDxfBackground('exemple-geometre.dxf', { result, unit: 'mm', unitDeclared: true, visibleLayers: visible, monochrome: true, recognize: false }, 50);
+    A.applyDxfBackground('exemple-geometre.dxf', { result, unit: 'mm', unitDeclared: true, visibleLayers: visible, monochrome: true, recognize: false, flat, rotation: 0 }, 50);
     S().addElements([
       makeElement('symbol', { x: 600, y: 715, symbolId: 'iso-E002', size: 44 }),
       makeElement('symbol', { x: 250, y: 200, symbolId: 'iso-F001', size: 40 }),
@@ -365,7 +365,7 @@ export async function runSelfTest(outDir: string): Promise<void> {
     const f0 = p.buildings[0].floors[0];
     f0.elements = []; f0.background = null; f0.unitsPerMeter = 0;
     S().loadProject(p, null);
-    A.applyDxfBackground('exemple-geometre.dxf', { result, unit: 'mm', unitDeclared: true, visibleLayers: visible, monochrome: true, recognize: true }, 50, els);
+    A.applyDxfBackground('exemple-geometre.dxf', { result, unit: 'mm', unitDeclared: true, visibleLayers: visible, monochrome: true, recognize: true, flat, rotation: 0 }, 50, els);
     S().addElements([
       makeElement('symbol', { x: 595, y: 735, symbolId: 'iso-E002', size: 40 }),
       makeElement('symbol', { x: 60, y: 60, symbolId: 'iso-F001', size: 34 }),
