@@ -1,5 +1,12 @@
 # Journal des versions
 
+## 2.0.34 - novembre 2026
+- **Nouveau ruban, organisé comme les logiciels de dessin professionnels** : six onglets aux couleurs distinctes, Atelier (orange), Construire (bleu), Habillage (violet), Sécurité (vert), Contrôle (rouge) et Vue (gris-bleu). On voit d’un coup d’œil dans quel menu on se trouve.
+- **Menus déroulants animés** : Coller, Sélection, Position, Aligner, Rotation, Grouper, Mur, Porte, Fenêtre, Escalier, Formes, thèmes, couleurs, papier, blocs de la page, zoom, grille et aimantage regroupent leurs choix sous une petite flèche.
+- **Page « Dossier » plein écran** (remplace le menu Fichier du ruban) : nouveau, ouvrir, enregistrer, importer, exporter et aide à gauche, projets récents à droite.
+- **Onglet Vue** : cases à cocher Grille, Règles, Repères et Circulations.
+- **Ruban réductible** : double-clic sur un onglet ou petite flèche en bas à droite. Une pastille sur l’onglet Atelier indique le nombre d’éléments sélectionnés.
+
 ## 2.0.33 - novembre 2026
 - **Nouvelles portes** : va-et-vient, tiercée (vantaux inégaux), pliante, pliante double, à galandage et porte de garage sectionnelle.
 - **Nouveaux modèles de fenêtres** : à battants (ouverture dessinée côté intérieur), coulissante, fixe et à soufflet (ruban « Fenêtres » et champ « Modèle »).
