@@ -1,5 +1,8 @@
 # Journal des versions
 
+## 2.0.30 - novembre 2026
+- **Import DWG : murs droits et raccordés proprement.** Les murs presque droits deviennent exactement horizontaux ou verticaux, les morceaux d'un même mur (séparés par des portes ou fenêtres) sont remis sur une seule ligne, et chaque extrémité proche d'un mur perpendiculaire (jusqu'à 60 cm) le rejoint.
+
 ## 2.0.29 - novembre 2026
 - **Import DWG : façades à pilastres redessinées en un seul mur.** Les ressauts devant la façade (pilastres, même doubles) ne coupent plus le mur en plusieurs murs parallèles ; les fenêtres restent dans le mur.
 - **Pictogrammes harmonisés à l'impression** (norme activée) : tous les pictogrammes de sécurité de l'affiche ont la même taille, entre 7 et 12 mm sur le papier. Le repère « Vous êtes ici » et le mobilier gardent leur propre taille.
