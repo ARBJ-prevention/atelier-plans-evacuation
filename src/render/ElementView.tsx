@@ -12,6 +12,34 @@ export interface RenderCtx {
   customSymbols: CustomSymbol[];
   interactive?: boolean;
   idPrefix?: string;
+  /** Impression selon la norme ISO 23601 : mm imprimés par unité plan. */
+  norm?: { mmPerUnit: number };
+  /** Segments des itinéraires d'évacuation (escaliers à colorer en vert foncé). */
+  routes?: [Pt, Pt][];
+}
+
+/** Murs porteurs ≥ 1,6 mm, autres parois ≥ 0,6 mm (noirs) ; pictogrammes ≥ 7 mm. */
+const NORM_LOAD_WALL_MM = 1.6, NORM_WALL_MM = 0.6, NORM_SYMBOL_MM = 7;
+const NORM_STAIRS = '#00663a';
+
+/** Mur porteur : style « hachuré » (mur porteur) ou épaisseur réelle d'au moins 20 cm. */
+export function isLoadBearing(el: { wallStyle: string; thickness: number }, unitsPerMeter: number): boolean {
+  return el.wallStyle === 'hatch' || (unitsPerMeter > 0 && el.thickness / unitsPerMeter >= 0.2 - 1e-6);
+}
+
+/** Segments des itinéraires visibles sur la page. */
+export function routeSegments(floor: Floor, variantId: string): [Pt, Pt][] {
+  const visible = new Set(floor.layers.filter((l) => l.visible).map((l) => l.id));
+  return floor.elements.flatMap((e) => e.type === 'route' && visible.has(e.layer) && e.points.length > 1 && (e.opacity ?? 1) > 0
+    && (!e.variantId || e.variantId === variantId) && !e.excludedVariantIds?.includes(variantId)
+    ? e.points.slice(1).map((p, i) => [e.points[i], p] as [Pt, Pt]) : []);
+}
+
+/** Un segment traverse-t-il (ou touche-t-il) le rectangle ? */
+function segmentHitsRect([a, b]: [Pt, Pt], x0: number, y0: number, x1: number, y1: number): boolean {
+  const inside = (p: Pt) => p[0] >= x0 && p[0] <= x1 && p[1] >= y0 && p[1] <= y1;
+  for (let t = 0; t <= 1.0001; t += 0.025) if (inside([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t])) return true;
+  return false;
 }
 
 export const FONT = "'Segoe UI Variable Text', 'Segoe UI', Arial, Helvetica, sans-serif";
@@ -241,7 +269,9 @@ export function polygonCentroid(p: Pt[]): Pt {
   return [cx / (3 * a), cy / (3 * a)];
 }
 
-function SymbolView({ el, ctx }: { el: SymbolElement; ctx: RenderCtx }) {
+function SymbolView({ el: el0, ctx }: { el: SymbolElement; ctx: RenderCtx }) {
+  // Norme : pictogrammes d'au moins 7 mm sur le papier.
+  const el = ctx.norm ? { ...el0, size: Math.max(el0.size, NORM_SYMBOL_MM / ctx.norm.mmPerUnit) } : el0;
   const here = hereCallout(el, ctx.floor, ctx.variantId);
   const ls = el.labelSize > 0 ? el.labelSize : Math.max(8, el.size * 0.26);
   const pos = el.labelPosition === 'auto' ? 'below' : el.labelPosition;
@@ -412,7 +442,30 @@ function fillOf(id: string, pattern: FillPattern, fill: string) {
   return pattern === 'none' ? 'none' : fill;
 }
 
-function Inner({ el, ctx }: { el: Element; ctx: RenderCtx }): React.ReactElement | null {
+function Inner({ el: el0, ctx }: { el: Element; ctx: RenderCtx }): React.ReactElement | null {
+  let el = el0;
+  const N = ctx.norm;
+  if (N && el.type === 'wall') {
+    // Norme : murs en noir, porteurs pleins ≥ 1,6 mm, autres parois ≥ 0,6 mm sur le papier.
+    const load = isLoadBearing(el, ctx.floor.unitsPerMeter);
+    const min = (load ? NORM_LOAD_WALL_MM : NORM_WALL_MM) / N.mmPerUnit;
+    el = { ...el, color: '#000000', wallStyle: 'solid', thickness: Math.max(el.thickness, min) };
+  }
+  if (N && el.type === 'stairs' && ctx.routes?.length) {
+    // Norme : escaliers des voies d'évacuation en vert foncé transparent.
+    const r = Math.hypot(el.w, el.h) / 2;
+    const hit = ctx.routes.some((s) => segmentHitsRect(s, el.x - r * 0.75, el.y - r * 0.75, el.x + r * 0.75, el.y + r * 0.75));
+    if (hit) {
+      const st = el;
+      return (
+        <g>
+          <Inner el={{ ...st }} ctx={{ ...ctx, routes: undefined }} />
+          <rect transform={`translate(${st.x} ${st.y}) rotate(${st.rotation})`} x={-st.w / 2} y={-st.h / 2} width={st.w} height={st.h}
+            fill={NORM_STAIRS} fillOpacity={0.38} />
+        </g>
+      );
+    }
+  }
   switch (el.type) {
     case 'wall': {
       if (el.points.length < 2) return null;
@@ -445,6 +498,7 @@ function Inner({ el, ctx }: { el: Element; ctx: RenderCtx }): React.ReactElement
       const pid = `${ctx.idPrefix ?? ''}pa-${el.id}`;
       const upm = ctx.floor.unitsPerMeter;
       const lines = el.label ? el.label.split('\n') : [];
+      if (el.number?.trim()) lines.push(el.number.trim());
       if (el.showArea && upm > 0) lines.push(`${(polygonArea(el.points) / (upm * upm)).toFixed(1).replace('.', ',')} m²`);
       return (
         <g>

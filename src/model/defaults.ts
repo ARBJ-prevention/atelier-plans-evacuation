@@ -53,6 +53,7 @@ export function defaultTitleBlock(country: string): TitleBlock {
     emergencyNumbers: EMERGENCY_NUMBERS[country] ?? EMERGENCY_NUMBERS.INT,
     logo: '',
     aerialImage: '',
+    planNumber: '',
   };
 }
 
@@ -80,7 +81,9 @@ export function defaultPage(): PageSetup {
     northAngle: 0,
     showFrame: true,
     showAerial: false,
-    showSketch: false,
+    // Fiche pratique : vue schématisée du site (point de rassemblement, accès, bâtiments voisins).
+    showSketch: true,
+    norm: true,
   };
 }
 

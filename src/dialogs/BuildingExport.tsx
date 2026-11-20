@@ -24,7 +24,7 @@ export function BuildingExport({ building, customSymbols, onBack, onClose, onEdi
   const preview = pages.find((page) => page.key === previewKey) ?? pages[0];
   const chosen = pages.filter((page) => selected.has(page.key));
   const alerts = chosen.map(({ floor, variant, label }) => ({
-    floorId: floor.id, variantId: variant.id, label, issues: printIssues(floor, variant.id),
+    floorId: floor.id, variantId: variant.id, label, issues: printIssues(floor, variant.id, floor.page, building),
   }));
   const run = async (separate: boolean) => {
     const jobs = building.floors.flatMap<ExportJob>((floor) => {
@@ -64,7 +64,7 @@ export function BuildingExport({ building, customSymbols, onBack, onClose, onEdi
                   {page.label}<small>{page.floor.page.paper} · {page.floor.page.orientation === 'portrait' ? 'Portrait' : 'Paysage'}</small>
                 </button>
                 {(() => {
-                  const n = printIssues(page.floor, page.variant.id).filter((i) => PRINT_ISSUE_LEVEL[i] === 'check').length;
+                  const n = printIssues(page.floor, page.variant.id, page.floor.page, building).filter((i) => PRINT_ISSUE_LEVEL[i] === 'check').length;
                   return (
                     <span className="export-page-state">
                       <span className={`badge status-${page.floor.titleBlock.status}`}>{STATUS_LABEL[page.floor.titleBlock.status]}</span>

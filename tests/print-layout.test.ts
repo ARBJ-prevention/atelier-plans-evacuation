@@ -17,7 +17,7 @@ describe('placement des blocs imprimés', () => {
     '%s applique sa disposition et affiche les consignes et les numéros en entier',
     (theme, edge) => {
       const { project, building, floor, variantId } = offices();
-      const page = { ...floor.page, ...themePatch(theme), paper: 'A3' as const, orientation: 'landscape' as const, fillSpace: false };
+      const page = { ...floor.page, ...themePatch(theme), paper: 'A3' as const, orientation: 'landscape' as const, fillSpace: false, norm: false, showSketch: false };
       const { drawing, blocks } = computeLayout(floor, variantId, page);
       const legend = blocks!.legend!;
       if (edge === 'right') expect(legend.x).toBeGreaterThan(drawing.x + drawing.w);
@@ -34,7 +34,7 @@ describe('placement des blocs imprimés', () => {
     (theme) => {
       const { floor, variantId } = offices();
       const page = {
-        ...floor.page, theme, orientation: 'portrait' as const, showAerial: true, showSketch: true, fillSpace: false,
+        ...floor.page, theme, orientation: 'portrait' as const, showAerial: true, showSketch: true, fillSpace: false, norm: false,
         blockPositions: { [theme]: { legend: 'left', instructions: 'bottom', aerial: 'top', sketch: 'right', numbers: 'right' } satisfies PrintBlockPositions },
       };
       const { drawing, blocks, numbersInHeader } = computeLayout(floor, variantId, page);
@@ -69,7 +69,7 @@ describe('placement des blocs imprimés', () => {
     const { building, project, floor, variantId } = offices();
     // « moderne » : légende, consignes et croquis placés à la main en bas, comme sur l'aperçu signalé.
     const blockPositions = theme === 'moderne' ? { moderne: { legend: 'bottom', instructions: 'bottom', sketch: 'bottom' } as const } : undefined;
-    const page = { ...floor.page, ...themePatch(theme), orientation, showSketch: true, ...(blockPositions && { blockPositions }) };
+    const page = { ...floor.page, ...themePatch(theme), orientation, showSketch: true, norm: false, ...(blockPositions && { blockPositions }) };
     const strict = computeLayout(floor, variantId, { ...page, fillSpace: false });
     const filled = computeLayout(floor, variantId, page);
     expect(filled.k).toBeGreaterThan(strict.k * 1.1);

@@ -1,5 +1,5 @@
 import type { Building, CustomSymbol, Floor, PageSetup } from '../model/types';
-import { sheetSizeMm } from '../render/layout';
+import { normalizePage, sheetSizeMm } from '../render/layout';
 import { renderPageSvg } from '../render/PrintPage';
 
 export interface ExportJob {
@@ -20,8 +20,8 @@ export function buildBatchPrintHtml(jobs: ExportJob[], title: string): string {
   const sizes = new Map<string, string>();
   let index = 0;
   const pages = jobs.flatMap((job) => {
-    const { w, h } = sheetSizeMm(job.floor, job.variantIds[0] ?? '', job.page);
-    const name = job.page.cropToPlan ? `sheet-crop-${index}` : `sheet-${job.page.paper}-${job.page.orientation}`;
+    const { w, h } = sheetSizeMm(job.floor, job.variantIds[0] ?? '', job.page, job.building);
+    const name = job.page.cropToPlan ? `sheet-crop-${index}` : `sheet-${normalizePage(job.floor, job.page, job.building).paper}-${job.page.orientation}`;
     sizes.set(name, `@page ${name} { size: ${w}mm ${h}mm; margin: 0; }
 .${name} { page: ${name}; width: ${w}mm; height: ${h}mm; }
 .${name} > svg { width: ${w}mm; height: ${h}mm; }`);
@@ -46,7 +46,7 @@ function escapeHtml(s: string): string {
 /** Rendu PNG d'une page à la résolution demandée (ppp). */
 export async function renderPagePng(job: ExportJob, variantId: string, dpi: number): Promise<{ data: Uint8Array; width: number; height: number }> {
   const svg = renderPageSvg({ building: job.building, floor: job.floor, variantId, customSymbols: job.customSymbols, page: job.page, uniqueKey: 'png' });
-  const { w, h } = sheetSizeMm(job.floor, variantId, job.page);
+  const { w, h } = sheetSizeMm(job.floor, variantId, job.page, job.building);
   const width = Math.round((w / 25.4) * dpi);
   const height = Math.round((h / 25.4) * dpi);
   const blob = new Blob([svg], { type: 'image/svg+xml' });

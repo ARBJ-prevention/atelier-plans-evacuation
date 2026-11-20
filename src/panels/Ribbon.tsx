@@ -8,7 +8,7 @@ import type { PageSetup, PageTheme } from '../model/types';
 import { PRINT_ISSUE_LEVEL, printIssues, STATUS_LABEL } from '../render/PrintPage';
 import { headerColorValue, horizonNight, THEMES, themePatch, themeColor } from '../render/layout';
 import { api } from '../services/api';
-import { currentFloor, currentVariantId, MAX_SYMBOL_WALL_GAP, useStore, type Tool, type ToolPresets } from '../store/store';
+import { currentBuilding, currentFloor, currentVariantId, MAX_SYMBOL_WALL_GAP, useStore, type Tool, type ToolPresets } from '../store/store';
 import { Icon } from '../ui/icons';
 
 type Tab = 'plan' | 'evac' | 'edit' | 'page' | 'check' | 'view';
@@ -442,7 +442,7 @@ function PageTab({ page, onPreview }: { page: PageSetup; onPreview(): void }) {
       </Group>
       <Group title="Papier" cols>
         <div className="seg">
-          {(['A4', 'A3', 'A2'] as const).map((p) => <button key={p} className={page.paper === p ? 'on' : ''} onClick={() => set({ paper: p })}>{p}</button>)}
+          {(['A4', 'A3', 'A2', 'A1', 'A0'] as const).map((p) => <button key={p} className={page.paper === p ? 'on' : ''} onClick={() => set({ paper: p })}>{p}</button>)}
         </div>
         <div className="seg">
           <button className={page.orientation === 'portrait' ? 'on' : ''} onClick={() => set({ orientation: 'portrait' })}><Icon name="portrait" size={14} /> Portrait</button>
@@ -469,10 +469,11 @@ function PageTab({ page, onPreview }: { page: PageSetup; onPreview(): void }) {
 /** Onglet « Vérifier et exporter » : statut explicite, points à vérifier, sorties. */
 function CheckTab({ onPreview, onQuickExport }: { onPreview(): void; onQuickExport(): void }) {
   const floor = useStore((s) => currentFloor(s))!;
+  const building = useStore((s) => currentBuilding(s)) ?? undefined;
   const variantId = useStore((s) => currentVariantId(s));
   const S = useStore.getState;
   const variants = floor.variants;
-  const checks = variants.map((v) => ({ v, n: printIssues(floor, v.id).filter((i) => PRINT_ISSUE_LEVEL[i] === 'check').length }));
+  const checks = variants.map((v) => ({ v, n: printIssues(floor, v.id, floor.page, building).filter((i) => PRINT_ISSUE_LEVEL[i] === 'check').length }));
   const total = checks.reduce((n, c) => n + c.n, 0);
   const status = floor.titleBlock.status;
   return (

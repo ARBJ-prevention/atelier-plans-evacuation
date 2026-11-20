@@ -196,6 +196,11 @@ export function App() {
       setFocusField(issue === 'numbers-missing' ? 'floor-numbers' : 'floor-status');
     } else if (issue === 'instructions-clipped') {
       setFocusInstructions((value) => value + 1);
+    } else if (issue.startsWith('iso-')) {
+      // Consignes de la fiche pratique (ISO 23601) : indication de ce qu'il reste à faire.
+      s.select([]);
+      if (issue === 'iso-scale' || issue === 'iso-uncalibrated') setPrintOpen('scale');
+      s.toast(PRINT_ISSUE_LABEL[issue] + (issue === 'iso-rooms' || issue === 'iso-plan-number' ? ' (panneau Propriétés, sans sélection).' : '.'), 'info');
     } else if (issue !== 'plan-clipped') {
       const markers = floor.elements.filter((e) => e.type === 'symbol' && e.symbolId === 'you-are-here' && isVisibleInVariant(e, variantId));
       if (!markers.length) s.setTool('symbol', 'you-are-here');

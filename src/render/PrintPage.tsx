@@ -4,7 +4,7 @@ import { floorContentBounds, isVisibleInVariant, usedSymbolIds } from '../model/
 import type { AreaElement, Building, CustomSymbol, Floor, PageSetup, RouteElement, SymbolElement, ValidationStatus, WallElement } from '../model/types';
 import { FONT, symbolName, SymbolGraphic } from './ElementView';
 import { FloorDrawing } from './FloorDrawing';
-import { computeLayout, frameOn, frameStroke, headerColors, horizonNight, isLightHex, INSTRUCTION_FONT, instructionColumns, instructionLines, instructionsHeight, legendColumnLimit, mixHex, niceScaleBarMeters, themeColor, wrapText, type PageLayout } from './layout';
+import { computeLayout, normalizePage, normOn, ISO_SCALES, frameOn, frameStroke, headerColors, horizonNight, isLightHex, INSTRUCTION_FONT, instructionColumns, instructionLines, instructionsHeight, legendColumnLimit, mixHex, niceScaleBarMeters, themeColor, wrapText, type PageLayout } from './layout';
 
 export const STATUS_LABEL: Record<ValidationStatus, string> = {
   draft: 'Brouillon',
@@ -84,8 +84,11 @@ export interface PrintPageProps {
 }
 
 /** Page complète (SVG en millimètres) selon le thème choisi. */
-export function PrintPage({ building, floor, variantId, customSymbols, page = floor.page, uniqueKey = 'p' }: PrintPageProps) {
-  const L = computeLayout(floor, variantId, page);
+export function PrintPage({ building, floor, variantId, customSymbols, page: rawPage = floor.page, uniqueKey = 'p' }: PrintPageProps) {
+  // Consignes de la fiche pratique (ISO 23601) appliquées automatiquement : format, échelle commune au bâtiment…
+  const page = normalizePage(floor, rawPage, building, variantId);
+  const norm = normOn(page);
+  const L = computeLayout(floor, variantId, page, building);
   const T = L.theme;
   const tb = floor.titleBlock;
   const accent = page.accentColor || '#00843d';
@@ -104,7 +107,7 @@ export function PrintPage({ building, floor, variantId, customSymbols, page = fl
 
   return (
     <svg xmlns="http://www.w3.org/2000/svg" width={`${L.paperW}mm`} height={`${L.paperH}mm`} viewBox={`0 0 ${L.w} ${L.h}`}>
-      <rect x={0} y={0} width={L.w} height={L.h} fill={T.paperBg || "#ffffff"} />
+      <rect x={0} y={0} width={L.w} height={L.h} fill={norm ? '#ffffff' : T.paperBg || "#ffffff"} />
       <defs>
         <clipPath id={clipId}><rect x={L.drawing.x} y={L.drawing.y} width={L.drawing.w} height={L.drawing.h} rx={T.planRadius} /></clipPath>
         {grads && <GradDefs g={grads} accent={accent} />}
@@ -117,7 +120,8 @@ export function PrintPage({ building, floor, variantId, customSymbols, page = fl
       <rect x={L.drawing.x} y={L.drawing.y} width={L.drawing.w} height={L.drawing.h} rx={T.planRadius} fill={page.planBackground || '#ffffff'} />
       <g clipPath={`url(#${clipId})`}>
         <g transform={`translate(${L.tx} ${L.ty}) scale(${L.k})`}>
-          <FloorDrawing floor={floor} variantId={variantId} customSymbols={customSymbols} idPrefix={`print-${uniqueKey}-`} />
+          <FloorDrawing floor={floor} variantId={variantId} customSymbols={customSymbols} idPrefix={`print-${uniqueKey}-`}
+            norm={norm ? { mmPerUnit: L.k * L.s } : undefined} />
         </g>
         {page.showWatermark && status !== 'validated' && (
           <text x={L.drawing.x + L.drawing.w / 2} y={L.drawing.y + L.drawing.h / 2} textAnchor="middle"
@@ -188,7 +192,7 @@ function Header({ L, page, accent, title, subtitle, logo, numbers, version, uid 
     const badgeW = Math.min(47, H.w * 0.34);
     const badgeX = right - badgeW;
     const textW = (numbers ? badgeX - 4 : right) - tx;
-    const titleSize = fitSize(titleText, textW, sienne ? 13 : 12.5);
+    const titleSize = fitSize(titleText, textW, (sienne ? 13 : 12.5) * k);
     const subSize = fitSize(subtitle, textW, 4.8);
     const [first, ...remaining] = numbers.split(/\s*[·|]\s*/);
     const primary = first.match(/^(?:Urgences?\s*:?\s*)?(\d{3})$/i);
@@ -610,7 +614,8 @@ function instructionLayout(text: string, rect: { y: number; w: number; h: number
 }
 
 export type PrintIssue = 'marker-missing' | 'marker-multiple' | 'plan-clipped' | 'instructions-clipped'
-  | 'route-missing' | 'exit-missing' | 'numbers-missing' | 'not-validated';
+  | 'route-missing' | 'exit-missing' | 'numbers-missing' | 'not-validated'
+  | 'iso-uncalibrated' | 'iso-scale' | 'iso-overview' | 'iso-rooms' | 'iso-plan-number' | 'iso-review';
 
 export const PRINT_ISSUE_LABEL: Record<PrintIssue, string> = {
   'marker-missing': 'Repère « Vous êtes ici » absent de la page',
@@ -621,6 +626,12 @@ export const PRINT_ISSUE_LABEL: Record<PrintIssue, string> = {
   'exit-missing': 'Aucune sortie de secours signalée (pictogramme ou porte « issue de secours »)',
   'numbers-missing': 'Numéros d’urgence vides alors qu’ils sont affichés',
   'not-validated': 'Plan pas encore validé',
+  'iso-uncalibrated': 'Échelle non étalonnée : impossible d’imprimer au 1:100 ou au 1:250 (outil Étalonner)',
+  'iso-scale': 'Échelle hors norme : le plan doit être au 1:100 (petits et moyens bâtiments) ou au 1:250 (grands bâtiments)',
+  'iso-overview': 'Vue d’ensemble du site absente (croquis de situation ou vue aérienne avec le point de rassemblement)',
+  'iso-rooms': 'Locaux sans numéro conforme (chiffre de l’étage + deux chiffres) : utilisez « Numéroter les locaux »',
+  'iso-plan-number': 'Numéro du plan absent du cartouche (date, numéro et version sont inscrits en bas du plan)',
+  'iso-review': 'Plan à revérifier : il doit être contrôlé 3 fois par an, avant chaque exercice d’évacuation',
 };
 
 /** Pictogrammes qui signalent une sortie de secours (ISO 7010 E001, E002, E026, E030 et panneau texte). */
@@ -630,10 +641,18 @@ const EXIT_SYMBOLS = new Set(['iso-E001', 'iso-E002', 'iso-E026', 'iso-E030', 'e
 export const PRINT_ISSUE_LEVEL: Record<PrintIssue, 'check' | 'info'> = {
   'marker-missing': 'check', 'marker-multiple': 'check', 'plan-clipped': 'check', 'instructions-clipped': 'check',
   'route-missing': 'check', 'exit-missing': 'check', 'numbers-missing': 'check', 'not-validated': 'info',
+  'iso-uncalibrated': 'check', 'iso-scale': 'check', 'iso-overview': 'check', 'iso-rooms': 'check', 'iso-plan-number': 'check', 'iso-review': 'info',
 };
 
-export function printIssues(floor: Floor, variantId: string, page = floor.page): PrintIssue[] {
-  const L = computeLayout(floor, variantId, page);
+/** Numéro de local conforme pour l'étage : premier chiffre = étage, deux suivants = numéro (ex. 012, 105, -103). */
+export function isoRoomNumberOk(num: string | undefined, level: number): boolean {
+  const m = (num ?? '').trim().match(/^(-?\d+)(\d{2})$/);
+  return !!m && Number(m[1]) === level;
+}
+
+export function printIssues(floor: Floor, variantId: string, rawPage = floor.page, building?: Building): PrintIssue[] {
+  const page = normalizePage(floor, rawPage, building, variantId);
+  const L = computeLayout(floor, variantId, page, building);
   const issues: PrintIssue[] = [];
   const { drawing, world, k, tx, ty } = L;
   const markers = floor.elements.filter((e): e is SymbolElement => e.type === 'symbol' && e.symbolId === 'you-are-here'
@@ -658,6 +677,16 @@ export function printIssues(floor: Floor, variantId: string, page = floor.page):
   if (!shown.some((e) => (e.type === 'symbol' && EXIT_SYMBOLS.has(e.symbolId)) || (e.type === 'door' && e.emergency))) issues.push('exit-missing');
   if (page.showEmergencyNumbers && !floor.titleBlock.emergencyNumbers.trim()) issues.push('numbers-missing');
   if (floor.titleBlock.status !== 'validated') issues.push('not-validated');
+  if (normOn(page)) {
+    if (floor.unitsPerMeter <= 0) issues.push('iso-uncalibrated');
+    else if (L.scaleDenominator && !ISO_SCALES.some((n) => Math.abs(L.scaleDenominator! - n) < 0.5)) issues.push('iso-scale');
+    if (!page.showSketch && !(page.showAerial && floor.titleBlock.aerialImage)) issues.push('iso-overview');
+    const rooms = shown.filter((e): e is AreaElement => e.type === 'area' && e.kind === 'room');
+    if (rooms.some((r) => !isoRoomNumberOk(r.number, floor.level))) issues.push('iso-rooms');
+    if (!floor.titleBlock.planNumber?.trim()) issues.push('iso-plan-number');
+    const d = Date.parse(floor.titleBlock.date);
+    if (Number.isFinite(d) && Date.now() - d > 122 * 86400000) issues.push('iso-review');
+  }
   return issues;
 }
 
@@ -903,8 +932,8 @@ function Footer({ L, page, floor, building, accent }: { L: PageLayout; page: Pag
   const author = [tb.author, tb.organization].filter(Boolean).join(' — ') || '—';
   const disclaimer = 'La validation est une décision interne de l’auteur ou du responsable ; elle ne constitue pas une certification de conformité.';
   const cells: [string, string, number][] = [
-    ['Établi par', author, 0.27], ['Date', formatDate(tb.date) || '—', 0.11], ['Version', tb.version || '—', 0.08],
-    ['Statut', statusText, 0.3], ['Bâtiment / étage', `${building.name} — ${floor.name}`, 0.24],
+    ['Établi par', author, 0.23], ['Date', formatDate(tb.date) || '—', 0.11], ['N° plan', tb.planNumber || '—', 0.08], ['Version', tb.version || '—', 0.07],
+    ['Statut', statusText, 0.29], ['Bâtiment / étage', `${building.name} — ${floor.name}`, 0.22],
   ];
 
   if (T.printStyle) {

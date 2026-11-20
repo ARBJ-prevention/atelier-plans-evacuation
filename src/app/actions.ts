@@ -1,3 +1,4 @@
+import { normalizePage } from '../render/layout';
 import { COUNTRIES } from '../model/countries';
 import { makeElement, newFloor, newProject, newVariant, uid } from '../model/defaults';
 import { isVisibleInVariant } from '../model/geometry';
@@ -565,7 +566,7 @@ export async function exportBuildingPdf(jobs: ExportJob[], separate: boolean, co
   try {
     if (!separate) {
       control.onProgress?.(0, count, 'Préparation du PDF du bâtiment…');
-      const out = await api().exportPdf({ html: buildBatchPrintHtml(jobs, title), paper: first.page.paper,
+      const out = await api().exportPdf({ html: buildBatchPrintHtml(jobs, title), paper: normalizePage(first.floor, first.page, first.building).paper,
         landscape: first.page.orientation === 'landscape', suggestedName: `${safeFileName(title)}.pdf` });
       if (!out) return null;
       S().toast(`PDF du bâtiment exporté · ${count} page(s).`, 'success');
@@ -608,7 +609,7 @@ export async function exportPdfAction(job: ExportJob | null = currentExportJob('
   try {
     const html = buildPrintHtml(job);
     const out = await api().exportPdf({
-      html, paper: job.page.paper, landscape: job.page.orientation === 'landscape',
+      html, paper: normalizePage(job.floor, job.page, job.building).paper, landscape: job.page.orientation === 'landscape',
       suggestedName: `${exportBaseName(job, job.variantIds.length === 1 ? job.variantIds[0] : undefined)}.pdf`, path,
     });
     if (out && !path) {
@@ -682,7 +683,7 @@ export async function printAction(job: ExportJob | null = currentExportJob('curr
   if (!job) return;
   let r: Awaited<ReturnType<ReturnType<typeof api>['print']>>;
   try {
-    r = await api().print({ html: buildPrintHtml(job), paper: job.page.paper, landscape: job.page.orientation === 'landscape' });
+    r = await api().print({ html: buildPrintHtml(job), paper: normalizePage(job.floor, job.page, job.building).paper, landscape: job.page.orientation === 'landscape' });
   } catch (e) {
     await alertDialog('Impression impossible', errMsg(e));
     return;

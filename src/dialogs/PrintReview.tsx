@@ -57,7 +57,7 @@ export function PrintReview({ alerts, onEdit }: { alerts: PageAlert[]; onEdit(al
 
 export function PrintPreviewPane(props: PrintPageProps) {
   const page = props.page ?? props.floor.page;
-  const layout = computeLayout(props.floor, props.variantId, page);
+  const layout = computeLayout(props.floor, props.variantId, page, props.building);
   const areaRef = useRef<HTMLDivElement>(null);
   const [area, setArea] = useState({ w: 0, h: 0 });
   useLayoutEffect(() => {

@@ -1,18 +1,20 @@
 import { LAYER_ORDER } from '../model/defaults';
 import { isVisibleInVariant } from '../model/geometry';
 import type { CustomSymbol, Floor } from '../model/types';
-import { ElementView } from './ElementView';
+import { ElementView, routeSegments } from './ElementView';
 
 /**
  * Dessin vectoriel d'un étage (coordonnées plan). Utilisé à la fois par
  * l'éditeur (interactive = true : ajoute les attributs de sélection) et par
  * les exports PDF / PNG / impression.
  */
-export function FloorDrawing({ floor, variantId, customSymbols, interactive = false, idPrefix = '' }: {
+export function FloorDrawing({ floor, variantId, customSymbols, interactive = false, idPrefix = '', norm }: {
   floor: Floor; variantId: string; customSymbols: CustomSymbol[]; interactive?: boolean; idPrefix?: string;
+  /** Impression selon la norme : épaisseurs et tailles minimales en mm sur le papier. */
+  norm?: { mmPerUnit: number };
 }) {
   const layer = (id: string) => floor.layers.find((l) => l.id === id)!;
-  const ctx = { floor, variantId, customSymbols, interactive, idPrefix };
+  const ctx = { floor, variantId, customSymbols, interactive, idPrefix, norm, routes: norm ? routeSegments(floor, variantId) : undefined };
   const bg = floor.background;
   const bgLayer = layer('background');
   return (

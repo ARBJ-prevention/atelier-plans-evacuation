@@ -82,6 +82,8 @@ export interface AreaElement extends BaseElement {
   /** Décalage du nom par rapport au centre de la pièce. */
   labelDx: number;
   labelDy: number;
+  /** Numéro du local (norme : chiffre de l'étage + deux chiffres, ex. « 012 »), affiché sous sa fonction. */
+  number?: string;
 }
 
 export interface DoorElement extends BaseElement {
@@ -306,9 +308,11 @@ export interface TitleBlock {
   logo: string; // data URL ou ''
   /** Vue aérienne (photo satellite / vue du ciel) du site : data URL ou ''. */
   aerialImage: string;
+  /** Numéro du plan (inscrit en bas du plan avec la date et la version). */
+  planNumber?: string;
 }
 
-export type PaperSize = 'A4' | 'A3' | 'A2';
+export type PaperSize = 'A4' | 'A3' | 'A2' | 'A1' | 'A0';
 /** Zones de la page qui peuvent être entourées d'un cadre. */
 export type FrameKey = 'plan' | 'legend' | 'instructions' | 'aerial' | 'sketch' | 'footer';
 
@@ -356,6 +360,16 @@ export interface PageSetup {
   /** Rogner la feuille au plan : supprime le blanc en haut/bas (ou à gauche/droite) quand seul le plan est affiché. */
   cropToPlan?: boolean;
   showSketch: boolean;
+  /**
+   * Consignes de la fiche pratique (NBN ISO 23601) appliquées automatiquement à l'impression : A3 minimum,
+   * échelle 1:100 ou 1:250 commune à tout le bâtiment, hauteur du titre, murs noirs, pictogrammes ≥ 7 mm…
+   * Absent = oui.
+   */
+  norm?: boolean;
+  /** Plan affiché dans une chambre individuelle : le format A4 est alors admis. */
+  smallRoom?: boolean;
+  /** Côté de la rue principale sur le plan (numérotation des locaux). Absent = en bas. */
+  streetSide?: 'bottom' | 'top' | 'left' | 'right';
 }
 
 export interface Floor {

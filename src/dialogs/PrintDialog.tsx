@@ -5,7 +5,7 @@ import type { PageSetup, PageTheme, PrintBlockPosition } from '../model/types';
 import { PageScopeNote } from '../panels/PropertiesPanel';
 import { ThemeThumb } from '../panels/Ribbon';
 import { printIssues } from '../render/PrintPage';
-import { FRAME_ZONES, frameOn, headerColorValue, preferredBlockPosition, PRINT_BLOCKS, PRINT_POSITIONS, THEMES, themePatch } from '../render/layout';
+import { FRAME_ZONES, frameOn, headerColorValue, normalizePage, normOn, preferredBlockPosition, PRINT_BLOCKS, PRINT_POSITIONS, THEMES, themePatch } from '../render/layout';
 import { currentBuilding, currentFloor, currentVariantId, useStore } from '../store/store';
 import { Icon } from '../ui/icons';
 import { BuildingExport } from './BuildingExport';
@@ -53,7 +53,8 @@ export function PrintDialog({ onClose, onEdit, currentOnly = false, focusScale =
   const ca = page.customArea;
   const selected = scope === 'all' ? floor.variants : floor.variants.filter((v) => v.id === previewVariant);
   const destination = selected.length === 1 ? selected[0].name : `${selected.length} affiches`;
-  const alerts = selected.map((v) => ({ floorId: floor.id, variantId: v.id, label: v.name, issues: printIssues(floor, v.id) }));
+  const alerts = selected.map((v) => ({ floorId: floor.id, variantId: v.id, label: v.name, issues: printIssues(floor, v.id, floor.page, building) }));
+  const eff = normalizePage(floor, page, building);
   if (batch) return <BuildingExport building={building} customSymbols={project.customSymbols} onBack={() => setBatch(false)} onClose={onClose}
     initial={back?.mode === 'building' ? back : undefined}
     onEdit={(floorId, variantId, issue, ret) => { setBatch(false); onEdit(floorId, variantId, issue, ret); }} />;
@@ -133,9 +134,23 @@ export function PrintDialog({ onClose, onEdit, currentOnly = false, focusScale =
             <label className="field inline"><span>Fond du plan</span><input type="color" value={page.planBackground || '#ffffff'} onChange={(e) => set({ planBackground: e.target.value })} /></label>
           </div>
 
+          <h3>Norme</h3>
+          <label className="check" title="Applique automatiquement la fiche pratique « Réalisation d’un plan d’évacuation » (NBN ISO 23601:2021)">
+            <input type="checkbox" checked={normOn(page)} onChange={(e) => set({ norm: e.target.checked })} /> Appliquer la norme ISO 23601 (fiche pratique)
+          </label>
+          {normOn(page) && <>
+            <label className="check" title="Seuls les plans affichés dans une chambre individuelle peuvent être réduits au format A4">
+              <input type="checkbox" checked={!!page.smallRoom} onChange={(e) => set({ smallRoom: e.target.checked })} /> Plan pour une chambre individuelle (A4 admis)
+            </label>
+            <p className="muted tiny">
+              Appliqué automatiquement : {eff.paper}{eff.paper !== page.paper ? ` (au lieu de ${page.paper})` : ''}
+              {eff.scaleMode === 'fixed' && calibrated ? ` · échelle 1:${eff.scale}${page.scaleMode === 'fit' ? ' (choisie pour tout le bâtiment)' : ''}` : ''}
+              {' '}· titre ≥ {({ A4: 13, A3: 13, A2: 18, A1: 26, A0: 36 } as Record<string, number>)[eff.paper]} mm · murs porteurs noirs ≥ 1,6 mm, cloisons ≥ 0,6 mm · pictogrammes ≥ 7 mm · fond blanc · escaliers des voies d’évacuation en vert foncé · date, n° et version du plan en bas.
+            </p>
+          </>}
           <h3>Papier</h3>
           <div className="seg full">
-            {(['A4', 'A3', 'A2'] as const).map((p) => <button key={p} className={page.paper === p ? 'on' : ''} onClick={() => set({ paper: p })}>{p}</button>)}
+            {(['A4', 'A3', 'A2', 'A1', 'A0'] as const).map((p) => <button key={p} className={page.paper === p ? 'on' : ''} onClick={() => set({ paper: p })}>{p}</button>)}
           </div>
           <div className="seg full">
             <button className={page.orientation === 'portrait' ? 'on' : ''} onClick={() => set({ orientation: 'portrait' })}>Portrait</button>

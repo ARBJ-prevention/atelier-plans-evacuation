@@ -1,8 +1,8 @@
 import { floorContentBounds, isVisibleInVariant, usedSymbolIds, type Rect } from '../model/geometry';
-import type { FrameKey, Floor, PageSetup, PageTheme, PrintBlock, PrintBlockPosition, PrintBlockPositions } from '../model/types';
+import type { Building, FrameKey, Floor, PageSetup, PageTheme, PrintBlock, PrintBlockPosition, PrintBlockPositions } from '../model/types';
 import { getBuiltinSymbol } from '../symbols/library';
 
-export const PAPER_MM: Record<string, [number, number]> = { A4: [210, 297], A3: [297, 420], A2: [420, 594] };
+export const PAPER_MM: Record<string, [number, number]> = { A4: [210, 297], A3: [297, 420], A2: [420, 594], A1: [594, 841], A0: [841, 1189] };
 
 /**
  * Agrandissement de toute la mise en page (textes, légende, consignes, cartouche, pictogrammes…) selon le papier.
@@ -10,7 +10,72 @@ export const PAPER_MM: Record<string, [number, number]> = { A4: [210, 297], A3: 
  * un A3 garde ainsi la même lisibilité qu'un A4 (√2 ≈ 1,41 = A4 agrandi à l'identique), tout en laissant
  * un peu plus de place au plan.
  */
-export const PAPER_SCALE: Record<string, number> = { A4: 1, A3: 1.35, A2: 1.8 };
+export const PAPER_SCALE: Record<string, number> = { A4: 1, A3: 1.35, A2: 1.8, A1: 2.45, A0: 3.4 };
+
+/* ───────────── Fiche pratique « Réalisation d'un plan d'évacuation » (NBN ISO 23601:2021) ───────────── */
+
+/** Hauteur minimale des lettres du titre « Plan d'évacuation » (mm) selon le format. */
+export const ISO_TITLE_LETTER_MM: Record<string, number> = { A4: 13, A3: 13, A2: 18, A1: 26, A0: 36 };
+/** Hauteur des capitales rapportée au corps du texte (Bahnschrift / Segoe UI ≈ 0,7). */
+const CAP_RATIO = 0.7;
+/** Épaisseurs minimales imprimées (mm) : murs porteurs, autres parois, obstacles. */
+export const ISO_LOAD_WALL_MM = 1.6;
+export const ISO_WALL_MM = 0.6;
+export const ISO_OBSTACLE_MM = 0.15;
+/** Taille minimale imprimée des pictogrammes (mm). */
+export const ISO_SYMBOL_MM = 7;
+/** Échelles admises : 1:100 (petits et moyens bâtiments), 1:250 (grands bâtiments). */
+export const ISO_SCALES = [100, 250] as const;
+const PAPER_ORDER = ['A4', 'A3', 'A2', 'A1', 'A0'] as const;
+
+/** La norme est-elle appliquée à cette page ? (absent = oui) */
+export const normOn = (page: PageSetup) => page.norm !== false;
+
+/** Réglages imposés par la fiche, hors échelle (titre, fond blanc, A3 minimum, blocs obligatoires). */
+function normBase(floor: Floor, page: PageSetup): PageSetup {
+  const paper = page.paper === 'A4' && !page.smallRoom ? 'A3' : page.paper;
+  return {
+    ...page, paper, planBackground: '#ffffff',
+    showTitleBlock: true, showFooter: true, showLegend: true,
+    showInstructions: page.showInstructions || !!floor.titleBlock.instructions.trim(),
+  };
+}
+
+/** Le plan entier tient-il dans sa zone à l'échelle fixée ? */
+function fitsAtScale(floor: Floor, variantId: string, page: PageSetup): boolean {
+  const L = layoutOnce(floor, variantId, page);
+  const sb = page.showScaleBar ? 10 : 0;
+  return L.world.w * L.k <= L.drawing.w - 2 + 0.01 && L.world.h * L.k <= L.drawing.h - 2 - sb + 0.01;
+}
+
+/**
+ * Page effectivement imprimée. Avec la norme : A3 minimum (A4 pour une chambre individuelle), fond blanc,
+ * en-tête, légende, consignes et cartouche toujours présents ; si l'échelle est « ajustée » et l'étage étalonné,
+ * choix automatique de 1:100 puis 1:250 et du plus petit format où le plan tient en entier, en gardant la même
+ * échelle et le même format pour tous les étages du bâtiment (cohérence entre étages).
+ */
+export function normalizePage(floor: Floor, page: PageSetup = floor.page, building?: Building, variantId?: string): PageSetup {
+  if (!normOn(page)) return page;
+  const base = normBase(floor, page);
+  if (floor.unitsPerMeter <= 0 || base.scaleMode !== 'fit' || base.area !== 'auto') return base;
+  const vid = variantId ?? floor.variants[0]?.id ?? '';
+  const others = (building?.floors ?? []).filter((f) => f.id !== floor.id && f.unitsPerMeter > 0 && normOn(f.page)
+    && f.page.scaleMode === 'fit' && f.page.area === 'auto' && f.elements.length);
+  const start = Math.max(1, PAPER_ORDER.indexOf(base.paper as typeof PAPER_ORDER[number]));
+  const papers = PAPER_ORDER.slice(base.smallRoom ? PAPER_ORDER.indexOf(base.paper as typeof PAPER_ORDER[number]) : start);
+  // 1:100 sur A3 / A2, puis 1:250 du plus petit au plus grand format.
+  const tries: [string, number][] = [
+    ...papers.filter((p) => p === 'A4' || p === 'A3' || p === 'A2').map((p) => [p, 100] as [string, number]),
+    ...papers.map((p) => [p, 250] as [string, number]),
+  ];
+  for (const [paper, scale] of tries) {
+    const fits = (f: Floor, v: string) => fitsAtScale(f, v, { ...normBase(f, f === floor ? page : f.page), paper: paper as PageSetup['paper'], scaleMode: 'fixed', scale });
+    if (fits(floor, vid) && others.every((f) => f.variants.every((v) => fits(f, v.id)))) {
+      return { ...base, paper: paper as PageSetup['paper'], scaleMode: 'fixed', scale };
+    }
+  }
+  return base;   // trop grand même au 1:250 sur A0 : plan ajusté (n'afficher qu'une partie du bâtiment)
+}
 
 export function pageSizeMm(page: PageSetup): { w: number; h: number } {
   const [a, b] = PAPER_MM[page.paper] ?? PAPER_MM.A4;
@@ -469,7 +534,8 @@ const SPARE_EDGE: Record<PrintBlockPosition, PrintBlockPosition> = { bottom: 'ri
  * d'un bandeau, plan en longueur à côté d'une colonne…), certains blocs passent dans cet espace libre si le
  * plan y gagne nettement en taille. Désactivable avec `page.fillSpace = false`.
  */
-export function computeLayout(floor: Floor, variantId: string, page: PageSetup = floor.page): PageLayout {
+export function computeLayout(floor: Floor, variantId: string, page: PageSetup = floor.page, building?: Building): PageLayout {
+  page = normalizePage(floor, page, building, variantId);
   const base = layoutOnce(floor, variantId, page);
   const fixed = floor.unitsPerMeter > 0 && page.scaleMode === 'fixed' && page.scale > 0;
   if (page.fillSpace === false || fixed || (!base.blocks && !base.side)) return strip(base);
@@ -521,7 +587,8 @@ function layoutOnce(floor: Floor, variantId: string, page: PageSetup): LayoutRes
   const T = THEMES[page.theme] ?? THEMES.moderne;
   const m = page.marginMm / s;
   const G = T.gap;
-  const hs = 1;
+  // Norme : le titre « Plan d'évacuation » atteint la hauteur de lettre minimale du format (l'en-tête grandit avec lui).
+  const hs = normOn(page) ? Math.max(1, (ISO_TITLE_LETTER_MM[page.paper] ?? 13) / (11 * CAP_RATIO * s)) : 1;
   const headerH = T.headerH * hs;
   const inset = T.frame === 'double' ? 3 : T.frame === 'single' ? 2 : 0;
   let x0 = m + inset, y0 = m + inset, x1 = w - m - inset, y1 = h - m - inset;
@@ -658,9 +725,10 @@ function layoutOnce(floor: Floor, variantId: string, page: PageSetup): LayoutRes
 }
 
 /** Taille réelle de la feuille (mm), en tenant compte du rognage au plan. */
-export function sheetSizeMm(floor: Floor, variantId: string, page: PageSetup): { w: number; h: number } {
+export function sheetSizeMm(floor: Floor, variantId: string, page: PageSetup, building?: Building): { w: number; h: number } {
+  page = normalizePage(floor, page, building, variantId);
   if (!page.cropToPlan) return pageSizeMm(page);
-  const L = computeLayout(floor, variantId, page);
+  const L = computeLayout(floor, variantId, page, building);
   return { w: L.paperW, h: L.paperH };
 }
 

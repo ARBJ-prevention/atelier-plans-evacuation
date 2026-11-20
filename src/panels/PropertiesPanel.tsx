@@ -8,7 +8,8 @@ import { boxOf, polygonArea, polylineLength } from '../model/geometry';
 import type { DashStyle, Element, FillPattern, Floor, LayerId, PageSetup, PageTheme } from '../model/types';
 import { symbolName } from '../render/ElementView';
 import { FRAME_ZONES, frameOn, THEMES, themePatch } from '../render/layout';
-import { STATUS_LABEL } from '../render/PrintPage';
+import { isoRoomNumberOk, STATUS_LABEL } from '../render/PrintPage';
+import { computeRoomNumbers, STREET_SIDES } from '../model/roomNumbers';
 import { seamlessStroke } from '../services/footprint';
 import { ROOM_TAG_STYLE } from '../services/recognize';
 import { SYMBOLS_BY_CATEGORY } from '../symbols/library';
@@ -709,7 +710,10 @@ function TextTab({ el, upd, textRef, floor }: { el: Element; upd(p: Record<strin
   if (el.type === 'area') {
     return (
       <Section title="Nom de la pièce" icon="textIcon">
-        <textarea ref={textRef} className="ta" rows={2} value={e.label} onChange={(ev) => upd({ label: ev.target.value })} />
+        <textarea ref={textRef} className="ta" rows={2} value={e.label} placeholder="Fonction du local (ex. Bureau)" onChange={(ev) => upd({ label: ev.target.value })} />
+        {e.kind === 'room' && <Row label="Numéro" hint="Norme : chiffre de l’étage + deux chiffres (ex. 012, 105)">
+          <input type="text" value={e.number ?? ''} style={{ width: 80 }} onChange={(ev) => upd({ number: ev.target.value })} />
+        </Row>}
         <Row label="Taille"><Num value={e.labelSize} min={4} max={200} onChange={(v) => upd({ labelSize: v })} /></Row>
         <Row label="Couleur"><Color value={e.labelColor} onChange={(v) => upd({ labelColor: v })} /></Row>
         <Row label="Gras"><Toggle checked={e.labelBold} onChange={(v) => upd({ labelBold: v })} /></Row>
@@ -804,12 +808,14 @@ function PlanTab({ floor }: { floor: Floor }) {
         </Row>
         <p className="muted small">Ces noms apparaissent dans l’en-tête du plan (si le sous-titre est vide) et dans le cartouche.</p>
       </Section>
+      <RoomNumbering floor={floor} />
       <Section title="Cartouche" icon="layout">
         <Row label="Titre"><input type="text" value={tb.title} onChange={(e) => setTb({ title: e.target.value })} /></Row>
         <Row label="Sous-titre"><input type="text" value={tb.subtitle} placeholder="Adresse, zone…" onChange={(e) => setTb({ subtitle: e.target.value })} /></Row>
         <Row label="Auteur"><input type="text" value={tb.author} onChange={(e) => setTb({ author: e.target.value })} /></Row>
         <Row label="Organisation"><input type="text" value={tb.organization} onChange={(e) => setTb({ organization: e.target.value })} /></Row>
         <Row label="Date"><input type="date" value={tb.date} onChange={(e) => setTb({ date: e.target.value })} /></Row>
+        <Row label="N° du plan"><input type="text" value={tb.planNumber ?? ''} placeholder="Ex. EV-0-01" onChange={(e) => setTb({ planNumber: e.target.value })} /></Row>
         <Row label="Version"><input type="text" value={tb.version} onChange={(e) => setTb({ version: e.target.value })} /></Row>
         <Row label="Logo">
           <span className="row gap">
@@ -861,6 +867,33 @@ export function PageScopeNote() {
 }
 
 /** Onglet Page : résumé de la mise en page ; tous les réglages sont dans l'aperçu (un seul endroit). */
+/** Numérotation des locaux selon la fiche pratique (étage + deux chiffres, depuis la rue principale, de gauche à droite). */
+function RoomNumbering({ floor }: { floor: Floor }) {
+  const S = useStore.getState;
+  const rooms = floor.elements.filter((e) => e.type === 'area' && e.kind === 'room');
+  if (!rooms.length) return null;
+  const ok = rooms.filter((r) => r.type === 'area' && isoRoomNumberOk(r.number, floor.level)).length;
+  const side = floor.page.streetSide ?? 'bottom';
+  const run = (s = side) => {
+    const nums = new Map(computeRoomNumbers(floor, s).map((n) => [n.id, n.number]));
+    S().mutateFloor((f) => {
+      f.page.streetSide = s;
+      for (const e of f.elements) if (e.type === 'area' && nums.has(e.id)) e.number = nums.get(e.id);
+    }, { keepValidation: true });
+  };
+  return (
+    <Section title="Numéros des locaux" icon="floor">
+      <Row label="Rue principale" hint="Côté du plan où se trouve la rue principale">
+        <select value={side} onChange={(ev) => run(ev.target.value as typeof side)}>
+          {STREET_SIDES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+        </select>
+      </Row>
+      <button className="btn small full" onClick={() => run()}>Numéroter les locaux automatiquement</button>
+      <p className="muted tiny">{ok}/{rooms.length} locaux numérotés selon la norme : chiffre de l’étage (niveau {floor.level}) puis deux chiffres, en partant des locaux les plus proches de la rue principale, de gauche à droite vu depuis la rue. Le nom de chaque pièce doit indiquer sa fonction.</p>
+    </Section>
+  );
+}
+
 function PageSummary({ page }: { page: PageSetup }) {
   const items = ([['showLegend', 'légende'], ['showInstructions', 'consignes'], ['showEmergencyNumbers', 'numéros d’urgence'], ['showScaleBar', 'échelle'], ['showNorth', 'nord']] as const)
     .filter(([k]) => page[k]).map(([, l]) => l);

@@ -324,6 +324,7 @@ describe('parcours de création et d’export des affiches', () => {
     floor.titleBlock.title = 'Hall principal';
     next.titleBlock.title = 'Étage supérieur';
     Object.assign(next.page, { paper: 'A3', orientation: 'portrait' });
+    floor.page.norm = false;
     const html = buildBatchPrintHtml([floor, next].map((f) => ({
       building, floor: f, variantIds: [f.variants[0].id], customSymbols: [], page: f.page,
     })), 'Bâtiment');
@@ -420,6 +421,7 @@ describe('mise en page d’impression', () => {
   it('ajuste le plan à la zone de dessin', () => {
     const p = buildSampleProject();
     const f = p.buildings[0].floors[0];
+    f.page.norm = false;
     const L = computeLayout(f, f.variants[0].id);
     expect(L.w).toBe(297); expect(L.h).toBe(210);
     const wb = floorContentBounds(f, f.variants[0].id);
@@ -430,7 +432,7 @@ describe('mise en page d’impression', () => {
     const p = newProject();
     const f = p.buildings[0].floors[0];
     f.unitsPerMeter = 50;
-    f.page.scaleMode = 'fixed'; f.page.scale = 100;
+    f.page.scaleMode = 'fixed'; f.page.scale = 100; f.page.norm = false;
     const L = computeLayout(f, f.variants[0].id);
     expect(L.k * f.unitsPerMeter).toBeCloseTo(10);
     expect(L.scaleDenominator).toBe(100);
