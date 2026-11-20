@@ -95,3 +95,22 @@ describe('fiche pratique : orientation, voies, obstacles, vue d’ensemble', () 
     expect(svg).toContain('#2f6fd6');
   });
 });
+
+describe('harmonisation des pictogrammes', () => {
+  it('même taille pour tous, entre 7 et 12 mm imprimés ; repère et obstacles à part', async () => {
+    const { harmonizedSymbolSize } = await import('../src/render/ElementView');
+    const f = newFloor('RDC', 0);
+    const v = f.variants[0].id;
+    const sym = (symbolId: string, size: number) => makeElement('symbol', { x: 100, y: 100, symbolId, size });
+    const mmPerUnit = 0.1; // 10 unités plan = 1 mm
+    f.elements.push(sym('iso-E002', 60), sym('iso-F001', 90), sym('iso-E001', 400), sym('you-are-here', 300));
+    // médiane 90 → 9 mm
+    expect(harmonizedSymbolSize(f, v, mmPerUnit) * mmPerUnit).toBeCloseTo(9);
+    // tous minuscules → 7 mm
+    f.elements = [sym('iso-E002', 10), sym('iso-F001', 20)];
+    expect(harmonizedSymbolSize(f, v, mmPerUnit) * mmPerUnit).toBeCloseTo(7);
+    // tous énormes → 12 mm
+    f.elements = [sym('iso-E002', 500), sym('iso-F001', 800)];
+    expect(harmonizedSymbolSize(f, v, mmPerUnit) * mmPerUnit).toBeCloseTo(12);
+  });
+});

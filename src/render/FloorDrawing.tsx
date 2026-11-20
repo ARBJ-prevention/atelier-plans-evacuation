@@ -1,7 +1,7 @@
 import { LAYER_ORDER } from '../model/defaults';
 import { isVisibleInVariant } from '../model/geometry';
 import type { CustomSymbol, Floor } from '../model/types';
-import { ElementView, routeSegments } from './ElementView';
+import { ElementView, harmonizedSymbolSize, routeSegments } from './ElementView';
 import type { OrientedFloor } from './orient';
 
 /**
@@ -15,7 +15,8 @@ export function FloorDrawing({ floor, variantId, customSymbols, interactive = fa
   norm?: { mmPerUnit: number };
 }) {
   const layer = (id: string) => floor.layers.find((l) => l.id === id)!;
-  const ctx = { floor, variantId, customSymbols, interactive, idPrefix, norm, routes: norm ? routeSegments(floor, variantId) : undefined };
+  const ctx = { floor, variantId, customSymbols, interactive, idPrefix, norm, routes: norm ? routeSegments(floor, variantId) : undefined,
+    symbolSize: norm ? harmonizedSymbolSize(floor, variantId, norm.mmPerUnit) : undefined };
   const bg = floor.background;
   const bgLayer = layer('background');
   return (

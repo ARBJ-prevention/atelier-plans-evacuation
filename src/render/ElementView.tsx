@@ -1,5 +1,5 @@
 import React from 'react';
-import { boxOf, doorDimensions, legendSize, openingHostFit, polygonArea, symbolFuseSides, textSize, usedSymbolIds, windowFrameWidth, type FuseSides } from '../model/geometry';
+import { boxOf, doorDimensions, isVisibleInVariant, legendSize, openingHostFit, polygonArea, symbolFuseSides, textSize, usedSymbolIds, windowFrameWidth, type FuseSides } from '../model/geometry';
 import { hereCallout, type HereCallout } from '../model/hereCallout';
 import type {
   ArrowStyle, CustomSymbol, DashStyle, Element, FillPattern, Floor, Pt, RouteElement, ShapeElement, SymbolElement,
@@ -16,6 +16,8 @@ export interface RenderCtx {
   norm?: { mmPerUnit: number };
   /** Segments des itinéraires d'évacuation (escaliers à colorer en vert foncé). */
   routes?: [Pt, Pt][];
+  /** Taille commune des pictogrammes de sécurité à l'impression (unités plan). */
+  symbolSize?: number;
 }
 
 /** Murs porteurs ≥ 1,6 mm, autres parois ≥ 0,6 mm (noirs) ; pictogrammes ≥ 7 mm. */
@@ -23,6 +25,23 @@ const NORM_LOAD_WALL_MM = 1.6, NORM_WALL_MM = 0.6, NORM_SYMBOL_MM = 7, NORM_OBST
 /** Catégories de symboles de plan traitées comme obstacles à demeure (gris clair). */
 const NORM_OBSTACLE_CATS = new Set(['Mobilier', 'Sanitaires et cuisine', 'Équipements techniques']);
 const NORM_STAIRS = '#00663a';
+/** Taille maximale des pictogrammes harmonisés (mm imprimés) : au-delà, ils cachent portes et pièces. */
+const NORM_SYMBOL_MAX_MM = 12;
+
+/**
+ * Harmonisation des pictogrammes à l'impression : tous les pictogrammes de sécurité de l'affiche prennent la même
+ * taille, la taille la plus courante sur le dessin (médiane), ramenée entre 7 mm (minimum de la norme) et 12 mm.
+ * Le repère « Vous êtes ici » et les symboles d'obstacles (mobilier…) gardent leur propre taille.
+ */
+export function harmonizedSymbolSize(floor: Floor, variantId: string, mmPerUnit: number): number {
+  const visible = new Set(floor.layers.filter((l) => l.visible).map((l) => l.id));
+  const sizes = floor.elements
+    .filter((e): e is SymbolElement => e.type === 'symbol' && visible.has(e.layer) && isVisibleInVariant(e, variantId)
+      && !e.symbolId.startsWith('you-are-here') && !NORM_OBSTACLE_CATS.has(getBuiltinSymbol(e.symbolId)?.category ?? ''))
+    .map((e) => e.size * mmPerUnit).sort((a, b) => a - b);
+  const median = sizes.length ? sizes[Math.floor((sizes.length - 1) / 2)] : NORM_SYMBOL_MM;
+  return Math.min(NORM_SYMBOL_MAX_MM, Math.max(NORM_SYMBOL_MM, median)) / mmPerUnit;
+}
 
 /** Mur porteur : style « hachuré » (mur porteur) ou épaisseur réelle d'au moins 20 cm. */
 export function isLoadBearing(el: { wallStyle: string; thickness: number }, unitsPerMeter: number): boolean {
@@ -274,7 +293,10 @@ export function polygonCentroid(p: Pt[]): Pt {
 function SymbolView({ el: el0, ctx }: { el: SymbolElement; ctx: RenderCtx }) {
   // Norme : pictogrammes d'au moins 7 mm sur le papier.
   const obstacle = !!ctx.norm && NORM_OBSTACLE_CATS.has(getBuiltinSymbol(el0.symbolId)?.category ?? '');
-  const el = ctx.norm && !obstacle ? { ...el0, size: Math.max(el0.size, NORM_SYMBOL_MM / ctx.norm.mmPerUnit) } : el0;
+  const isHere = el0.symbolId.startsWith('you-are-here');
+  const normSize = !ctx.norm || obstacle ? el0.size
+    : ctx.symbolSize && !isHere ? ctx.symbolSize : Math.max(el0.size, NORM_SYMBOL_MM / ctx.norm.mmPerUnit);
+  const el = normSize !== el0.size ? { ...el0, size: normSize } : el0;
   if (obstacle) {
     // Norme : mobilier et équipements fixes dessinés en gris clair.
     return <g style={{ filter: 'grayscale(1)' }} opacity={0.45}><SymbolView el={el0} ctx={{ ...ctx, norm: undefined }} /></g>;
