@@ -1,5 +1,10 @@
 # Journal des versions
 
+## 2.0.23 - novembre 2026
+- **Export pour les autres logiciels** (menu Fichier) : plan en **DXF** (AutoCAD, EdrawMax, LibreCAD, Visio, SketchUp…), en **DWG** (AutoCAD, via ODA File Converter) et affiche en **SVG** vectoriel. Murs, portes, fenêtres, escaliers, pièces et itinéraires sont rangés sur des calques séparés, à l'échelle réelle.
+- **Plus de formats à l'import** : SVG / SVGZ (exports EdrawMax, Visio, Illustrator, Inkscape) avec reconnaissance des murs, DXF binaire, AVIF, ICO, JFIF. Le type du fichier est reconnu d'après son contenu, même avec une mauvaise extension.
+- **Murs mieux importés** : les murs tracés en multiligne (MLINE) sont désormais dessinés. Message clair pour les formats à convertir d'abord (EdrawMax .eddx, Visio .vsdx, Revit…) et pour les murs AutoCAD Architecture.
+
 ## 2.0.22 - novembre 2026
 - **Rogner la feuille au plan** : nouvelle option dans l'aperçu. Quand seul le plan est affiché, le blanc en haut et en bas (ou sur les côtés) est supprimé : la feuille prend la forme du plan, qui apparaît bien plus grand à l'écran et dans les exports PDF et image.
 
