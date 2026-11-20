@@ -1294,12 +1294,14 @@ export function squareWalls(walls: { a: [number, number]; b: [number, number]; t
     const ia = o === 0 ? 0 : 1, ic = 1 - ia;
     sq.push({ w, o, c: (A[ic] + B[ic]) / 2, lo: Math.min(A[ia], B[ia]), hi: Math.max(A[ia], B[ia]), flip: A[ia] > B[ia] });
   }
-  // mêmes axes pour les morceaux alignés (écart ≤ 8 cm), moyenne pondérée par la longueur
+  // mêmes axes pour les morceaux alignés (écart ≤ 8 cm, 15 cm à épaisseur égale), moyenne pondérée par la longueur
   for (const o of [0, 1] as const) {
     const list = sq.filter((x) => x.o === o).sort((x, y) => x.c - y.c);
     for (let i = 0; i < list.length;) {
       let j = i + 1;
-      while (j < list.length && list[j].c - list[j - 1].c <= 0.08 * m) j++;
+      // même épaisseur : jusqu'à 15 cm d'écart (même mur coupé par des ouvertures) ; sinon 8 cm
+      const near = (x: Sq, y: Sq) => y.c - x.c <= (Math.abs(x.w.t - y.w.t) <= 0.02 * m ? 0.15 : 0.08) * m;
+      while (j < list.length && near(list[j - 1], list[j])) j++;
       const grp = list.slice(i, j);
       if (grp.length > 1) {
         const tot = grp.reduce((s, x) => s + (x.hi - x.lo), 0) || 1;

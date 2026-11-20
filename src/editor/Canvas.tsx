@@ -22,6 +22,7 @@ type Drag =
   | { kind: 'move'; start: Pt; orig: Element[]; startBounds: Rect; began: boolean; candX: number[]; candY: number[]; joints?: Joint[] }
   | { kind: 'marquee'; start: Pt; additive: boolean }
   | { kind: 'vertex'; id: string; index: number; began: boolean; joints?: Joint[] }
+  | { kind: 'slide'; id: string; index: number; orig: [Pt, Pt]; start: Pt; n: Pt; began: boolean; joints: Joint[]; cands: number[] }
   | { kind: 'resize'; orig: Element; start: Pt; direction: Pt; wallDepth?: number; began: boolean }
   | { kind: 'pscale'; id: string; orig: Element; box: Rect; direction: Pt; start: Pt; began: boolean }
   | { kind: 'rotate'; id: string; center: Pt }
@@ -337,6 +338,35 @@ export function Canvas({ onCalibrate }: CanvasProps) {
             const index = Number(arg);
             const joints = el.type === 'wall' ? wallJoints(floor, variantId, el.id, el.points[index]) : undefined;
             drag.current = { kind: 'vertex', id: el.id, index, began: false, joints };
+          } else if (kind === 'm' && el.type === 'wall' && !(e.ctrlKey || e.metaKey)) {
+            // coulisser le pan de mur parallèlement à lui-même (Ctrl : ajouter un point à la place)
+            const i = Number(arg);
+            const a = el.points[i], b = el.points[(i + 1) % el.points.length];
+            const L = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
+            const u: Pt = [(b[0] - a[0]) / L, (b[1] - a[1]) / L], n: Pt = [-u[1], u[0]];
+            // murs raccordés aux deux extrémités : ils suivent, sauf ceux qui prolongent le mur (ils se plieraient)
+            const joints = [...wallJoints(floor, variantId, el.id, a), ...wallJoints(floor, variantId, el.id, b)].filter((j) => {
+              const w = floor.elements.find((x) => x.id === j.id);
+              if (!w || w.type !== 'wall') return false;
+              const nb = w.points[j.index + 1] ?? w.points[j.index - 1];
+              if (!nb) return true;
+              const dl = Math.hypot(nb[0] - j.orig[0], nb[1] - j.orig[1]) || 1;
+              return Math.abs(((nb[0] - j.orig[0]) * u[0] + (nb[1] - j.orig[1]) * u[1]) / dl) < 0.94;
+            });
+            // positions d'alignement : axe et faces des autres murs parallèles
+            const cands: number[] = [];
+            for (const w of floor.elements) {
+              if (w.type !== 'wall' || w.id === el.id || !isVisibleInVariant(w, variantId)) continue;
+              for (let k = 0; k + 1 < w.points.length; k++) {
+                const [p0, p1] = [w.points[k], w.points[k + 1]];
+                const wl = Math.hypot(p1[0] - p0[0], p1[1] - p0[1]);
+                if (wl < 1e-6 || Math.abs(((p1[0] - p0[0]) * n[0] + (p1[1] - p0[1]) * n[1]) / wl) > 0.02) continue;
+                const c = p0[0] * n[0] + p0[1] * n[1];
+                const df = (w.thickness - el.thickness) / 2;
+                cands.push(c, c + df, c - df);
+              }
+            }
+            drag.current = { kind: 'slide', id: el.id, index: i, orig: [a, b], start: p, n, began: false, joints, cands };
           } else if (kind === 'm' && 'points' in el) {
             const i = Number(arg) + 1;
             s.mutateFloor((f) => { const d = f.elements.find((x) => x.id === el.id) as any; d.points.splice(i, 0, sp); });
@@ -561,6 +591,38 @@ export function Canvas({ onCalibrate }: CanvasProps) {
       case 'marquee':
         setMarquee(rectFromPoints([d.start, p]));
         return;
+      case 'slide': {
+        const [n0, n1] = d.n;
+        let off = (p[0] - d.start[0]) * n0 + (p[1] - d.start[1]) * n1;
+        if (!d.began) { if (Math.abs(off) * s.view.zoom < 2) return; d.began = true; s.beginLive(); }
+        const base = d.orig[0][0] * n0 + d.orig[0][1] * n1;
+        let guide: [Pt, Pt][] = [];
+        if ((s.grid.snap || s.guides) && !e.altKey) {
+          const tol = 8 / s.view.zoom;
+          let best: number | null = null;
+          for (const c of d.cands) if (Math.abs(c - (base + off)) <= tol && (best == null || Math.abs(c - (base + off)) < Math.abs(best - (base + off)))) best = c;
+          if (best != null) {
+            off = best - base;
+            const u: Pt = [n1, -n0], m: Pt = [(d.orig[0][0] + d.orig[1][0]) / 2 + n0 * off, (d.orig[0][1] + d.orig[1][1]) / 2 + n1 * off];
+            guide = [[[m[0] - u[0] * 1e5, m[1] - u[1] * 1e5], [m[0] + u[0] * 1e5, m[1] + u[1] * 1e5]]];
+          } else if (s.grid.snap) {
+            off = Math.round(off / 5) * 5; // pas de 5 unités sans mur à proximité
+          }
+        }
+        setWindowResizeGuides(guide);
+        const mv = (q: Pt): Pt => [q[0] + n0 * off, q[1] + n1 * off];
+        s.mutateFloor((f) => {
+          const x = f.elements.find((q) => q.id === d.id) as any;
+          if (!x) return;
+          x.points[d.index] = mv(d.orig[0]);
+          x.points[(d.index + 1) % x.points.length] = mv(d.orig[1]);
+          for (const j of d.joints) {
+            const w = f.elements.find((q) => q.id === j.id) as any;
+            if (w?.points?.[j.index]) w.points[j.index] = mv(j.orig);
+          }
+        }, { history: false, keepValidation: true });
+        return;
+      }
       case 'vertex': {
         if (!d.began) { d.began = true; s.beginLive(); }
         const el = elById(d.id) as any;
@@ -782,7 +844,22 @@ export function Canvas({ onCalibrate }: CanvasProps) {
       el.points.forEach((pt, i) => {
         if (i < el.points.length - 1 || el.type === 'area') {
           const nx = el.points[(i + 1) % el.points.length];
-          handles.push(<circle key={`m${i}`} data-handle={`m:${i}`} className="handle-mid" cx={(pt[0] + nx[0]) / 2} cy={(pt[1] + nx[1]) / 2} r={hs * 0.45} />);
+          const mx = (pt[0] + nx[0]) / 2, my = (pt[1] + nx[1]) / 2;
+          if (el.type === 'wall') {
+            // poignée « coulisser » : flèche double perpendiculaire au mur
+            const ang = Math.atan2(nx[1] - pt[1], nx[0] - pt[0]) * 180 / Math.PI;
+            const cursor = Math.abs(Math.sin(ang * Math.PI / 180)) > 0.7 ? 'ew-resize' : 'ns-resize';
+            const r = hs * 0.75;
+            handles.push(
+              <g key={`m${i}`} data-handle={`m:${i}`} className="handle-slide" style={{ cursor }} transform={`translate(${mx} ${my}) rotate(${ang})`}>
+                <title>Glisser pour faire coulisser le mur (aimant sur les autres murs, Alt : libre) • Ctrl + glisser : ajouter un point</title>
+                <rect x={-r * 0.9} y={-r * 1.6} width={r * 1.8} height={r * 3.2} rx={r * 0.5} fill="#fff" stroke="#2563eb" strokeWidth={1.4} vectorEffect="non-scaling-stroke" />
+                <path d={`M0 ${-r * 1.15} L${r * 0.55} ${-r * 0.4} L${-r * 0.55} ${-r * 0.4} Z M0 ${r * 1.15} L${r * 0.55} ${r * 0.4} L${-r * 0.55} ${r * 0.4} Z`} fill="#2563eb" />
+              </g>,
+            );
+          } else {
+            handles.push(<circle key={`m${i}`} data-handle={`m:${i}`} className="handle-mid" cx={mx} cy={my} r={hs * 0.45} />);
+          }
         }
       });
       // Cadre d'étirement : 4 coins + 4 côtés (le côté opposé reste fixe). Écarté des sommets
@@ -883,6 +960,7 @@ export function Canvas({ onCalibrate }: CanvasProps) {
     if (tool === 'select' && selEls.length === 1 && 'points' in selEls[0] && cursor) {
       const el = selEls[0];
       for (let i = 0; i < el.points.length - 1; i++) {
+        if (distToSegment(cursor, el.points[i], el.points[i + 1]) < 6 / z && el.type === 'wall') return 'Glissez la poignée du milieu pour faire coulisser le mur (il s’aligne sur les autres murs ; Alt : libre) ; Ctrl + glisser pour ajouter un point.';
         if (distToSegment(cursor, el.points[i], el.points[i + 1]) < 6 / z) return 'Glissez un point milieu pour ajouter un point de passage ; double-clic sur un point pour le supprimer.';
       }
     }
