@@ -1,5 +1,8 @@
 # Journal des versions
 
+## 2.0.26 - novembre 2026
+- **Redresser un plan DWG/DXF dessiné de travers** : à l'import, le logiciel détecte l'orientation des murs et redresse le plan automatiquement (aperçu immédiat). L'angle se règle librement au dixième de degré (champ, curseur, boutons ↺ / ↻ 90°) ; murs, portes et pièces reconnus sont droits eux aussi.
+
 ## 2.0.25 - novembre 2026
 - **Norme ISO 23601 appliquée automatiquement** (fiche pratique « Réalisation d'un plan d'évacuation ») à l'aperçu, à l'impression et aux exports, désactivable dans l'aperçu :
   - format **A3 minimum** (A4 seulement pour une chambre individuelle), nouveaux formats **A1 et A0** ;
