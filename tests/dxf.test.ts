@@ -115,6 +115,30 @@ describe('lecture DXF', () => {
   });
 });
 
+describe('hachures à bords dans le désordre', () => {
+  it('recolle les bords (ordre et sens quelconques) en un contour fermé, sans trait en travers', () => {
+    // carré 0..4 décrit par 4 bords : ordre mélangé, deux retournés
+    const L = (x1: number, y1: number, x2: number, y2: number) => [72, 1, 10, x1, 20, y1, 11, x2, 21, y2];
+    const ents = [
+      0, 'SECTION', 2, 'ENTITIES',
+      0, 'HATCH', 8, 'H', 2, 'SOLID', 70, 1, 91, 1, 92, 1, 93, 4,
+      ...L(0, 0, 4, 0), ...L(0, 4, 4, 4), ...L(4, 4, 4, 0), ...L(0, 0, 0, 4), 97, 0, 75, 0,
+      0, 'ENDSEC', 0, 'EOF',
+    ];
+    const flat = flattenDxf(parseDxf(dxf([header(6), ents])));
+    const fill = flat.prims.find((p) => p.layer === 'H');
+    expect(fill?.kind).toBe('fill');
+    if (fill?.kind !== 'fill') return;
+    expect(fill.rings).toHaveLength(1);
+    const r = fill.rings[0];
+    // chaque côté du contour suit un bord du carré : pas de diagonale
+    for (let i = 0; i < r.length; i++) {
+      const a = r[i], b = r[(i + 1) % r.length];
+      expect(Math.abs(a[0] - b[0]) < 1e-9 || Math.abs(a[1] - b[1]) < 1e-9).toBe(true);
+    }
+  });
+});
+
 describe('géométrie DXF', () => {
   it('renflement (bulge) = 1 : demi-cercle passant sous la corde', () => {
     const pts = bulgePoints([0, 0], [2, 0], 1);

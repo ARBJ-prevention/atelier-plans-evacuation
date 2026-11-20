@@ -523,6 +523,32 @@ export function flattenDxf(doc: DxfDocument): FlatDxf {
     prims.push({ kind: 'text', at: p, height, rotation, lines: text.split('\n'), hAlign, vAlign, ...base });
   };
 
+  /** Recolle des bords de contour (ordre et sens quelconques) en anneaux fermés. */
+  const chainEdges = (edges: Vec[][], rings: Vec[][], m: Mat) => {
+    if (!edges.length) return;
+    const span = Math.max(1e-9, ...edges.flat().map((p) => Math.max(Math.abs(p[0]), Math.abs(p[1]))));
+    const tol = Math.max(1e-6 * span, 1e-9);
+    const d = (a: Vec, b: Vec) => Math.hypot(a[0] - b[0], a[1] - b[1]);
+    const left = edges.slice();
+    while (left.length) {
+      const ring = left.shift()!.slice();
+      for (;;) {
+        const end = ring[ring.length - 1];
+        if (ring.length > 2 && d(end, ring[0]) <= tol) break;
+        let best = -1, rev = false, bd = Infinity;
+        for (let i = 0; i < left.length; i++) {
+          const e = left[i], d0 = d(e[0], end), d1 = d(e[e.length - 1], end);
+          if (d0 < bd) { bd = d0; best = i; rev = false; }
+          if (d1 < bd) { bd = d1; best = i; rev = true; }
+        }
+        if (best < 0 || bd > Math.max(tol, 1e-5 * span)) break;
+        const e = left.splice(best, 1)[0];
+        ring.push(...(rev ? e.slice().reverse() : e).slice(1));
+      }
+      if (ring.length >= 3) rings.push(ring.map(([x, y]) => tx(m, x, y)));
+    }
+  };
+
   const hatchPrim = (e: RawEntity, ctx: Ctx, base: PrimBase) => {
     const m = ocs(e, ctx.m);
     const P = e.pairs;
@@ -554,6 +580,7 @@ export function flattenDxf(doc: DxfDocument): FlatDxf {
         ring.push(...polyFromVertices(verts, true, IDENTITY));
       } else {
         const ne = next(93);
+        const edges: Vec[][] = [];
         for (let ed = 0; ed < ne; ed++) {
           const type = next(72);
           let pts: Vec[] = [];
@@ -579,13 +606,15 @@ export function flattenDxf(doc: DxfDocument): FlatDxf {
             }
             pts = splinePoints(deg, knots, ctrl, w);
           }
-          if (ring.length && pts.length) pts.shift();
-          ring.push(...pts);
+          if (pts.length) edges.push(pts);
         }
+        // Les bords ne sont pas toujours rangés bout à bout ni dans le même sens : on les recolle par leurs extrémités
+        // (sinon le contour saute d'un bord à l'autre et le remplissage dessine des triangles en travers).
+        chainEdges(edges, rings, m);
       }
       // objets source de la frontière
       if (P[k]?.[0] === 97) { const ns = parseInt(P[k][1], 10) || 0; k += 1 + ns; }
-      if (ring.length >= 3) rings.push(ring.map(([x, y]) => tx(m, x, y)));
+      if (flags & 2 && ring.length >= 3) rings.push(ring.map(([x, y]) => tx(m, x, y)));
     }
     if (rings.length) prims.push({ kind: 'fill', rings, solid: gi(e, 70, 0) === 1, ...base });
   };
