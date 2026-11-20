@@ -204,7 +204,7 @@ export function Canvas({ onCalibrate }: CanvasProps) {
       const r = el.getBoundingClientRect();
       const mx = e.clientX - r.left, my = e.clientY - r.top;
       const factor = Math.exp(-e.deltaY * 0.0015);
-      const zoom = Math.min(40, Math.max(0.02, v.zoom * factor));
+      const zoom = Math.min(40, Math.max(0.002, v.zoom * factor));
       const k = zoom / v.zoom;
       useStore.getState().setView({ zoom, x: mx - (mx - v.x) * k, y: my - (my - v.y) * k });
     };

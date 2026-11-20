@@ -85,14 +85,30 @@ export function guessUnit(maxDim: number): string {
  * ou null si l'unité actuelle est plausible ou si le dessin ne permet pas de trancher.
  */
 export function checkUnitByDoors(flat: FlatDxf, visible: Set<string>, current: string): { unit: string; doorM: number } | null {
-  const radii = flat.prims
+  const arcs = flat.prims
     .filter((p): p is Extract<DxfPrim, { kind: 'line' }> => p.kind === 'line' && !!p.arc && p.chain.every((l) => visible.has(l)))
-    .filter((p) => Math.abs(p.arc!.sweep) >= 30 && Math.abs(p.arc!.sweep) <= 120)
-    .map((p) => p.arc!.r);
-  const doorSized = (key: string) => radii.filter((r) => r * unitMeters(key) >= 0.55 && r * unitMeters(key) <= 1.25);
+    .filter((p) => Math.abs(p.arc!.sweep) >= 30 && Math.abs(p.arc!.sweep) <= 120);
+  // Les arcs des calques de menuiseries/portes priment : les petits arcs d'équipements (sanitaires…) faussaient le choix.
+  const doorLayer = (p: (typeof arcs)[number]) => p.chain.some((l) => /porte|door|menuis|ouvrant/i.test(l));
+  const onDoorLayers = arcs.filter(doorLayer);
+  const radii = (onDoorLayers.length >= 5 ? onDoorLayers : arcs).map((p) => p.arc!.r);
+  // Une unité qui donne un bâtiment invraisemblable (plus de 600 m ou moins de 4 m) est écartée.
+  const maxDim = dxfMaxDim(flat, visible);
+  const plausible = (key: string) => maxDim <= 0 || (maxDim * unitMeters(key) <= 600 && maxDim * unitMeters(key) >= 4);
+  const doorSized = (key: string) => (plausible(key) ? radii.filter((r) => r * unitMeters(key) >= 0.55 && r * unitMeters(key) <= 1.25) : []);
   const counts = ['mm', 'cm', 'm', 'dm', 'in', 'ft'].map((key) => ({ key, doors: doorSized(key) }));
   const best = counts.reduce((a, b) => (b.doors.length > a.doors.length ? b : a));
   const here = counts.find((c) => c.key === current)?.doors.length ?? 0;
+  // Unité actuelle invraisemblable (bâtiment de 1 m ou de 3 km) : on prend l'unité plausible qui a le plus de portes,
+  // à défaut la plus courante en architecture (cm, puis m, puis mm ; le dm est rare).
+  if (!plausible(current) && maxDim > 0) {
+    const ok = ['cm', 'm', 'mm', 'dm'].map((k) => counts.find((c) => c.key === k)!).filter((c) => plausible(c.key));
+    if (ok.length) {
+      const pick = ok.reduce((a, b) => (b.doors.length > a.doors.length ? b : a));
+      const s = [...pick.doors].sort((a, b) => a - b);
+      return { unit: pick.key, doorM: s.length ? s[Math.floor(s.length / 2)] * unitMeters(current) : 0 };
+    }
+  }
   if (best.key === current || best.doors.length < 5 || best.doors.length < 2 * here) return null;
   const sorted = [...best.doors].sort((a, b) => a - b);
   return { unit: best.key, doorM: sorted[Math.floor(sorted.length / 2)] * unitMeters(current) };

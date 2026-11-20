@@ -349,7 +349,10 @@ export function recognizePlan(flat: FlatDxf, opt: RecognizeOptions): Recognized 
         }
       }
     }
-    pairs.sort((x, y) => x.d - y.d);
+    // Les deux faces d'un même mur sont d'ordinaire sur le même calque : une paire mêlant deux calques
+    // (« Mur coupé » + « Mur vu »…) passe après, sinon elle volait la face d'un mur voisin à peine plus épais.
+    const rank = (x: { A: Seg; B: Seg; d: number }) => x.d * (x.A.layer === x.B.layer ? 1 : 1.5);
+    pairs.sort((x, y) => rank(x) - rank(y));
     for (const { A, B, d } of pairs) {
       const nA = perp(A.u);
       const side = Math.sign(dot(sub(B.a, A.a), nA)) || 1;

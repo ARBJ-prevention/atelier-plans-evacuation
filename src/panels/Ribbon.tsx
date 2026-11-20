@@ -521,7 +521,7 @@ function ViewTab() {
     const s = S();
     const el = document.querySelector('.canvas-wrap');
     const cx = (el?.clientWidth ?? 800) / 2, cy = (el?.clientHeight ?? 600) / 2;
-    const z = Math.min(40, Math.max(0.02, s.view.zoom * k)), f = z / s.view.zoom;
+    const z = Math.min(40, Math.max(0.002, s.view.zoom * k)), f = z / s.view.zoom;
     s.setView({ zoom: z, x: cx - (cx - s.view.x) * f, y: cy - (cy - s.view.y) * f });
   };
   return (

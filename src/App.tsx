@@ -146,7 +146,7 @@ export function App() {
         const k = action === 'zoom-in' ? 1.25 : 0.8;
         const el = document.querySelector('.canvas-wrap');
         const cx = (el?.clientWidth ?? 800) / 2, cy = (el?.clientHeight ?? 600) / 2;
-        const z = Math.min(40, Math.max(0.02, s.view.zoom * k)), f = z / s.view.zoom;
+        const z = Math.min(40, Math.max(0.002, s.view.zoom * k)), f = z / s.view.zoom;
         return s.setView({ zoom: z, x: cx - (cx - s.view.x) * f, y: cy - (cy - s.view.y) * f });
       }
       case 'zoom-fit': return s.requestFit();
@@ -428,8 +428,8 @@ function StatusBar() {
       <button className={guides ? 'sb-toggle on' : 'sb-toggle'} onClick={() => S().toggleGuides()}>Repères</button>
       <button className={rulers ? 'sb-toggle on' : 'sb-toggle'} onClick={() => S().toggleRulers()}>Règles</button>
       <span className="sb-zoom">
-        <button onClick={() => setZoom(Math.max(0.02, zoom / 1.25))} title="Zoom arrière">−</button>
-        <input type="range" min={-4} max={3} step={0.01} value={Math.log2(zoom)} onChange={(e) => setZoom(2 ** Number(e.target.value))} aria-label="Zoom" />
+        <button onClick={() => setZoom(Math.max(0.002, zoom / 1.25))} title="Zoom arrière">−</button>
+        <input type="range" min={-9} max={3} step={0.01} value={Math.log2(zoom)} onChange={(e) => setZoom(2 ** Number(e.target.value))} aria-label="Zoom" />
         <button onClick={() => setZoom(Math.min(40, zoom * 1.25))} title="Zoom avant">+</button>
         <button className="sb-zoomval" onClick={() => S().requestFit()} title="Ajuster à la fenêtre">{Math.round(zoom * 100)} %</button>
       </span>

@@ -1,5 +1,10 @@
 # Journal des versions
 
+## 2.0.24 - novembre 2026
+- **Import DWG/DXF : unité mieux détectée**. Les plans dessinés en centimètres mais déclarés en millimètres ne basculent plus en « pieds » à cause des petits arcs des sanitaires : seuls les arcs des calques de portes et menuiseries comptent quand il y en a, et une unité qui donnerait un bâtiment invraisemblable (moins de 4 m ou plus de 600 m) est écartée.
+- **Murs redessinés plus complets** : la face d'un mur n'est plus « volée » par une ligne voisine d'un autre calque (ex. « Mur vu » à côté de « Mur coupé ») ; les murs sont tracés sur toute leur longueur.
+- **Dézoom étendu** : on peut désormais dézoomer jusqu'à 0,2 % pour voir un très grand plan en entier.
+
 ## 2.0.23 - novembre 2026
 - **Export pour les autres logiciels** (menu Fichier) : plan en **DXF** (AutoCAD, EdrawMax, LibreCAD, Visio, SketchUp…), en **DWG** (AutoCAD, via ODA File Converter) et affiche en **SVG** vectoriel. Murs, portes, fenêtres, escaliers, pièces et itinéraires sont rangés sur des calques séparés, à l'échelle réelle.
 - **Plus de formats à l'import** : SVG / SVGZ (exports EdrawMax, Visio, Illustrator, Inkscape) avec reconnaissance des murs, DXF binaire, AVIF, ICO, JFIF. Le type du fichier est reconnu d'après son contenu, même avec une mauvaise extension.

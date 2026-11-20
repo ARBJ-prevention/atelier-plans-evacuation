@@ -90,7 +90,9 @@ export function DxfPanel({ flat, values, set, declared, render, skipped, correct
             {DXF_UNITS.map((u) => <option key={u.key} value={u.key}>{u.label}{u.key === declared ? ' (indiquée dans le fichier)' : ''}</option>)}
           </select>
           {correction && values.unit === correction.to
-            ? <small className="dxf-unit-fix" role="status">{declared === correction.from ? 'Le fichier indique' : 'L’unité devinée était'} « {unitLabel(correction.from)} », mais les portes mesureraient alors {fmtLen(correction.doorM)} de large : « {unitLabel(correction.to)} » a été choisi d’après la largeur des portes. Vérifiez les dimensions ci-dessous.</small>
+            ? <small className="dxf-unit-fix" role="status">{declared === correction.from ? 'Le fichier indique' : 'L’unité devinée était'} « {unitLabel(correction.from)} », {correction.doorM > 0
+              ? <>mais les portes mesureraient alors {fmtLen(correction.doorM)} de large : « {unitLabel(correction.to)} » a été choisi d’après la largeur des portes.</>
+              : <>mais le bâtiment aurait alors une taille invraisemblable : « {unitLabel(correction.to)} » a été choisi d’après la taille du dessin.</>} Vérifiez les dimensions ci-dessous.</small>
             : <small>{declared ? 'Unité lue dans le fichier.' : 'Le fichier n’indique pas d’unité : vérifiez que les dimensions ci-dessous sont correctes.'}</small>}
         </label>
         {typeof preview !== 'string' && (

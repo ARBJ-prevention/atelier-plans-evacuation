@@ -108,7 +108,14 @@ describe('contrôle de l’unité par la largeur des portes', () => {
 
   it('ne change rien quand l’unité est plausible ou qu’il y a trop peu de portes', () => {
     expect(checkUnitByDoors(flat, visible, 'cm')).toBeNull();
-    expect(checkUnitByDoors({ ...flat, prims: flat.prims.slice(0, 4) }, visible, 'mm')).toBeNull();
+    const noDoors = { ...flat, prims: flat.prims.filter((p) => !(p.kind === 'line' && p.arc)) };
+    expect(checkUnitByDoors(noDoors, visible, 'cm')).toBeNull();
+  });
+
+  it('remplace une unité qui donne un bâtiment invraisemblable, même sans porte', () => {
+    // Dessin d'une dizaine de mètres en cm : lu en mm, il ne ferait qu'un mètre.
+    const noDoors = { ...flat, prims: flat.prims.filter((p) => !(p.kind === 'line' && p.arc)) };
+    expect(checkUnitByDoors(noDoors, visible, 'mm')?.unit).toBe('cm');
   });
 });
 
