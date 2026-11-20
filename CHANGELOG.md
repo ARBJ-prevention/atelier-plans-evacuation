@@ -1,5 +1,8 @@
 # Journal des versions
 
+## 2.0.32 - novembre 2026
+- **Aimant entre escaliers** : en étirant un escalier, chaque bord tiré se cale sur le bord le plus proche d'un autre escalier, pour aligner parfaitement des escaliers empilés (Alt : réglage libre).
+
 ## 2.0.31 - novembre 2026
 - **Faire coulisser un mur** : la poignée au milieu d'un mur sélectionné le fait glisser parallèlement à lui-même, en restant droit ; les murs raccordés suivent et l'aimant le cale sur l'axe ou la face des murs voisins (Alt : réglage libre). Ctrl + glisser ajoute un point comme avant.
 - **Import DWG** : les morceaux d'un même mur de même épaisseur, décalés jusqu'à 15 cm, sont remis sur la même ligne.
