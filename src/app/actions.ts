@@ -219,97 +219,121 @@ export async function duplicateProjectAction(): Promise<void> {
  * en vignettes, préparation du fond (gris, opacité) et étalonnage enchaîné.
  */
 export async function importBackgroundAction(): Promise<void> {
-  const s = S();
-  const floor = currentFloor(s);
-  const building = currentBuilding(s);
-  if (!floor || !building || !s.project) return;
-  const picked = await api().pickFile('plan');
-  if (!picked) return;
-  let file: typeof picked;
-  try {
-    file = await normalizePlanFile(picked);
-  } catch (e) {
-    await alertDialog('Import impossible', errMsg(e));
-    return;
-  }
-  let pageCount = 1;
-  try {
-    if (file.ext === 'pdf') pageCount = await pdfPageCount(file.data);
-  } catch (e) {
-    await alertDialog('Import impossible', `Le PDF n’a pas pu être lu : ${errMsg(e)}`);
-    return;
-  }
-  const choice = await askImportPlan(file, pageCount, {
-    buildingId: building.id, buildingName: building.name, floorId: floor.id, floorName: floor.name,
-    hasBackground: !!floor.background, empty: !floor.background && floor.elements.length === 0,
-  }, S().project!.buildings.map((b) => ({ id: b.id, name: b.name, floors: b.floors.length })));
-  if (!choice) return;
+  // « ‹ Autre fichier » dans l'assistant ramène au choix du fichier ; « ‹ Précédent » dans les fenêtres
+  // suivantes (calques DWG/DXF, redessin) ramène à l'assistant avec les réglages déjà saisis.
+  pick: for (;;) {
+    if (!currentFloor(S()) || !currentBuilding(S()) || !S().project) return;
+    const picked = await api().pickFile('plan');
+    if (!picked) return;
+    let file: typeof picked;
+    try {
+      file = await normalizePlanFile(picked);
+    } catch (e) {
+      await alertDialog('Import impossible', errMsg(e));
+      return;
+    }
+    let pageCount = 1;
+    try {
+      if (file.ext === 'pdf') pageCount = await pdfPageCount(file.data);
+    } catch (e) {
+      await alertDialog('Import impossible', `Le PDF n’a pas pu être lu : ${errMsg(e)}`);
+      return;
+    }
+    let wizValues: Record<string, any> | undefined;
+    for (;;) {
+      const floor = currentFloor(S()), building = currentBuilding(S());
+      if (!floor || !building) return;
+      const choice = await askImportPlan(file, pageCount, {
+        buildingId: building.id, buildingName: building.name, floorId: floor.id, floorName: floor.name,
+        hasBackground: !!floor.background, empty: !floor.background && floor.elements.length === 0,
+      }, S().project!.buildings.map((b) => ({ id: b.id, name: b.name, floors: b.floors.length })), { values: wizValues });
+      if (choice === 'back') continue pick;
+      if (!choice) return;
+      wizValues = choice.values;
 
-  // Étage de destination
-  const before = { buildingId: S().buildingId, floorId: S().floorId };
-  let createdFloorId: string | null = null;
-  if (choice.target.kind === 'new') {
-    const target = choice.target;
-    const b = S().project!.buildings.find((x) => x.id === target.buildingId) ?? building;
-    const f = newFloor(target.floorName, b.floors.length, S().project!.country);
-    const model = b.floors[0];
-    if (model) {
-      f.titleBlock.author = model.titleBlock.author;
-      f.titleBlock.organization = model.titleBlock.organization;
-      f.titleBlock.logo = model.titleBlock.logo;
-      f.page = structuredClone(model.page);
-    }
-    S().mutate((d) => { d.buildings.find((x) => x.id === b.id)!.floors.push(f); });
-    S().setFloor(b.id, f.id);
-    createdFloorId = f.id;
-  } else if (choice.target.floorName !== floor.name) {
-    const name = choice.target.floorName;
-    S().mutateFloor((f) => { f.name = name; }, { keepValidation: true });
-  }
-  // Annule la création de l'étage si l'import n'a finalement rien ajouté (fenêtre DXF annulée, erreur…)
-  const dropIfEmpty = () => {
-    if (!createdFloorId) return;
-    const f = currentFloor(S());
-    if (f?.id === createdFloorId && !f.background && !f.elements.length) {
-      S().mutate((d) => { for (const b of d.buildings) b.floors = b.floors.filter((x) => x.id !== createdFloorId); });
-      S().setFloor(before.buildingId, before.floorId);
-    }
-  };
+      // Étage de destination
+      const before = { buildingId: S().buildingId, floorId: S().floorId };
+      let createdFloorId: string | null = null;
+      let renamedFrom: string | null = null;
+      if (choice.target.kind === 'new') {
+        const target = choice.target;
+        const b = S().project!.buildings.find((x) => x.id === target.buildingId) ?? building;
+        const f = newFloor(target.floorName, b.floors.length, S().project!.country);
+        const model = b.floors[0];
+        if (model) {
+          f.titleBlock.author = model.titleBlock.author;
+          f.titleBlock.organization = model.titleBlock.organization;
+          f.titleBlock.logo = model.titleBlock.logo;
+          f.page = structuredClone(model.page);
+        }
+        S().mutate((d) => { d.buildings.find((x) => x.id === b.id)!.floors.push(f); });
+        S().setFloor(b.id, f.id);
+        createdFloorId = f.id;
+      } else if (choice.target.floorName !== floor.name) {
+        const name = choice.target.floorName;
+        renamedFrom = floor.name;
+        S().mutateFloor((f) => { f.name = name; }, { keepValidation: true });
+      }
+      // Annule la création de l'étage si l'import n'a finalement rien ajouté (fenêtre DXF annulée, erreur…)
+      const dropIfEmpty = () => {
+        if (!createdFloorId) return;
+        const f = currentFloor(S());
+        if (f?.id === createdFloorId && !f.background && !f.elements.length) {
+          S().mutate((d) => { for (const b of d.buildings) b.floors = b.floors.filter((x) => x.id !== createdFloorId); });
+          S().setFloor(before.buildingId, before.floorId);
+        }
+      };
 
-  if (file.ext === 'dwg' || file.ext === 'dxf' || file.ext === 'svg') {
-    if (file.ext === 'dwg') await importDwgBackground(file.name, file.data);
-    else if (file.ext === 'svg') await importSvgBackground(file.name, file.data);
-    else await importDxfBackground(file.name, file.data);
-    dropIfEmpty();
-    return;
-  }
-  try {
-    let img;
-    if (file.ext === 'pdf') {
-      S().toast('Conversion du PDF en cours…', 'info');
-      img = await renderPdfPage(file.data, choice.page);
-    } else {
-      img = await imageFromFile(file);
+      if (file.ext === 'dwg' || file.ext === 'dxf' || file.ext === 'svg') {
+        const opts = { back: true };
+        const res = file.ext === 'dwg' ? await importDwgBackground(file.name, file.data, opts)
+          : file.ext === 'svg' ? await importSvgBackground(file.name, file.data, opts)
+          : await importDxfBackground(file.name, file.data, undefined, opts);
+        dropIfEmpty();
+        if (res === 'back') {
+          if (renamedFrom !== null) { const old = renamedFrom; S().mutateFloor((f) => { f.name = old; }, { keepValidation: true }); }
+          continue;
+        }
+        return;
+      }
+      try {
+        let img;
+        if (file.ext === 'pdf') {
+          S().toast('Conversion du PDF en cours…', 'info');
+          img = await renderPdfPage(file.data, choice.page);
+        } else {
+          img = await imageFromFile(file);
+        }
+        applyBackground(img.src, img.width, img.height, pageCount > 1 ? `${file.name} (page ${choice.page})` : file.name, { opacity: choice.opacity, grayscale: choice.grayscale });
+        if (choice.calibrate) {
+          S().setTool('calibrate');
+          S().toast('Plan importé. Étalonnage : cliquez les deux extrémités d’une cote connue, puis saisissez sa longueur réelle.', 'success');
+        } else {
+          S().toast('Plan de fond importé. Étalonnez l’échelle (outil « Étalonner ») pour obtenir des mesures réelles.', 'success');
+        }
+      } catch (e) {
+        dropIfEmpty();
+        await alertDialog('Import impossible', `Le fichier n’a pas pu être importé : ${errMsg(e)}`);
+      }
+      return;
     }
-    applyBackground(img.src, img.width, img.height, pageCount > 1 ? `${file.name} (page ${choice.page})` : file.name, { opacity: choice.opacity, grayscale: choice.grayscale });
-    if (choice.calibrate) {
-      S().setTool('calibrate');
-      S().toast('Plan importé. Étalonnage : cliquez les deux extrémités d’une cote connue, puis saisissez sa longueur réelle.', 'success');
-    } else {
-      S().toast('Plan de fond importé. Étalonnez l’échelle (outil « Étalonner ») pour obtenir des mesures réelles.', 'success');
-    }
-  } catch (e) {
-    dropIfEmpty();
-    await alertDialog('Import impossible', `Le fichier n’a pas pu être importé : ${errMsg(e)}`);
   }
 }
+
+/** Options des fenêtres d'import vectoriel : `back` affiche « ‹ Précédent » sur la première fenêtre. */
+interface VectorImportOpts { back?: boolean }
+type VectorImportResult = 'back' | void;
+/** Conversions DWG déjà faites (évite de relancer ODA après un « Précédent »). */
+const dwgCache = new WeakMap<Uint8Array, { dxf: ArrayBuffer | Uint8Array; version: string }>();
 
 /**
  * Import d'un plan DWG : conversion en DXF par ODA File Converter (outil gratuit installé à part),
  * puis même traitement qu'un DXF. Si le convertisseur est absent, explique comment l'installer.
  */
-export async function importDwgBackground(name: string, data: Uint8Array): Promise<void> {
+export async function importDwgBackground(name: string, data: Uint8Array, opts: VectorImportOpts = {}): Promise<VectorImportResult> {
   try {
+    const cached = dwgCache.get(data);
+    if (cached) return await importDxfBackground(name, new Uint8Array(cached.dxf), cached.version, opts);
     let status = await api().dwgStatus();
     while (!status.found) {
       const r = await ask({
@@ -336,7 +360,8 @@ export async function importDwgBackground(name: string, data: Uint8Array): Promi
     }
     S().toast('Conversion du fichier DWG en cours…', 'info');
     const { dxf, version } = await api().dwgConvert({ data });
-    await importDxfBackground(name, new Uint8Array(dxf), version);
+    dwgCache.set(data, { dxf, version });
+    return await importDxfBackground(name, new Uint8Array(dxf), version, opts);
   } catch (e) {
     await alertDialog('Import DWG impossible', errMsg(e));
   }
@@ -347,7 +372,7 @@ export async function importDwgBackground(name: string, data: Uint8Array): Promi
  * Import d'un plan vectoriel SVG (EdrawMax, Visio, Illustrator, Inkscape…) : converti en DXF,
  * puis même fenêtre d'import (calques, unités, reconnaissance des murs) qu'un plan AutoCAD.
  */
-export async function importSvgBackground(name: string, data: Uint8Array): Promise<void> {
+export async function importSvgBackground(name: string, data: Uint8Array, opts: VectorImportOpts = {}): Promise<VectorImportResult> {
   let dxf: { dxf: string; count: number };
   try {
     dxf = svgToDxf(new TextDecoder('utf-8').decode(data));
@@ -366,10 +391,10 @@ export async function importSvgBackground(name: string, data: Uint8Array): Promi
     }
     return;
   }
-  await importDxfBackground(name, new TextEncoder().encode(dxf.dxf));
+  return importDxfBackground(name, new TextEncoder().encode(dxf.dxf), undefined, opts);
 }
 
-export async function importDxfBackground(name: string, data: Uint8Array, dwgVersion?: string): Promise<void> {
+export async function importDxfBackground(name: string, data: Uint8Array, dwgVersion?: string, opts: VectorImportOpts = {}): Promise<VectorImportResult> {
   const kind = dwgVersion ? 'DWG' : 'DXF';
   try {
     if (!dwgVersion) S().toast('Lecture du fichier DXF…', 'info');
@@ -380,24 +405,31 @@ export async function importDxfBackground(name: string, data: Uint8Array, dwgVer
     if (!floor) return;
     // Échelle de l'étage : on garde celle déjà étalonnée si des éléments existent, sinon 50 unités par mètre.
     const upm = floor.unitsPerMeter > 0 && floor.elements.length > 0 ? floor.unitsPerMeter : 50;
-    const choice = await askDxfImport(flat, name, upm, dwgVersion);
-    if (!choice) return;
-    const { result } = choice;
-    const dims = `${result.widthM.toFixed(2).replace('.', ',')} m × ${result.heightM.toFixed(2).replace('.', ',')} m`;
-    if (choice.recognize) {
-      const bg = dxfBackground(name, choice);
-      const rec = await askRecognition(choice.flat, choice.visibleLayers, result.origin, floor, bg, upm);
-      if (!rec) return;
-      applyDxfBackground(name, choice, upm, rec.elements);
-      if (rec.elements.length) {
-        const c = rec.counts;
-        S().toast(`Plan redessiné à l’échelle réelle (${dims}) : ${c.rooms ? `${c.rooms} pièce(s), ` : ''}${c.walls} mur(s), ${c.doors} porte(s), ${c.windows} fenêtre(s), ${c.stairs} escalier(s). Le tracé d’origine est masqué (calque « Plan de fond ») ; vérifiez le plan, puis ajoutez les pictogrammes.`, 'success');
-        return;
+    let dxfValues: Record<string, any> | undefined;
+    for (;;) {
+      const choice = await askDxfImport(flat, name, upm, dwgVersion, { back: !!opts.back, values: dxfValues });
+      if (!choice) return;
+      if ('back' in choice) return 'back';
+      dxfValues = choice.values;
+      const { result } = choice;
+      const dims = `${result.widthM.toFixed(2).replace('.', ',')} m × ${result.heightM.toFixed(2).replace('.', ',')} m`;
+      if (choice.recognize) {
+        const bg = dxfBackground(name, choice);
+        const rec = await askRecognition(choice.flat, choice.visibleLayers, result.origin, floor, bg, upm, { back: true });
+        if (rec === 'back') continue; // retour aux calques / unités / rotation
+        if (!rec) return;
+        applyDxfBackground(name, choice, upm, rec.elements);
+        if (rec.elements.length) {
+          const c = rec.counts;
+          S().toast(`Plan redessiné à l’échelle réelle (${dims}) : ${c.rooms ? `${c.rooms} pièce(s), ` : ''}${c.walls} mur(s), ${c.doors} porte(s), ${c.windows} fenêtre(s), ${c.stairs} escalier(s). Le tracé d’origine est masqué (calque « Plan de fond ») ; vérifiez le plan, puis ajoutez les pictogrammes.`, 'success');
+          return;
+        }
+      } else {
+        applyDxfBackground(name, choice, upm);
       }
-    } else {
-      applyDxfBackground(name, choice, upm);
+      S().toast(`Plan ${kind} importé à l’échelle réelle : ${dims}. Aucun étalonnage nécessaire.`, 'success');
+      return;
     }
-    S().toast(`Plan ${kind} importé à l’échelle réelle : ${dims}. Aucun étalonnage nécessaire.`, 'success');
   } catch (e) {
     await alertDialog(`Import ${kind} impossible`, e instanceof DxfError ? e.message : `Le fichier n’a pas pu être lu : ${errMsg(e)}`);
   }

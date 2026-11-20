@@ -5,7 +5,7 @@ import {
   guessLayerRole, recognizedElements, recognizePlan, RECOGNIZED_KINDS, ROLE_LABELS, type LayerRole, type Recognized,
 } from '../services/recognize';
 import { FloorDrawing } from '../render/FloorDrawing';
-import { ask } from '../ui/dialogs';
+import { ask, BACK_BUTTON } from '../ui/dialogs';
 
 export interface RecognizeChoice { elements: Element[]; counts: Record<keyof Recognized, number> }
 
@@ -18,7 +18,8 @@ const ROLE_ORDER: LayerRole[] = ['walls', 'partitions', 'doors', 'windows', 'sta
  */
 export async function askRecognition(
   flat: FlatDxf, layers: string[], origin: { minX: number; maxY: number; k: number }, floor: Floor, background: Background, unitsPerMeter: number,
-): Promise<RecognizeChoice | null> {
+  opts: { back?: boolean } = {},
+): Promise<RecognizeChoice | 'back' | null> {
   const roles: Record<string, LayerRole> = Object.fromEntries(layers.map((l) => [l, guessLayerRole(l)]));
   const counts = new Map(flat.layers.map((l) => [l.name, l.count]));
   const run = (v: Record<string, any>) => {
@@ -32,11 +33,13 @@ export async function askRecognition(
     initial: { roles, kinds: RECOGNIZED_KINDS.map((k) => k.key), fillRooms: true },
     render: (v, set) => <RecognizePanel values={v} set={set} layers={layers} counts={counts} run={run} floor={floor} background={background} upm={unitsPerMeter} />,
     buttons: [
+      ...(opts.back ? [BACK_BUTTON] : []),
       { label: 'Annuler', value: 'cancel' },
       { label: 'Garder le fond seul', value: 'background' },
       { label: 'Ajouter au plan', value: 'ok', primary: true },
     ],
   });
+  if (r.button === 'back') return 'back';
   if (r.button === 'cancel') return null;
   const rec = run(r.values);
   const counts2 = Object.fromEntries(RECOGNIZED_KINDS.map((k) => [k.key, rec[k.key].length])) as Record<keyof Recognized, number>;

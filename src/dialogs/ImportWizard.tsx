@@ -6,7 +6,7 @@
 import { useEffect, useState } from 'react';
 import type { PickedFile } from '../services/api';
 import { renderPdfPage } from '../services/imports';
-import { ask } from '../ui/dialogs';
+import { ask, BACK_BUTTON } from '../ui/dialogs';
 import { Icon } from '../ui/icons';
 
 export interface ImportFloorOption { buildingId: string; buildingName: string; floorId: string; floorName: string; hasBackground: boolean; empty: boolean }
@@ -17,6 +17,8 @@ export interface ImportChoice {
   opacity: number;
   grayscale: boolean;
   calibrate: boolean;
+  /** Réglages saisis, pour rouvrir l'assistant à l'identique (bouton « Précédent » de l'étape suivante). */
+  values: Record<string, any>;
 }
 
 const KIND_LABEL: Record<string, string> = {
@@ -27,7 +29,7 @@ const KIND_LABEL: Record<string, string> = {
 /** Nombre maximal de vignettes de pages affichées. */
 const MAX_THUMBS = 30;
 
-export async function askImportPlan(file: PickedFile, pageCount: number, current: ImportFloorOption, buildings: { id: string; name: string; floors: number }[]): Promise<ImportChoice | null> {
+export async function askImportPlan(file: PickedFile, pageCount: number, current: ImportFloorOption, buildings: { id: string; name: string; floors: number }[], opts: { values?: Record<string, any> } = {}): Promise<ImportChoice | 'back' | null> {
   const vector = file.ext === 'dxf' || file.ext === 'dwg' || file.ext === 'svg';
   const startNew = current.hasBackground || !current.empty;
   const curBuilding = buildings.find((b) => b.id === current.buildingId) ?? buildings[0];
@@ -35,7 +37,7 @@ export async function askImportPlan(file: PickedFile, pageCount: number, current
     title: 'Importer un plan',
     wide: true,
     large: pageCount > 1,
-    initial: {
+    initial: opts.values ?? {
       target: startNew ? 'new' : 'current',
       currentName: current.floorName,
       newName: `Niveau ${curBuilding?.floors ?? 1}`,
@@ -47,8 +49,9 @@ export async function askImportPlan(file: PickedFile, pageCount: number, current
     },
     invalid: (v) => (String(v.target === 'new' ? v.newName : v.currentName).trim() ? null : 'Nom d’étage manquant'),
     render: (v, set) => <WizardBody file={file} vector={vector} pageCount={pageCount} current={current} buildings={buildings} v={v} set={set} />,
-    buttons: [{ label: 'Annuler', value: 'cancel' }, { label: vector ? 'Continuer' : 'Importer', value: 'ok', primary: true }],
+    buttons: [{ ...BACK_BUTTON, label: '‹ Autre fichier' }, { label: 'Annuler', value: 'cancel' }, { label: vector ? 'Continuer' : 'Importer', value: 'ok', primary: true }],
   });
+  if (r.button === 'back') return 'back';
   if (r.button !== 'ok') return null;
   const v = r.values;
   return {
@@ -59,6 +62,7 @@ export async function askImportPlan(file: PickedFile, pageCount: number, current
     opacity: Number(v.opacity),
     grayscale: !!v.grayscale,
     calibrate: !!v.calibrate,
+    values: v,
   };
 }
 

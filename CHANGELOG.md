@@ -1,5 +1,8 @@
 # Journal des versions
 
+## 2.0.28 - novembre 2026
+- **Bouton « ‹ Précédent » à l'import d'un plan** : on peut revenir à l'étape précédente si on s'est trompé. « ‹ Autre fichier » dans l'assistant d'import, « ‹ Précédent » dans la fenêtre des calques DWG/DXF et dans « Redessiner le plan ». Les réglages déjà saisis (étage, unité, calques, rotation) sont conservés et le fichier DWG n'est pas reconverti.
+
 ## 2.0.27 - novembre 2026
 - **Orientation automatique du plan** (norme ISO 23601) : le plan est tourné pour que le mur d'affichage, le plus proche du repère « Vous êtes ici », soit en haut. Textes et pictogrammes restent droits. Réglable dans l'aperçu (Auto, 0°, 90°, 180°, 270°).
 - **Voies d'évacuation en zone verte transparente** avec flèches vert foncé le long du chemin.

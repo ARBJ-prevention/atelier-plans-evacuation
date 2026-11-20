@@ -661,3 +661,6 @@ kbd { background: var(--panel-2); border: 1px solid var(--line-2); border-bottom
 .rb-check.ok b { color: #166534; }
 .rb-check.warn b { color: #8a5300; }
 .rb-stack .chip { align-self: flex-start; }
+
+/* Bouton « Précédent » des assistants à étapes : à gauche, séparé des actions */
+.modal-actions .btn-back { margin-right: auto; }

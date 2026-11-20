@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import {
   checkUnitByDoors, declaredUnit, detectStraightenAngle, rotateFlat, DXF_UNITS, dxfMaxDim, guessUnit, renderDxfSvg, unitMeters, type DxfRenderResult, type FlatDxf,
 } from '../services/dxf';
-import { ask } from '../ui/dialogs';
+import { ask, BACK_BUTTON } from '../ui/dialogs';
 
 export interface DxfImportChoice {
   result: DxfRenderResult;
@@ -16,7 +16,12 @@ export interface DxfImportChoice {
   flat: FlatDxf;
   /** Rotation appliquée au dessin, en degrés. */
   rotation: number;
+  /** Réglages saisis, pour rouvrir la fenêtre à l'identique (bouton « Précédent »). */
+  values?: Record<string, any>;
 }
+
+/** Retour arrière dans un assistant : l'utilisateur veut revenir à l'étape précédente. */
+export interface DxfBack { back: true; values: Record<string, any> }
 
 const fmtM = (v: number) => v.toLocaleString('fr-BE', { maximumFractionDigits: v < 10 ? 2 : 1 });
 
@@ -25,7 +30,7 @@ function svgPreviewUrl(svg: string): string {
 }
 
 /** Fenêtre d'import DXF : unités, calques à importer, aperçu en direct. */
-export async function askDxfImport(flat: FlatDxf, fileName: string, unitsPerMeter: number, dwgVersion?: string): Promise<DxfImportChoice | null> {
+export async function askDxfImport(flat: FlatDxf, fileName: string, unitsPerMeter: number, dwgVersion?: string, opts: { back?: boolean; values?: Record<string, any> } = {}): Promise<DxfImportChoice | DxfBack | null> {
   const declared = declaredUnit(flat.insUnits);
   const defaultVisible = flat.layers.filter((l) => l.defaultVisible).map((l) => l.name);
   const base = declared ?? guessUnit(dxfMaxDim(flat, new Set(defaultVisible)));
@@ -53,15 +58,16 @@ export async function askDxfImport(flat: FlatDxf, fileName: string, unitsPerMete
     message: dwgVersion ? `Fichier ${dwgVersion} lu grâce à ODA File Converter.` : undefined,
     wide: true,
     large: true,
-    initial: { unit, visible: defaultVisible, mono: true, recognize: true, rotation: autoAngle },
+    initial: opts.values ?? { unit, visible: defaultVisible, mono: true, recognize: true, rotation: autoAngle },
     invalid: (v) => ((v.visible as string[]).length ? null : 'Aucun calque'),
     render: (v, set) => <DxfPanel flat={flat} values={v} set={set} declared={declared} render={render} skipped={skippedTypes} correction={correction} autoAngle={autoAngle} />,
-    buttons: [{ label: 'Annuler', value: 'cancel' }, { label: 'Continuer', value: 'ok', primary: true }],
+    buttons: [...(opts.back ? [BACK_BUTTON] : []), { label: 'Annuler', value: 'cancel' }, { label: 'Continuer', value: 'ok', primary: true }],
   });
+  if (r.button === 'back') return { back: true, values: r.values };
   if (r.button !== 'ok') return null;
   const res = render(r.values);
   if (typeof res === 'string') throw new Error(res);
-  return { result: res, unit: r.values.unit, unitDeclared: declared === r.values.unit, visibleLayers: r.values.visible, monochrome: !!r.values.mono, recognize: !!r.values.recognize, flat: flatAt(r.values.rotation), rotation: Number(r.values.rotation) || 0 };
+  return { result: res, unit: r.values.unit, unitDeclared: declared === r.values.unit, visibleLayers: r.values.visible, monochrome: !!r.values.mono, recognize: !!r.values.recognize, flat: flatAt(r.values.rotation), rotation: Number(r.values.rotation) || 0, values: r.values };
 }
 
 export interface UnitCorrection { from: string; to: string; doorM: number }

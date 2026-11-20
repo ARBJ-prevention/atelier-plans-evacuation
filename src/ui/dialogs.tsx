@@ -12,7 +12,9 @@ export interface Field {
   required?: boolean;
   help?: string;
 }
-export interface DialogButton { label: string; value: string; primary?: boolean; danger?: boolean }
+export interface DialogButton { label: string; value: string; primary?: boolean; danger?: boolean; /** Bouton « Précédent » des assistants : aligné à gauche. */ back?: boolean }
+/** Bouton « Précédent » commun à tous les assistants à étapes (renvoie la valeur 'back'). */
+export const BACK_BUTTON: DialogButton = { label: '‹ Précédent', value: 'back', back: true };
 interface DialogReq {
   id: number;
   title: string;
@@ -111,7 +113,7 @@ function DialogView({ req }: { req: DialogReq }) {
         <div className="modal-actions">
           {req.buttons.map((b) => (
             <button key={b.value} type={b === primary ? 'submit' : 'button'} disabled={b === primary && missing}
-              className={b.danger ? 'btn danger' : b.primary ? 'btn primary' : 'btn'}
+              className={b.danger ? 'btn danger' : b.primary ? 'btn primary' : b.back ? 'btn btn-back' : 'btn'}
               onClick={b === primary ? undefined : () => close(b.value)}>{b.label}</button>
           ))}
         </div>
