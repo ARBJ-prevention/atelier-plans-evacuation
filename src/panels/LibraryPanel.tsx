@@ -1,10 +1,47 @@
 import { useState } from 'react';
 import { importSymbolAction } from '../app/actions';
-import { SymbolGraphic } from '../render/ElementView';
+import { ElementView, SymbolGraphic } from '../render/ElementView';
+import { makeElement, newFloor } from '../model/defaults';
+import type { DoorElement, Element, WindowElement } from '../model/types';
 import { BUILTIN_SYMBOLS, SYMBOL_CATEGORIES } from '../symbols/library';
 import { useStore } from '../store/store';
 import { confirmDialog } from '../ui/dialogs';
 import { Icon } from '../ui/icons';
+
+/** Portes et fenêtres : éléments posés dans un mur (outils du ruban), proposés aussi dans la bibliothèque. */
+type DoorKind = DoorElement['doorType'];
+type WindowKind = NonNullable<WindowElement['windowStyle']>;
+const OPENINGS: { key: string; name: string; door?: DoorKind; window?: WindowKind }[] = [
+  { key: 'single', name: 'Porte battante', door: 'single' }, { key: 'double', name: 'Porte double', door: 'double' },
+  { key: 'swingBoth', name: 'Porte va-et-vient', door: 'swingBoth' }, { key: 'unequal', name: 'Porte tiercée', door: 'unequal' },
+  { key: 'sliding', name: 'Porte coulissante', door: 'sliding' }, { key: 'slidingDouble', name: 'Coulissante double', door: 'slidingDouble' },
+  { key: 'pocket', name: 'Porte à galandage', door: 'pocket' }, { key: 'folding', name: 'Porte pliante', door: 'folding' },
+  { key: 'foldingDouble', name: 'Pliante double', door: 'foldingDouble' }, { key: 'revolving', name: 'Porte tambour', door: 'revolving' },
+  { key: 'garage', name: 'Porte de garage', door: 'garage' }, { key: 'opening', name: 'Baie libre', door: 'opening' },
+  { key: 'w-standard', name: 'Fenêtre', window: 'standard' }, { key: 'w-casement', name: 'Fenêtre à battants', window: 'casement' },
+  { key: 'w-sliding', name: 'Fenêtre coulissante', window: 'sliding' }, { key: 'w-fixed', name: 'Fenêtre fixe', window: 'fixed' },
+  { key: 'w-tilt', name: 'Fenêtre à soufflet', window: 'tilt' },
+];
+const PREVIEW_FLOOR = newFloor('Aperçu', 0, 'BE');
+const PREVIEW_CTX = { floor: PREVIEW_FLOOR, variantId: PREVIEW_FLOOR.variants[0].id, customSymbols: [], interactive: false, idPrefix: 'lib-' };
+
+/** Petit dessin de la porte ou de la fenêtre dans un bout de mur. */
+function OpeningPreview({ o }: { o: (typeof OPENINGS)[number] }) {
+  const wide = o.door === 'garage' ? 1.6 : o.door && ['double', 'unequal', 'slidingDouble', 'foldingDouble', 'opening'].includes(o.door) ? 1.4 : 1;
+  const w = 90 * wide;
+  const el: Element = o.door
+    ? makeElement('door', { x: 0, y: 0, width: w, doorType: o.door })
+    : makeElement('window', { x: 0, y: 0, width: 120, depth: 18, panes: o.window === 'casement' ? 2 : 1, windowStyle: o.window });
+  const half = (o.door ? w : 120) / 2;
+  // vue cadrée sur l'ouverture et son débattement
+  const vb = o.door === 'pocket' ? [-w * 1.5, -w * 0.9, w * 3, w * 1.8] : [-half - 20, -half - 10, half * 2 + 40, half * 2 + 20];
+  return (
+    <svg viewBox={vb.join(' ')} width={42} height={42} aria-hidden="true">
+      <line x1={vb[0]} y1={0} x2={vb[0] + vb[2]} y2={0} stroke="#1d2630" strokeWidth={18} />
+      <ElementView el={el} ctx={PREVIEW_CTX as never} />
+    </svg>
+  );
+}
 
 const OPEN_BY_DEFAULT = ['Évacuation', 'Lutte contre l’incendie', 'Premiers secours'];
 const SYMBOL_PREFS = 'evac-symbol-prefs';
@@ -85,6 +122,41 @@ export function LibraryPanel() {
       {!q && <button className="btn small full" onClick={toggleAll}>{allClosed ? 'Tout déplier' : 'Tout replier'}</button>}
       <p className="muted tiny">Cliquez puis cliquez sur le plan, ou glissez-déposez. Signaux ISO 7010 (domaine public / CC0) et dessins originaux (CC0).</p>
       {!q && favoriteItems.length > 0 && <section className="lib-cat"><h3>Favoris</h3>{tiles(favoriteItems)}</section>}
+      {(() => {
+        const items = OPENINGS.filter((o) => !q || norm(`${o.name} portes et fenetres`).includes(norm(q)));
+        if (!items.length) return null;
+        const c = 'Portes et fenêtres', isClosed = closed[c] && !q;
+        const presets = useStore.getState().presets;
+        return (
+          <section className="lib-cat">
+            <button className="lib-cat-head" onClick={() => setClosed({ ...closed, [c]: !closed[c] })} aria-expanded={!isClosed}>
+              <span>{c}</span><em>{items.length}</em>
+              <svg className={isClosed ? 'chev' : 'chev open'} width="12" height="12" viewBox="0 0 12 12"><path d="M3 4.5 L6 7.5 L9 4.5" fill="none" stroke="currentColor" strokeWidth="1.5" /></svg>
+            </button>
+            {!isClosed && (
+              <div className="lib-grid">
+                {items.map((o) => {
+                  const active = o.door ? tool === 'door' && presets.doorType === o.door
+                    : tool === 'window' && (presets.windowStyle ?? 'standard') === o.window && (presets.windowShutter ?? 'none') === 'none';
+                  return (
+                    <div className="lib-tile" key={o.key}>
+                      <button type="button" className={active ? 'lib-item active' : 'lib-item'} title={`${o.name} — cliquez puis cliquez sur un mur`} aria-label={o.name}
+                        onClick={() => {
+                          const st = useStore.getState();
+                          if (o.door) { st.setPreset({ doorType: o.door }); st.setTool('door'); }
+                          else { st.setPreset({ windowStyle: o.window, windowShutter: 'none' }); st.setTool('window'); }
+                        }}>
+                        <OpeningPreview o={o} />
+                        <span>{o.name}</span>
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </section>
+        );
+      })()}
       {!q && recentItems.length > 0 && <section className="lib-cat"><h3>Récents</h3>{tiles(recentItems)}</section>}
       {cats.map((c) => {
         const items = all.filter((s) => s.category === c);
