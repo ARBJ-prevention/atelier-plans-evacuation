@@ -1,5 +1,8 @@
 # Journal des versions
 
+## 2.0.35 - novembre 2026
+- **Portes et fenêtres dans la bibliothèque** : nouvelle catégorie « Portes et fenêtres » dans le panneau Symboles (12 portes, 5 fenêtres, avec aperçu). Un clic active l'outil, puis cliquez sur un mur.
+
 ## 2.0.34 - novembre 2026
 - **Nouveau ruban, organisé comme les logiciels de dessin professionnels** : six onglets aux couleurs distinctes, Atelier (orange), Construire (bleu), Habillage (violet), Sécurité (vert), Contrôle (rouge) et Vue (gris-bleu). On voit d’un coup d’œil dans quel menu on se trouve.
 - **Menus déroulants animés** : Coller, Sélection, Position, Aligner, Rotation, Grouper, Mur, Porte, Fenêtre, Escalier, Formes, thèmes, couleurs, papier, blocs de la page, zoom, grille et aimantage regroupent leurs choix sous une petite flèche.
