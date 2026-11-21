@@ -67,7 +67,7 @@ export function orientFloor(floor: Floor, variantId: string, page: PageSetup): O
   const turn = (r: number) => (((r + deg) % 360) + 360) % 360;
   const elements = floor.elements.map((e): Element => {
     switch (e.type) {
-      case 'wall': case 'area': case 'route':
+      case 'wall': case 'area': case 'route': case 'dimension':
         return { ...e, points: e.points.map(R) } as Element;
       case 'door': case 'window': case 'stairs': case 'image': {
         const [x, y] = R([e.x, e.y]);

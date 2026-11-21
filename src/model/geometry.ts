@@ -215,7 +215,36 @@ export function resizeBoxElement(
   return { ...resized, x: resized.x + x - nextX, y: resized.y + y - nextY };
 }
 
+/** Longueur lisible : « 4,25 m » une fois l'échelle étalonnée, sinon en unités plan. */
+export function formatLength(u: number, unitsPerMeter: number): string {
+  if (!(unitsPerMeter > 0)) return `${Math.round(u)} u`;
+  const m = u / unitsPerMeter;
+  return `${m.toFixed(m < 10 ? 2 : 1).replace('.', ',')} m`;
+}
+
+/** Tracé d'une cote : points mesurés, ligne de cote décalée, normale et angle du texte. */
+export function dimensionGeometry(a: Pt, b: Pt, offset: number) {
+  const len = distance(a, b);
+  const ux = len ? (b[0] - a[0]) / len : 1, uy = len ? (b[1] - a[1]) / len : 0;
+  const n: Pt = [-uy, ux];
+  const a2: Pt = [a[0] + n[0] * offset, a[1] + n[1] * offset];
+  const b2: Pt = [b[0] + n[0] * offset, b[1] + n[1] * offset];
+  let angle = Math.atan2(uy, ux) * 180 / Math.PI;
+  if (angle > 90.01) angle -= 180; else if (angle <= -89.99) angle += 180;
+  return { len, u: [ux, uy] as Pt, n, a2, b2, mid: [(a2[0] + b2[0]) / 2, (a2[1] + b2[1]) / 2] as Pt, angle };
+}
+
+/** Décalage signé d'un point par rapport au segment a-b (pour placer la ligne de cote à la souris). */
+export function dimensionOffsetAt(a: Pt, b: Pt, p: Pt): number {
+  const { n } = dimensionGeometry(a, b, 0);
+  return (p[0] - a[0]) * n[0] + (p[1] - a[1]) * n[1];
+}
+
 export function elementBounds(el: Element, legendCount = 6): Rect {
+  if (el.type === 'dimension' && el.points.length >= 2) {
+    const g = dimensionGeometry(el.points[0], el.points[1], el.offset);
+    return inflate(rectFromPoints([...el.points, g.a2, g.b2]), el.fontSize * 1.2);
+  }
   if ('points' in el) {
     const r = rectFromPoints(el.points);
     const pad = el.type === 'wall' ? el.thickness / 2 : el.type === 'route' ? el.width * 1.5 : 0;

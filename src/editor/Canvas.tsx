@@ -3,7 +3,7 @@ import { makeElement } from '../model/defaults';
 import { getCountry } from '../model/countries';
 import {
   boxOf, constrain45, distance, distToSegment, elementBounds, floorContentBounds, isVisibleInVariant,
-  openingWallFit, polylineLength, raiseOpeningAboveWalls, snapPointToWalls, wallJoints, rectContains, rectFromPoints, rectsIntersect, RESIZE_DIRECTIONS, resizeBoxElement, rotatePoint, roundDoorWidth, snapSymbolToWalls, snapToGrid, translateElement,
+  openingWallFit, polylineLength, dimensionOffsetAt, formatLength, raiseOpeningAboveWalls, snapPointToWalls, wallJoints, rectContains, rectFromPoints, rectsIntersect, RESIZE_DIRECTIONS, resizeBoxElement, rotatePoint, roundDoorWidth, snapSymbolToWalls, snapToGrid, translateElement,
   unionRects, windowGlassWallFit, windowResizeWallFit, type Rect,
 } from '../model/geometry';
 import type { DoorElement, Element, Floor, Pt, SymbolElement, WindowElement } from '../model/types';
@@ -30,7 +30,7 @@ type Drag =
   | { kind: 'bgmove'; start: Pt; ox: number; oy: number; began: boolean }
   | { kind: 'rect'; start: Pt };
 
-const POLY_TOOLS: Tool[] = ['wall', 'route', 'room', 'zone'];
+const POLY_TOOLS: Tool[] = ['wall', 'route', 'room', 'zone', 'measure'];
 const ZONE_STYLE = (points: Pt[]) => ({
   points, kind: 'zone', fill: '#d52b1e', fillOpacity: 0.08, pattern: 'hatch', patternColor: '#d52b1e', stroke: '#d52b1e',
   strokeWidth: 2.5, dash: 'dashed', label: 'Zone', labelColor: '#d52b1e', labelBold: true,
@@ -106,7 +106,7 @@ function inlineFieldOf(el: Element): InlineField | null {
 type Editing = { id: string; field: InlineField; anchor: Pt; value: string };
 const CURSORS: Partial<Record<Tool, string>> = {
   select: 'default', pan: 'grab', wall: 'crosshair', route: 'crosshair', room: 'crosshair', zone: 'crosshair',
-  door: 'copy', window: 'copy', shape: 'crosshair', stairs: 'crosshair', text: 'text', symbol: 'copy', calibrate: 'crosshair', legend: 'copy',
+  door: 'copy', window: 'copy', shape: 'crosshair', stairs: 'crosshair', text: 'text', symbol: 'copy', calibrate: 'crosshair', legend: 'copy', dimension: 'crosshair', measure: 'crosshair',
 };
 
 export interface CanvasProps {
@@ -268,6 +268,11 @@ export function Canvas({ onCalibrate }: CanvasProps) {
     const min = t === 'room' || t === 'zone' ? 3 : 2;
     setDraft([]);
     if (clean.length < min) return;
+    if (t === 'measure') {
+      const upm = currentFloor(s)?.unitsPerMeter ?? 0;
+      s.toast(`Mesure : ${formatLength(polylineLength(clean), upm)}${clean.length > 2 ? ` sur ${clean.length - 1} segments` : ''}${upm > 0 ? '' : ' (échelle non étalonnée)'}`, 'info');
+      return;
+    }
     const routeColor = getCountry(s.project!.country).routeColor;
     let el: Element;
     const pr = s.presets;
@@ -341,7 +346,7 @@ export function Canvas({ onCalibrate }: CanvasProps) {
       return;
     }
     if (e.button !== 0) return;
-    const sp = s.tool === 'wall' ? snapWall(p, e) : snap(p, e);
+    const sp = s.tool === 'wall' || s.tool === 'dimension' || s.tool === 'measure' ? snapWall(p, e) : snap(p, e);
     const target = e.target as SVGElement;
 
     switch (s.tool) {
@@ -505,6 +510,19 @@ export function Canvas({ onCalibrate }: CanvasProps) {
         useStore.setState({ selection: [el.id] });
         return;
       }
+      case 'dimension': {
+        // 1er clic : début • 2e clic : fin • 3e clic : position de la ligne de cote
+        if (draft.length < 2) {
+          const pt = draft.length === 1 && e.shiftKey ? constrain45(draft[0], sp) : sp;
+          if (draft.length === 1 && distance(pt, draft[0]) < 0.5) return;
+          setDraft([...draft, pt]);
+          return;
+        }
+        const el = makeElement('dimension', { points: [draft[0], draft[1]], offset: dimensionOffsetAt(draft[0], draft[1], p) });
+        setDraft([]);
+        placeOne(el, e.shiftKey);
+        return;
+      }
       case 'calibrate': {
         const next = [...calib, p];
         if (next.length === 2) {
@@ -550,9 +568,9 @@ export function Canvas({ onCalibrate }: CanvasProps) {
   const onPointerMove = (e: React.PointerEvent) => {
     const s = useStore.getState();
     const p = toWorld(e.clientX, e.clientY);
-    const sp = s.tool === 'wall' && !drag.current ? snapWall(p, e) : snap(p, e);
+    const sp = (s.tool === 'wall' || s.tool === 'dimension' || s.tool === 'measure') && !drag.current ? snapWall(p, e) : snap(p, e);
     if (s.tool !== 'wall' && !drag.current && wallHint) { setWallHint(null); setWallFaceGuides([]); }
-    setCursor(POLY_TOOLS.includes(s.tool) && draft.length && e.shiftKey ? constrain45(draft[draft.length - 1], sp) : (s.tool === 'calibrate' ? p : sp));
+    setCursor((POLY_TOOLS.includes(s.tool) || (s.tool === 'dimension' && draft.length === 1)) && draft.length && e.shiftKey ? constrain45(draft[draft.length - 1], sp) : (s.tool === 'calibrate' ? p : sp));
     const d = drag.current;
     if (!d) return;
     switch (d.kind) {
@@ -880,7 +898,11 @@ export function Canvas({ onCalibrate }: CanvasProps) {
           fill="none" stroke="#2563eb" strokeWidth={1.2} strokeDasharray="5 3" vectorEffect="non-scaling-stroke" pointerEvents="none" />,
       );
     }
-    if ('points' in el) {
+    if (el.type === 'dimension') {
+      el.points.forEach((pt, i) => handles.push(
+        <rect key={`v${i}`} data-handle={`v:${i}`} className="handle" x={pt[0] - hs / 2} y={pt[1] - hs / 2} width={hs} height={hs} />,
+      ));
+    } else if ('points' in el) {
       el.points.forEach((pt, i) => {
         if (i < el.points.length - 1 || el.type === 'area') {
           const nx = el.points[(i + 1) % el.points.length];
@@ -952,7 +974,17 @@ export function Canvas({ onCalibrate }: CanvasProps) {
 
   // Aperçu du tracé en cours
   let preview: React.ReactNode = null;
-  if (draft.length && cursor) {
+  if (tool === 'dimension' && draft.length && cursor) {
+    const tmp = draft.length === 1
+      ? makeElement('dimension', { points: [draft[0], cursor] })
+      : makeElement('dimension', { points: [draft[0], draft[1]], offset: dimensionOffsetAt(draft[0], draft[1], cursor) });
+    preview = (
+      <g className="preview" pointerEvents="none">
+        <g opacity={0.8}><ElementView el={tmp} ctx={{ floor, variantId, customSymbols: project.customSymbols, interactive: false }} /></g>
+        {draft.map((q, i) => <circle key={i} cx={q[0]} cy={q[1]} r={3 / z} className="draft-pt" />)}
+      </g>
+    );
+  } else if (draft.length && cursor) {
     const pts = [...draft, cursor];
     const routeColor = getCountry(project.country).routeColor;
     const tmp: Element | null =
@@ -1219,6 +1251,8 @@ const HINTS: Partial<Record<Tool, string>> = {
   symbol: 'Cliquez sur le plan pour placer le pictogramme choisi (retour automatique à la sélection) • Maj + clic : en placer plusieurs • Échap : annuler',
   text: 'Cliquez pour placer un texte',
   legend: 'Cliquez pour placer une légende automatique',
+  dimension: 'Cote : cliquez le début puis la fin de la distance à coter (s’accroche aux murs) • 3e clic : position de la ligne de cote • Maj : angles à 45° • Échap : annuler',
+  measure: 'Mesure : cliquez les points du parcours, la longueur s’affiche en direct • Double-clic, Entrée ou clic droit : résultat (rien n’est ajouté au plan)',
   calibrate: 'Étalonnage : cliquez deux points dont vous connaissez la distance réelle (ex. une cote du plan)',
   pan: 'Glissez pour déplacer la vue • Molette : zoom',
 };

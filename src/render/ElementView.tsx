@@ -1,8 +1,8 @@
 import React from 'react';
-import { boxOf, doorDimensions, isVisibleInVariant, legendSize, openingHostFit, polygonArea, symbolFuseSides, textSize, usedSymbolIds, windowFrameWidth, type FuseSides } from '../model/geometry';
+import { boxOf, dimensionGeometry, doorDimensions, formatLength, isVisibleInVariant, legendSize, openingHostFit, polygonArea, symbolFuseSides, textSize, usedSymbolIds, windowFrameWidth, type FuseSides } from '../model/geometry';
 import { hereCallout, type HereCallout } from '../model/hereCallout';
 import type {
-  ArrowStyle, CustomSymbol, DashStyle, Element, FillPattern, Floor, Pt, RouteElement, ShapeElement, SymbolElement,
+  ArrowStyle, CustomSymbol, DashStyle, DimensionElement, Element, FillPattern, Floor, Pt, RouteElement, ShapeElement, SymbolElement,
 } from '../model/types';
 import { getBuiltinSymbol } from '../symbols/library';
 
@@ -272,6 +272,47 @@ function RouteView({ el }: { el: RouteElement }) {
       {repeats}
       {el.arrowEnd && arrowHead(p[p.length - 1], p[p.length - 2], el.width, el.arrowSize, el.arrowStyle, el.color, 'e')}
       {el.arrowStart && arrowHead(p[0], p[1], el.width, el.arrowSize, el.arrowStyle, el.color, 's')}
+    </g>
+  );
+}
+
+/** Cote : lignes d'attache, ligne de cote avec extrémités et mesure au milieu. */
+function DimensionView({ el, ctx }: { el: DimensionElement; ctx: RenderCtx }) {
+  if (el.points.length < 2) return null;
+  const [a, b] = el.points;
+  const g = dimensionGeometry(a, b, el.offset);
+  if (g.len < 0.5) return null;
+  const sw = el.strokeWidth, fs = el.fontSize;
+  const side = el.offset < 0 ? -1 : 1;
+  const gap = Math.min(Math.abs(el.offset), fs * 0.25), over = fs * 0.35;
+  const ext = (p: Pt, q: Pt) => Math.abs(el.offset) > 0.5 && (
+    <line x1={p[0] + g.n[0] * gap * side} y1={p[1] + g.n[1] * gap * side} x2={q[0] + g.n[0] * over * side} y2={q[1] + g.n[1] * over * side} />
+  );
+  const t = fs * 0.45;
+  const end = (p: Pt, dir: number, k: string) => {
+    if (el.ends === 'dot') return <circle key={k} cx={p[0]} cy={p[1]} r={sw * 1.8 + 1} fill={el.color} stroke="none" />;
+    if (el.ends === 'arrow') {
+      const bx = p[0] - g.u[0] * dir * t * 1.6, by = p[1] - g.u[1] * dir * t * 1.6;
+      return <polygon key={k} points={`${p[0]},${p[1]} ${bx + g.n[0] * t * 0.5},${by + g.n[1] * t * 0.5} ${bx - g.n[0] * t * 0.5},${by - g.n[1] * t * 0.5}`} fill={el.color} stroke="none" />;
+    }
+    const dx = (g.u[0] + g.n[0]) * t * 0.7, dy = (g.u[1] + g.n[1]) * t * 0.7;
+    return <line key={k} x1={p[0] - dx} y1={p[1] - dy} x2={p[0] + dx} y2={p[1] + dy} strokeWidth={sw * 1.8} />;
+  };
+  const label = el.text.trim() || formatLength(g.len, ctx.floor.unitsPerMeter);
+  // texte posé au-dessus de la ligne (côté lisible)
+  const th = g.angle * Math.PI / 180;
+  const tx = g.mid[0] + Math.sin(th) * fs * 0.35, ty = g.mid[1] - Math.cos(th) * fs * 0.35;
+  const bg = ctx.floor.page.planBackground || '#ffffff';
+  return (
+    <g stroke={el.color} strokeWidth={sw} fill="none" strokeLinecap="round">
+      {ctx.interactive && <line x1={g.a2[0]} y1={g.a2[1]} x2={g.b2[0]} y2={g.b2[1]} stroke="transparent" strokeWidth={Math.max(sw, fs * 0.9)} />}
+      {ext(a, g.a2)}
+      {ext(b, g.b2)}
+      <line x1={g.a2[0]} y1={g.a2[1]} x2={g.b2[0]} y2={g.b2[1]} />
+      {end(g.a2, -1, 'a')}
+      {end(g.b2, 1, 'b')}
+      <text x={tx} y={ty} transform={`rotate(${g.angle} ${tx} ${ty})`} textAnchor="middle" fontFamily={FONT} fontSize={fs} fontWeight={600}
+        fill={el.color} stroke={bg} strokeWidth={fs * 0.28} paintOrder="stroke" strokeLinejoin="round">{label}</text>
     </g>
   );
 }
@@ -788,6 +829,9 @@ function Inner({ el: el0, ctx }: { el: Element; ctx: RenderCtx }): React.ReactEl
 
     case 'route':
       return <RouteView el={el} />;
+
+    case 'dimension':
+      return <DimensionView el={el} ctx={ctx} />;
 
     case 'text': {
       const raw = el.uppercase ? el.text.toUpperCase() : el.text;

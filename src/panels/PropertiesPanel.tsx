@@ -4,7 +4,7 @@ import * as A from '../app/actions';
 import { scopeLabel, scopeOf, selectionScope, setScopeAction } from '../app/scope';
 import { COUNTRIES, getCountry } from '../model/countries';
 import { defaultShadow, EMERGENCY_NUMBERS, FONTS, LAYER_NAMES } from '../model/defaults';
-import { boxOf, polygonArea, polylineLength } from '../model/geometry';
+import { boxOf, distance, formatLength, polygonArea, polylineLength } from '../model/geometry';
 import type { DashStyle, Element, FillPattern, Floor, LayerId, PageSetup, PageTheme } from '../model/types';
 import { symbolName } from '../render/ElementView';
 import { FRAME_ZONES, frameOn, THEMES, themePatch } from '../render/layout';
@@ -158,10 +158,10 @@ export function PropertiesPanel() {
 
 const TYPE_LABEL: Record<string, string> = {
   wall: 'Mur', area: 'Pièce', door: 'Porte', window: 'Fenêtre', stairs: 'Escalier', symbol: 'Pictogramme',
-  route: 'Itinéraire d’évacuation', text: 'Texte', image: 'Image', legend: 'Légende', shape: 'Forme',
+  route: 'Itinéraire d’évacuation', dimension: 'Cote', text: 'Texte', image: 'Image', legend: 'Légende', shape: 'Forme',
 };
 const TYPE_ICON: Record<string, string> = {
-  wall: 'wall', area: 'room', door: 'door', window: 'window', stairs: 'stairs', symbol: 'symbol', route: 'route', text: 'textIcon', image: 'image', legend: 'legendIcon', shape: 'shapeRect',
+  wall: 'wall', area: 'room', door: 'door', window: 'window', stairs: 'stairs', symbol: 'symbol', route: 'route', dimension: 'ruler', text: 'textIcon', image: 'image', legend: 'legendIcon', shape: 'shapeRect',
 };
 
 /** Élément qui porte un texte réglable : texte libre ou zone / pièce avec un nom. */
@@ -420,6 +420,20 @@ function ElementProps({ el, floor }: { el: Element; floor: Floor }) {
                 </Row>
                 <Row label="Taille"><Num value={e.size} min={8} max={1000} onChange={(v) => upd({ size: v })} suffix={u > 0 ? `${((e.size / u) * 100).toFixed(0)} cm` : 'u'} /></Row>
                 <Row label="Pastille blanche" hint="Fond blanc derrière le pictogramme"><Toggle checked={e.halo} onChange={(v) => upd({ halo: v })} /></Row>
+              </Section>
+            )}
+            {el.type === 'dimension' && (
+              <Section title="Cote" icon="ruler">
+                <p className="muted small">Distance mesurée : <b>{formatLength(distance(e.points[0], e.points[1]), u)}</b>{u > 0 ? '' : ' — étalonnez l’échelle pour l’avoir en mètres'}</p>
+                <Row label="Texte imposé" hint="Laisser vide pour afficher la mesure calculée">
+                  <input type="text" value={e.text} placeholder={formatLength(distance(e.points[0], e.points[1]), u)} onChange={(ev) => upd({ text: ev.target.value })} />
+                </Row>
+                <Row label="Décalage" hint="Distance entre les points mesurés et la ligne de cote"><Num value={Math.round(e.offset)} min={-2000} max={2000} onChange={(v) => upd({ offset: v })} suffix="u" /></Row>
+                <Row label="Extrémités"><Seg value={e.ends} options={[['tick', 'Traits'], ['arrow', 'Flèches'], ['dot', 'Points']]} onChange={(v) => upd({ ends: v })} /></Row>
+                <Row label="Taille du texte"><Num value={e.fontSize} min={4} max={200} onChange={(v) => upd({ fontSize: v })} /></Row>
+                <Row label="Épaisseur"><Num value={e.strokeWidth} min={0.3} max={20} step={0.1} onChange={(v) => upd({ strokeWidth: v })} /></Row>
+                <Row label="Couleur"><Color value={e.color} onChange={(v) => upd({ color: v })} /></Row>
+                <Row label="Sens du décalage"><button className="btn small" onClick={() => upd({ offset: -e.offset })}>Passer de l’autre côté</button></Row>
               </Section>
             )}
             {el.type === 'route' && (

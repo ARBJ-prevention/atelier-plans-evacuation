@@ -10,7 +10,7 @@ import { setWallsThickness } from '../model/wallThickness';
 
 export type Tool =
   | 'select' | 'pan' | 'wall' | 'room' | 'zone' | 'door' | 'stairs' | 'route'
-  | 'text' | 'symbol' | 'calibrate' | 'legend' | 'window' | 'shape';
+  | 'text' | 'symbol' | 'calibrate' | 'legend' | 'window' | 'shape' | 'dimension' | 'measure';
 
 export interface GridSettings {
   show: boolean; snap: boolean; size: number; style: 'lines' | 'dots'; intensity: number; majorEvery: number;

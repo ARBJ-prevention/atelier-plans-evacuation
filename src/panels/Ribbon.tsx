@@ -258,6 +258,10 @@ Double-clic : réduire ou déplier le ruban`}
               <Big icon="room" label="Pièce" active={tool === 'room'} onClick={() => use('room')} title="Pièce (R) — tracez un rectangle, puis nommez-la" />
               <Big icon="zone" label="Zone" active={tool === 'zone'} onClick={() => use('zone')} title="Zone de danger, refuge… (Z)" />
             </Group>
+            <Group title="Cotes et mesures">
+              <Big icon="ruler" label="Cote" active={tool === 'dimension'} onClick={() => use('dimension')} title="Cote imprimée — cliquez le début, la fin, puis la position de la ligne de cote" />
+              <Big icon="calibrate" label="Mesurer" active={tool === 'measure'} onClick={() => use('measure')} title="Mesurer une distance ou un parcours (rien n’est ajouté au plan)" />
+            </Group>
             <Group title="Illustrations">
               <Big icon="textIcon" label="Texte" active={tool === 'text'} onClick={() => use('text')} title="Texte (T)" />
               <Big icon="image" label="Image / logo" onClick={() => A.insertImageAction()} />

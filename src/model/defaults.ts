@@ -167,6 +167,8 @@ export function elementDefaults(type: Element['type'], routeColor = '#00843d'): 
       return { ...common, layer: 'annotations', x: 0, y: 0, w: 160, h: 100, src: '', radius: 0, border: '' };
     case 'legend':
       return { ...common, layer: 'annotations', x: 0, y: 0, fontSize: 14, title: 'Légende', columns: 1, background: '#ffffff', border: '#333333' };
+    case 'dimension':
+      return { ...common, layer: 'annotations', points: [], offset: 0, color: '#1f4e8c', fontSize: 14, strokeWidth: 1.2, text: '', ends: 'tick' };
     case 'shape':
       return {
         ...common, layer: 'annotations', shape: 'rect', x: 0, y: 0, w: 160, h: 100, fill: '#e3f3ea', fillOpacity: 1, pattern: 'solid',

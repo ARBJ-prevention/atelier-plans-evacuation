@@ -7,7 +7,7 @@
  * les coordonnées sont en millimètres réels quand l'étage est étalonné ($INSUNITS = 4).
  */
 import type { Element, Floor, Pt } from '../model/types';
-import { isVisibleInVariant } from '../model/geometry';
+import { dimensionGeometry, formatLength, isVisibleInVariant } from '../model/geometry';
 
 type V = [number, number];
 
@@ -145,7 +145,7 @@ function wallSegment(a: Pt, b: Pt, t: number): V[] | null {
   return [[a[0] + nx, a[1] + ny], [b[0] + nx, b[1] + ny], [b[0] - nx, b[1] - ny], [a[0] - nx, a[1] - ny]];
 }
 
-function writeElement(w: DxfWriter, el: Element) {
+function writeElement(w: DxfWriter, el: Element, upm = 0) {
   switch (el.type) {
     case 'wall': {
       const pts = el.points;
@@ -209,6 +209,15 @@ function writeElement(w: DxfWriter, el: Element) {
       if (el.label) w.text([el.x, el.y], Math.min(el.w, el.h) * 0.2, 0, el.label, 'ESCALIERS', true);
       break;
     }
+    case 'dimension': {
+      if (el.points.length < 2) break;
+      const g = dimensionGeometry(el.points[0], el.points[1], el.offset);
+      w.line(el.points[0], g.a2, 'COTES');
+      w.line(el.points[1], g.b2, 'COTES');
+      w.line(g.a2, g.b2, 'COTES');
+      w.text(g.mid, el.fontSize, g.angle, el.text.trim() || formatLength(g.len, upm), 'COTES', true);
+      break;
+    }
     case 'route':
       w.poly(el.points, false, 'EVACUATION');
       break;
@@ -241,8 +250,8 @@ function writeElement(w: DxfWriter, el: Element) {
 export function floorToDxf(floor: Floor, variantId: string): string {
   const upm = floor.unitsPerMeter > 0 ? floor.unitsPerMeter : 0;
   const w = new DxfWriter(upm ? 1000 / upm : 1);
-  const order: Element['type'][] = ['area', 'wall', 'window', 'door', 'stairs', 'route', 'shape', 'symbol', 'text'];
+  const order: Element['type'][] = ['area', 'wall', 'window', 'door', 'stairs', 'route', 'shape', 'symbol', 'text', 'dimension'];
   const els = floor.elements.filter((e) => isVisibleInVariant(e, variantId));
-  for (const t of order) for (const el of els) if (el.type === t) writeElement(w, el);
+  for (const t of order) for (const el of els) if (el.type === t) writeElement(w, el, upm);
   return w.document(upm ? 4 : 0);
 }
