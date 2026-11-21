@@ -1,5 +1,9 @@
 # Journal des versions
 
+## 2.0.36 - novembre 2026
+- **Cotes** : nouveau bouton « Cote » (onglet Construire) pour coter une distance sur le plan. Cliquez le début, la fin (accroche aux murs), puis la position de la ligne. La mesure s’affiche en mètres une fois l’échelle étalonnée ; texte imposé, flèches, traits ou points, taille et couleur réglables. Aussi à l’impression, au PDF et à l’export DXF.
+- **Mesurer** : mesure une distance ou un parcours sans rien ajouter au plan.
+
 ## 2.0.35 - novembre 2026
 - **Portes et fenêtres dans la bibliothèque** : nouvelle catégorie « Portes et fenêtres » dans le panneau Symboles (12 portes, 5 fenêtres, avec aperçu). Un clic active l'outil, puis cliquez sur un mur.
 
