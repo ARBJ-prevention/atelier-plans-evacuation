@@ -1,5 +1,8 @@
 # Journal des versions
 
+## 2.0.41 - novembre 2026
+- **Couleur des chevrons répétés** : dans Flèches, choisissez Blanc, Trait (même couleur que le tracé, idéal sur un trait en tirets) ou Autre.
+
 ## 2.0.40 - novembre 2026
 - **Jonctions de murs en T** : une cloison qui arrive au milieu d’un autre mur s’arrête net sur son axe ; elle ne ressort plus de l’autre côté, même si le mur traversé est plus fin.
 - **Pictogrammes collés** : plus aucun fil blanc entre deux panneaux associés (sortie de secours + flèche) : le liseré est retiré du dessin et le joint est recouvert de la couleur du panneau.
