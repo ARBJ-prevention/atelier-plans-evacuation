@@ -600,10 +600,33 @@ export function snapSymbolToWalls(
  * distance entre les faces intérieures, ou null si le point n'est pas encadré.
  */
 /**
+ * Le point est-il dans un couloir (et pas dans un local) ? Si l'étage a des zones de couleur
+ * (voies de circulation coloriées), le point doit être dans l'une d'elles ; sinon, on retient
+ * un passage étroit (2,5 m au plus entre les murs). Renvoie la largeur maximale à chercher, ou 0.
+ */
+export function corridorSearchWidth(floor: Floor, variantId: string, at: Pt): number {
+  const upm = floor.unitsPerMeter > 0 ? floor.unitsPerMeter : 100;
+  const zones = floor.elements.filter((e) => e.type === 'area' && e.kind !== 'room' && isVisibleInVariant(e, variantId)
+    && !!e.fill && e.fill !== 'none' && !/^#?f{3}(f{3})?$/i.test(e.fill) && e.fillOpacity > 0) as { points: Pt[] }[];
+  if (!zones.length) return upm * 2.5;
+  const inside = (poly: Pt[]) => {
+    let c = false;
+    for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+      const [xi, yi] = poly[i], [xj, yj] = poly[j];
+      if ((yi > at[1]) !== (yj > at[1]) && at[0] < ((xj - xi) * (at[1] - yi)) / (yj - yi) + xi) c = !c;
+    }
+    return c;
+  };
+  return zones.some((z) => inside(z.points)) ? upm * 4 : 0;
+}
+
+/**
  * Milieu du couloir : ramène le point à égale distance des deux murs parallèles
  * qui l'encadrent (le plus étroit des passages trouvés), ou null s'il n'est pas encadré.
  */
-export function corridorCenterAt(floor: Floor, variantId: string, at: Pt, maxWidth: number): Pt | null {
+export function corridorCenterAt(floor: Floor, variantId: string, at: Pt, maxWidth: number,
+  /** Rempli si trouvé : faces des deux murs (en face du point centré) pour afficher le repère. */
+  info?: { faceA?: Pt; faceB?: Pt }): Pt | null {
   const sides = new Map<number, { neg: number; pos: number; n: Pt }>();
   for (const { a, b, length, depth } of visibleWallSegments(floor, variantId)) {
     let ux = (b[0] - a[0]) / length, uy = (b[1] - a[1]) / length;
@@ -621,15 +644,22 @@ export function corridorCenterAt(floor: Floor, variantId: string, at: Pt, maxWid
     if (across > 0) cur.pos = Math.min(cur.pos, face); else cur.neg = Math.min(cur.neg, face);
     sides.set(ang, cur);
   }
-  let best: { w: number; shift: Pt } | null = null;
+  let best: { w: number; shift: Pt; n: Pt } | null = null;
   for (const { neg, pos, n } of sides.values()) {
     const w = neg + pos;
     if (!Number.isFinite(w) || w > maxWidth || (best && w >= best.w)) continue;
     // pos : mur côté n, neg : mur côté opposé ; on se décale vers le plus éloigné
     const d = (pos - neg) / 2;
-    best = { w, shift: [n[0] * d, n[1] * d] };
+    best = { w, shift: [n[0] * d, n[1] * d], n };
   }
-  return best ? [at[0] + best.shift[0], at[1] + best.shift[1]] : null;
+  if (!best) return null;
+  const c: Pt = [at[0] + best.shift[0], at[1] + best.shift[1]];
+  if (info) {
+    const h = best.w / 2;
+    info.faceA = [c[0] + best.n[0] * h, c[1] + best.n[1] * h];
+    info.faceB = [c[0] - best.n[0] * h, c[1] - best.n[1] * h];
+  }
+  return c;
 }
 
 export function corridorWidthAt(floor: Floor, variantId: string, at: Pt, maxWidth: number): number | null {

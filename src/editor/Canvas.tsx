@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from
 import { makeElement } from '../model/defaults';
 import { getCountry } from '../model/countries';
 import {
-  boxOf, constrain45, corridorCenterAt, corridorWidthAt, rotateElementAround, scaleElementAround, constrainWallTo45, straightnessLabel, distance, distToSegment, elementBounds, floorContentBounds, isVisibleInVariant,
+  boxOf, constrain45, corridorCenterAt, corridorSearchWidth, corridorWidthAt, rotateElementAround, scaleElementAround, constrainWallTo45, straightnessLabel, distance, distToSegment, elementBounds, floorContentBounds, isVisibleInVariant,
   openingWallFit, openingShortWall, polylineLength, dimensionOffsetAt, formatLength, raiseOpeningAboveWalls, snapPointToWalls, wallJoints, rectContains, rectFromPoints, rectsIntersect, RESIZE_DIRECTIONS, resizeBoxElement, rotatePoint, roundDoorWidth, snapSymbolToWalls, snapToGrid, translateElement,
   unionRects, windowGlassWallFit, windowResizeWallFit, type Rect,
 } from '../model/geometry';
@@ -151,6 +151,8 @@ export function Canvas({ onCalibrate }: CanvasProps) {
   /** Point d'accroche d'un mur sur un autre (extrémité ou axe), affiché pendant le tracé ou le déplacement. */
   const [wallHint, setWallHint] = useState<Pt | null>(null);
   const [routeHint, setRouteHint] = useState<Pt | null>(null);
+  /** Repère « milieu du couloir » : faces des deux murs, de part et d'autre du point centré. */
+  const [corridorGuide, setCorridorGuide] = useState<[Pt, Pt] | null>(null);
   const [wallFaceGuides, setWallFaceGuides] = useState<[Pt, Pt][]>([]);
   const [windowResizeGuides, setWindowResizeGuides] = useState<[Pt, Pt][]>([]);
   const [glassGuide, setGlassGuide] = useState<[Pt, Pt] | undefined>();
@@ -233,7 +235,7 @@ export function Canvas({ onCalibrate }: CanvasProps) {
   /** Aimant des itinéraires : un point posé près d'un itinéraire existant se cale sur son axe. */
   const snapRoute = (p: Pt, e: { altKey: boolean }): Pt => {
     const st = useStore.getState();
-    if (e.altKey) { if (routeHint) setRouteHint(null); return snap(p, e); }
+    if (e.altKey) { if (routeHint) setRouteHint(null); setCorridorGuide(null); return snap(p, e); }
     let best: Pt | null = null, bd = Infinity;
     for (const r of floor.elements) {
       if (r.type !== 'route' || !isVisibleInVariant(r, variantId)) continue;
@@ -249,10 +251,12 @@ export function Canvas({ onCalibrate }: CanvasProps) {
     }
     if (!best) {
       // sinon : point ramené au milieu du couloir (à égale distance des deux murs)
-      const upm = floor.unitsPerMeter > 0 ? floor.unitsPerMeter : 100;
       const g = snap(p, e);
-      best = corridorCenterAt(floor, variantId, g, upm * 4);
-    }
+      const info: { faceA?: Pt; faceB?: Pt } = {};
+      const reach = corridorSearchWidth(floor, variantId, g);
+      best = reach ? corridorCenterAt(floor, variantId, g, reach, info) : null;
+      setCorridorGuide(best && info.faceA && info.faceB ? [info.faceA, info.faceB] : null);
+    } else setCorridorGuide(null);
     setRouteHint(best);
     return best ?? snap(p, e);
   };
@@ -738,7 +742,7 @@ export function Canvas({ onCalibrate }: CanvasProps) {
     const s = useStore.getState();
     const p = toWorld(e.clientX, e.clientY);
     const sp = (s.tool === 'wall' || s.tool === 'dimension' || s.tool === 'measure') && !drag.current ? snapWall(p, e) : s.tool === 'route' && !drag.current ? snapRoute(p, e) : snap(p, e);
-    if (s.tool !== 'route' && routeHint) setRouteHint(null);
+    if (s.tool !== 'route' && routeHint) { setRouteHint(null); setCorridorGuide(null); }
     if (s.tool !== 'wall' && !drag.current && wallHint) { setWallHint(null); setWallFaceGuides([]); }
     setCursor((POLY_TOOLS.includes(s.tool) || (s.tool === 'dimension' && draft.length === 1)) && draft.length && e.shiftKey ? (s.tool === 'wall' ? wall45(draft[draft.length - 1], p, sp, e) : constrain45(draft[draft.length - 1], sp)) : (s.tool === 'calibrate' ? p : sp));
     const d = drag.current;
@@ -1327,6 +1331,19 @@ export function Canvas({ onCalibrate }: CanvasProps) {
               <line key={`wf${i}`} className="guide" x1={x1} y1={y1} x2={x2} y2={y2} />
             ))}
             {wallHint && <circle className="wall-snap" cx={wallHint[0]} cy={wallHint[1]} r={7 / z} />}
+            {routeHint && tool === 'route' && corridorGuide && (() => {
+              // milieu du couloir : trait pointillé d'un mur à l'autre, coupé en deux moitiés égales
+              const [[ax, ay], [bx, by]] = corridorGuide, [cx, cy] = routeHint;
+              const L = Math.hypot(bx - ax, by - ay) || 1, ux = (bx - ax) / L, uy = (by - ay) / L, t = 6 / z;
+              return (
+                <g className="corridor-guide" pointerEvents="none">
+                  <line x1={ax} y1={ay} x2={bx} y2={by} stroke="#0b7a3e" strokeWidth={1.5 / z} strokeDasharray={`${5 / z} ${4 / z}`} />
+                  {[[ax, ay], [bx, by]].map(([x, y], i) => <line key={i} x1={x - uy * t} y1={y + ux * t} x2={x + uy * t} y2={y - ux * t} stroke="#0b7a3e" strokeWidth={2 / z} />)}
+                  <line x1={cx - uy * t * 1.6} y1={cy + ux * t * 1.6} x2={cx + uy * t * 1.6} y2={cy - ux * t * 1.6} stroke="#0b7a3e" strokeWidth={2.5 / z} />
+                  <text x={cx + 10 / z} y={cy - 10 / z} fontSize={11 / z} fill="#0b7a3e" fontWeight={700} stroke="#fff" strokeWidth={3 / z} paintOrder="stroke">milieu du couloir</text>
+                </g>
+              );
+            })()}
             {routeHint && tool === 'route' && <circle className="wall-snap" cx={routeHint[0]} cy={routeHint[1]} r={7 / z} />}
             {guidesOn && guideLines.x !== undefined && <line className="guide" x1={guideLines.x} x2={guideLines.x} y1={-1e5} y2={1e5} />}
             {guidesOn && guideLines.y !== undefined && <line className="guide" y1={guideLines.y} y2={guideLines.y} x1={-1e5} x2={1e5} />}
@@ -1447,7 +1464,7 @@ function Rulers({ w, h, view, upm, cursor }: { w: number; h: number; view: { x: 
 
 const HINTS: Partial<Record<Tool, string>> = {
   wall: 'Clic : début du mur • 2e clic : fin du mur (retour à la sélection) • Maj : angles à 45° • Ctrl + clic : continuer le mur en plusieurs segments',
-  route: 'Cliquez pour poser les points de passage • Maj : angles à 45° • Double-clic, Entrée, Échap ou clic droit : terminer',
+  route: 'Cliquez pour poser les points de passage (ils se calent au milieu du couloir, Alt : libre) • Maj : angles à 45° • Double-clic, Entrée, Échap ou clic droit : terminer',
   room: 'Cliquez les angles de la pièce • Cliquez sur le premier point, double-clic, Entrée, Échap ou clic droit pour fermer',
   zone: 'Cliquez les angles de la zone • Cliquez sur le premier point, double-clic, Entrée, Échap ou clic droit pour fermer',
   door: 'Cliquez pour placer une porte (type choisi dans le ruban Plan) • retour automatique à la sélection • Maj + clic : en placer plusieurs',
