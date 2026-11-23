@@ -1,5 +1,9 @@
 # Journal des versions
 
+## 2.0.40 - novembre 2026
+- **Jonctions de murs en T** : une cloison qui arrive au milieu d’un autre mur s’arrête net sur son axe ; elle ne ressort plus de l’autre côté, même si le mur traversé est plus fin.
+- **Pictogrammes collés** : plus aucun fil blanc entre deux panneaux associés (sortie de secours + flèche) : le liseré est retiré du dessin et le joint est recouvert de la couleur du panneau.
+
 ## 2.0.39 - novembre 2026
 - **Plus de fichier .bak à côté du projet** : la copie de sécurité de la version précédente est désormais rangée dans le dossier de l’appli (dossier « backups » des données de l’appli, dans %APPDATA%). Le dossier du plan ne contient plus que le fichier .planevac.
 

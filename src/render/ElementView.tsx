@@ -2,7 +2,7 @@ import React from 'react';
 import { boxOf, dimensionGeometry, doorDimensions, formatLength, isVisibleInVariant, legendSize, openingHostFit, polygonArea, symbolFuseSides, fuseSidesLocal, textSize, usedSymbolIds, windowFrameWidth, type FuseSides } from '../model/geometry';
 import { hereCallout, type HereCallout } from '../model/hereCallout';
 import type {
-  ArrowStyle, CustomSymbol, DashStyle, DimensionElement, Element, FillPattern, Floor, Pt, RouteElement, ShapeElement, SymbolElement,
+  ArrowStyle, CustomSymbol, DashStyle, DimensionElement, Element, FillPattern, Floor, Pt, RouteElement, ShapeElement, SymbolElement, WallElement,
 } from '../model/types';
 import { getBuiltinSymbol } from '../symbols/library';
 
@@ -73,9 +73,53 @@ export function symbolName(id: string, custom: CustomSymbol[]): string {
 }
 
 /** Pictogramme dans une boîte de `size` centrée sur (0,0). */
+/**
+ * Dessin SVG (data URL) d'un panneau collé : on rogne sa boîte (viewBox) de 3,5 % sur les côtés collés,
+ * ce qui retire le liseré blanc (≈ 2,5 %) à la source, et on force preserveAspectRatio « none » (les
+ * fichiers ISO déclarent « meet », qui garderait des marges vides dans une image étirée).
+ * Renvoie null si le dessin n'est pas un SVG lisible avec une viewBox.
+ */
+const cropCache = new Map<string, string | null>();
+function croppedSvg(src: string, f: FuseSides): string | null {
+  if (!src.startsWith('data:image/svg+xml')) return null;
+  const key = `${f.l ? 1 : 0}${f.r ? 1 : 0}${f.t ? 1 : 0}${f.b ? 1 : 0}|${src}`;
+  if (cropCache.has(key)) return cropCache.get(key)!;
+  let out: string | null = null;
+  try {
+    const comma = src.indexOf(','), b64 = src.slice(0, comma).includes(';base64');
+    const body = b64 ? atob(src.slice(comma + 1)) : decodeURIComponent(src.slice(comma + 1));
+    const m = body.match(/<svg(\s[^>]*)?>/);
+    const vb = m?.[1]?.match(/\sviewBox\s*=\s*"([^"]*)"/);
+    const n = vb ? vb[1].trim().split(/[\s,]+/).map(Number) : [];
+    if (m && n.length === 4 && n.every(Number.isFinite) && n[2] > 0 && n[3] > 0) {
+      const k = 0.035;
+      const x = n[0] + (f.l ? n[2] * k : 0), y = n[1] + (f.t ? n[3] * k : 0);
+      const w = n[2] * (1 - (f.l ? k : 0) - (f.r ? k : 0)), h = n[3] * (1 - (f.t ? k : 0) - (f.b ? k : 0));
+      const attrs = (m[1] ?? '').replace(/\s(viewBox|preserveAspectRatio)\s*=\s*"[^"]*"/g, '');
+      const fixed = body.replace(m[0], `<svg${attrs} viewBox="${x} ${y} ${w} ${h}" preserveAspectRatio="none">`);
+      out = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(fixed);
+    }
+  } catch { out = null; }
+  cropCache.set(key, out);
+  return out;
+}
+
+/** Couleur de fond d'un panneau : première couleur non blanche de son dessin (data URL déjà décodable). */
+const bgCache = new Map<string, string | null>();
+function panelBackground(src: string): string | null {
+  if (bgCache.has(src)) return bgCache.get(src)!;
+  let bg: string | null = null;
+  try {
+    const body = decodeURIComponent(src.slice(src.indexOf(',') + 1));
+    bg = (body.match(/#[0-9a-fA-F]{6}(?![0-9a-fA-F])/g) ?? []).find((x) => !/^#f{6}$/i.test(x)) ?? null;
+  } catch { bg = null; }
+  bgCache.set(src, bg);
+  return bg;
+}
+
 export function SymbolGraphic({ symbolId, size, custom, fuse, clipId }: {
   symbolId: string; size: number; custom: CustomSymbol[];
-  /** Côtés collés à un autre panneau : le dessin y est prolongé de 4 % puis recadré, ce qui retire le liseré blanc et l'arrondi. */
+  /** Côtés collés à un autre panneau : le liseré blanc y est retiré (dessin rogné, ou prolongé puis recadré) pour former un seul panneau. */
   fuse?: FuseSides; clipId?: string;
 }) {
   const def = getBuiltinSymbol(symbolId);
@@ -85,13 +129,38 @@ export function SymbolGraphic({ symbolId, size, custom, fuse, clipId }: {
     const f = fuse && clipId && (fuse.l || fuse.r || fuse.t || fuse.b) ? fuse : null;
     const x0 = -size / 2 - (f?.l ? bl : 0), y0 = -size / 2 - (f?.t ? bl : 0);
     const w = size + (f?.l ? bl : 0) + (f?.r ? bl : 0), h = size + (f?.t ? bl : 0) + (f?.b ? bl : 0);
+    // SVG en data URL : rogné à la source et posé à cheval (1 %) sur le voisin, sans découpe :
+    // un bord découpé (clipPath) laisse un fil clair à l'écran, même entre deux verts identiques.
+    const ov = size * 0.01;
+    const cropped = f ? croppedSvg(def ? def.svg : c!.src, f) : null;
+    if (f && cropped) {
+      const cx0 = -size / 2 - (f.l ? ov : 0), cy0 = -size / 2 - (f.t ? ov : 0);
+      const bg = panelBackground(cropped);
+      const half = size / 2, e = size * 0.02, edge = size * 0.035, reach = 2 * ov;
+      return (
+        <g>
+          <image href={cropped} x={cx0} y={cy0} width={size + (f.l ? ov : 0) + (f.r ? ov : 0)} height={size + (f.t ? ov : 0) + (f.b ? ov : 0)} preserveAspectRatio="none" />
+          {/* bande pleine sur le joint, par-dessus le bord de l'image : le lissage d'une image laisse un liseré clair */}
+          {bg && (['l', 'r', 't', 'b'] as const).filter((k) => f[k]).map((k) => {
+            const vert = k === 'l' || k === 'r';
+            const a0 = -half + ((vert ? f.t : f.l) ? -ov : edge), a1 = half - ((vert ? f.b : f.r) ? -ov : edge);
+            const c0 = k === 'l' || k === 't' ? -half - reach : half - e;
+            return vert
+              ? <rect key={k} x={c0} y={a0} width={e + reach} height={a1 - a0} fill={bg} />
+              : <rect key={k} x={a0} y={c0} width={a1 - a0} height={e + reach} fill={bg} />;
+          })}
+        </g>
+      );
+    }
     const art = def && def.kind === 'svg'
       ? <g transform={`translate(${x0} ${y0}) scale(${w / 100} ${h / 100})`} dangerouslySetInnerHTML={{ __html: def.svg }} />
       : <image href={def ? def.svg : c!.src} x={x0} y={y0} width={w} height={h} preserveAspectRatio={c && !f ? 'xMidYMid meet' : 'none'} />;
     if (!f) return art;
     return (
       <g>
-        <defs><clipPath id={clipId}><rect x={-size / 2} y={-size / 2} width={size} height={size} /></clipPath></defs>
+        {/* côtés collés : léger chevauchement (1 %) sur le voisin, sinon l'anticrénelage des deux bords laisse un fil blanc */}
+        <defs><clipPath id={clipId}><rect x={-size / 2 - (f.l ? ov : 0)} y={-size / 2 - (f.t ? ov : 0)}
+          width={size + (f.l ? ov : 0) + (f.r ? ov : 0)} height={size + (f.t ? ov : 0) + (f.b ? ov : 0)} /></clipPath></defs>
         <g clipPath={`url(#${clipId})`}>{art}</g>
       </g>
     );
@@ -530,6 +599,43 @@ function HereLabel({ el, box, uid }: { el: SymbolElement; box: HereCallout; uid:
   );
 }
 
+/**
+ * Points du tracé d'un mur ouvert, dessiné avec des bouts plats : chaque bout libre ou formant un angle
+ * est prolongé d'une demi-épaisseur (comme un bout carré, pour remplir les angles), mais un bout posé
+ * au milieu d'un autre mur (jonction en T) s'arrête sur son axe : il ne ressort pas de l'autre côté,
+ * même si le mur traversé est plus fin.
+ */
+function wallEndPoints(el: WallElement, floor: Floor | undefined, variantId: string): Pt[] {
+  const pts = el.points;
+  if (el.closed || pts.length < 2) return pts;
+  const half = el.thickness / 2;
+  const onOtherWall = (p: Pt) => {
+    for (const o of floor?.elements ?? []) {
+      if (o.type !== 'wall' || o.id === el.id || o.points.length < 2 || !isVisibleInVariant(o, variantId)) continue;
+      const n = o.points.length, segs = o.closed ? n : n - 1;
+      for (let i = 0; i < segs; i++) {
+        const a = o.points[i], b = o.points[(i + 1) % n];
+        const L = Math.hypot(b[0] - a[0], b[1] - a[1]);
+        if (!L) continue;
+        const t = ((p[0] - a[0]) * (b[0] - a[0]) + (p[1] - a[1]) * (b[1] - a[1])) / L;
+        const dist = Math.abs((p[0] - a[0]) * (b[1] - a[1]) - (p[1] - a[1]) * (b[0] - a[0])) / L;
+        // sur l'axe, et loin des extrémités de ce segment (sinon c'est un angle : on garde le bout carré)
+        if (dist <= Math.max(0.5, o.thickness * 0.1) && t > half && t < L - half) return true;
+      }
+    }
+    return false;
+  };
+  const extend = (p: Pt, q: Pt): Pt => {
+    const L = Math.hypot(p[0] - q[0], p[1] - q[1]);
+    if (!L || onOtherWall(p)) return p;
+    return [p[0] + ((p[0] - q[0]) / L) * half, p[1] + ((p[1] - q[1]) / L) * half];
+  };
+  const out = pts.slice();
+  out[0] = extend(pts[0], pts[1]);
+  out[out.length - 1] = extend(pts[pts.length - 1], pts[pts.length - 2]);
+  return out;
+}
+
 function shapePath(el: ShapeElement): React.ReactNode {
   const { w, h } = el;
   const x0 = -w / 2, y0 = -h / 2;
@@ -602,12 +708,13 @@ function Inner({ el: el0, ctx }: { el: Element; ctx: RenderCtx }): React.ReactEl
   switch (el.type) {
     case 'wall': {
       if (el.points.length < 2) return null;
-      const d = pathD(el.points, false, el.closed);
+      const ends = wallEndPoints(el, ctx.floor, ctx.variantId);
+      const d = pathD(ends, false, el.closed);
       if (el.wallStyle === 'outline') {
         return (
           <g>
-            <path d={d} fill="none" stroke={el.color} strokeWidth={el.thickness} strokeLinejoin="miter" strokeLinecap="square" />
-            <path d={d} fill="none" stroke="#ffffff" strokeWidth={Math.max(0.5, el.thickness - Math.max(2, el.thickness * 0.25))} strokeLinejoin="miter" strokeLinecap="square" />
+            <path d={d} fill="none" stroke={el.color} strokeWidth={el.thickness} strokeLinejoin="miter" strokeLinecap={el.closed ? "square" : "butt"} />
+            <path d={d} fill="none" stroke="#ffffff" strokeWidth={Math.max(0.5, el.thickness - Math.max(2, el.thickness * 0.25))} strokeLinejoin="miter" strokeLinecap={el.closed ? "square" : "butt"} />
           </g>
         );
       }
@@ -616,12 +723,12 @@ function Inner({ el: el0, ctx }: { el: Element; ctx: RenderCtx }): React.ReactEl
         return (
           <g>
             <defs><PatternDef id={pid} pattern="hatch" color="#ffffff" size={Math.max(4, el.thickness * 0.7)} /></defs>
-            <path d={d} fill="none" stroke={el.color} strokeWidth={el.thickness} strokeLinejoin="miter" strokeLinecap="square" />
-            <path d={d} fill="none" stroke={`url(#${pid})`} strokeWidth={el.thickness * 0.75} strokeLinejoin="miter" strokeLinecap="square" opacity={0.6} />
+            <path d={d} fill="none" stroke={el.color} strokeWidth={el.thickness} strokeLinejoin="miter" strokeLinecap={el.closed ? "square" : "butt"} />
+            <path d={d} fill="none" stroke={`url(#${pid})`} strokeWidth={el.thickness * 0.75} strokeLinejoin="miter" strokeLinecap={el.closed ? "square" : "butt"} opacity={0.6} />
           </g>
         );
       }
-      return <path d={d} fill="none" stroke={el.color} strokeWidth={el.thickness} strokeLinejoin="miter" strokeLinecap="square" />;
+      return <path d={d} fill="none" stroke={el.color} strokeWidth={el.thickness} strokeLinejoin="miter" strokeLinecap={el.closed ? "square" : "butt"} />;
     }
 
     case 'area': {
