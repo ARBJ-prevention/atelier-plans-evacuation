@@ -150,6 +150,7 @@ export function Canvas({ onCalibrate }: CanvasProps) {
   const [guideLines, setGuideLines] = useState<{ x?: number; y?: number }>({});
   /** Point d'accroche d'un mur sur un autre (extrémité ou axe), affiché pendant le tracé ou le déplacement. */
   const [wallHint, setWallHint] = useState<Pt | null>(null);
+  const [routeHint, setRouteHint] = useState<Pt | null>(null);
   const [wallFaceGuides, setWallFaceGuides] = useState<[Pt, Pt][]>([]);
   const [windowResizeGuides, setWindowResizeGuides] = useState<[Pt, Pt][]>([]);
   const [glassGuide, setGlassGuide] = useState<[Pt, Pt] | undefined>();
@@ -229,6 +230,26 @@ export function Canvas({ onCalibrate }: CanvasProps) {
   }, []);
 
   /** Point de mur : accroché à l'extrémité ou à l'axe d'un mur voisin (Alt pour un placement libre), sinon à la grille. */
+  /** Aimant des itinéraires : un point posé près d'un itinéraire existant se cale sur son axe. */
+  const snapRoute = (p: Pt, e: { altKey: boolean }): Pt => {
+    const st = useStore.getState();
+    if (e.altKey) { if (routeHint) setRouteHint(null); return snap(p, e); }
+    let best: Pt | null = null, bd = Infinity;
+    for (const r of floor.elements) {
+      if (r.type !== 'route' || !isVisibleInVariant(r, variantId)) continue;
+      const range = Math.max(r.width * 1.5, 14 / st.view.zoom);
+      for (let i = 0; i + 1 < r.points.length; i++) {
+        const a = r.points[i], b = r.points[i + 1];
+        const d = distToSegment(p, a, b);
+        if (d > range || d >= bd) continue;
+        const vx = b[0] - a[0], vy = b[1] - a[1], L2 = vx * vx + vy * vy || 1;
+        const t = Math.max(0, Math.min(1, ((p[0] - a[0]) * vx + (p[1] - a[1]) * vy) / L2));
+        bd = d; best = [a[0] + vx * t, a[1] + vy * t];
+      }
+    }
+    setRouteHint(best);
+    return best ?? snap(p, e);
+  };
   const snapWall = (p: Pt, e: { altKey: boolean }, exclude: Set<string> = new Set(), ownThickness?: number): Pt => {
     const st = useStore.getState();
     const own = ownThickness ?? st.presets.wallThickness ?? 0;
@@ -323,15 +344,39 @@ export function Canvas({ onCalibrate }: CanvasProps) {
           // Le raccord se fond dans la bande existante : le bout est posé sur son axe
           // (le trait ne déborde pas de l'autre côté) et ne porte pas de pointe.
           // Le bout s'arrête au bord de la bande (recul d'une demi-largeur depuis l'axe).
-          const edge = (tip: Pt, prev: Pt): Pt => {
-            const L = distance(tip, prev);
-            const k = L > width / 2 ? width / 2 / L : 0;
-            return [tip[0] + (prev[0] - tip[0]) * k, tip[1] + (prev[1] - tip[1]) * k];
+          // Coupe au premier contact avec la bande rejointe : si le tracé la longe
+          // (raccord en biais ou parallèle), toute la partie superposée disparaît.
+          const target = hit.ref.points;
+          const toTarget = (q: Pt) => {
+            let m = Infinity;
+            for (let i = 0; i + 1 < target.length; i++) m = Math.min(m, distToSegment(q, target[i], target[i + 1]));
+            return m;
           };
-          const pts2 = [...clean];
-          if (atEnd) { pts2[pts2.length - 1] = edge(hit.proj, pts2[pts2.length - 2]); Object.assign(el, { arrowEnd: false, arrowStart: false, joinEnd: true }); }
-          else { pts2[0] = edge(hit.proj, pts2[1]); Object.assign(el, { arrowStart: false, joinStart: true }); }
-          (el as any).points = pts2;
+          const cutTowardEnd = (pts: Pt[]): Pt[] => {
+            // pts se termine sur l'axe de la bande ; on cherche, depuis le début, le premier point à une demi-largeur
+            const lim = width / 2;
+            for (let i = 0; i + 1 < pts.length; i++) {
+              const a = pts[i], b = pts[i + 1];
+              if (toTarget(a) <= lim) return i === 0 ? pts.slice(0, 2) : pts.slice(0, i + 1);
+              const L = distance(a, b), n = Math.max(2, Math.ceil(L / Math.max(1, lim / 4)));
+              for (let k = 1; k <= n; k++) {
+                const q: Pt = [a[0] + (b[0] - a[0]) * k / n, a[1] + (b[1] - a[1]) * k / n];
+                if (toTarget(q) <= lim) return [...pts.slice(0, i + 1), q];
+              }
+            }
+            return pts;
+          };
+          let pts2 = [...clean];
+          if (atEnd) {
+            pts2[pts2.length - 1] = hit.proj;
+            pts2 = cutTowardEnd(pts2);
+            Object.assign(el, { arrowEnd: false, arrowStart: false, joinEnd: true });
+          } else {
+            pts2[0] = hit.proj;
+            pts2 = cutTowardEnd(pts2.reverse()).reverse();
+            Object.assign(el, { arrowStart: false, joinStart: true });
+          }
+          if (pts2.length >= 2 && distance(pts2[0], pts2[pts2.length - 1]) > 1) (el as any).points = pts2;
         }
       }
       setLocalRoute('');
@@ -408,7 +453,7 @@ export function Canvas({ onCalibrate }: CanvasProps) {
       return;
     }
     if (e.button !== 0) return;
-    const sp = s.tool === 'wall' || s.tool === 'dimension' || s.tool === 'measure' ? snapWall(p, e) : snap(p, e);
+    const sp = s.tool === 'wall' || s.tool === 'dimension' || s.tool === 'measure' ? snapWall(p, e) : s.tool === 'route' ? snapRoute(p, e) : snap(p, e);
     const target = e.target as SVGElement;
 
     switch (s.tool) {
@@ -656,7 +701,8 @@ export function Canvas({ onCalibrate }: CanvasProps) {
   const onPointerMove = (e: React.PointerEvent) => {
     const s = useStore.getState();
     const p = toWorld(e.clientX, e.clientY);
-    const sp = (s.tool === 'wall' || s.tool === 'dimension' || s.tool === 'measure') && !drag.current ? snapWall(p, e) : snap(p, e);
+    const sp = (s.tool === 'wall' || s.tool === 'dimension' || s.tool === 'measure') && !drag.current ? snapWall(p, e) : s.tool === 'route' && !drag.current ? snapRoute(p, e) : snap(p, e);
+    if (s.tool !== 'route' && routeHint) setRouteHint(null);
     if (s.tool !== 'wall' && !drag.current && wallHint) { setWallHint(null); setWallFaceGuides([]); }
     setCursor((POLY_TOOLS.includes(s.tool) || (s.tool === 'dimension' && draft.length === 1)) && draft.length && e.shiftKey ? (s.tool === 'wall' ? wall45(draft[draft.length - 1], p, sp, e) : constrain45(draft[draft.length - 1], sp)) : (s.tool === 'calibrate' ? p : sp));
     const d = drag.current;
@@ -1245,6 +1291,7 @@ export function Canvas({ onCalibrate }: CanvasProps) {
               <line key={`wf${i}`} className="guide" x1={x1} y1={y1} x2={x2} y2={y2} />
             ))}
             {wallHint && <circle className="wall-snap" cx={wallHint[0]} cy={wallHint[1]} r={7 / z} />}
+            {routeHint && tool === 'route' && <circle className="wall-snap" cx={routeHint[0]} cy={routeHint[1]} r={7 / z} />}
             {guidesOn && guideLines.x !== undefined && <line className="guide" x1={guideLines.x} x2={guideLines.x} y1={-1e5} y2={1e5} />}
             {guidesOn && guideLines.y !== undefined && <line className="guide" y1={guideLines.y} y2={guideLines.y} x1={-1e5} x2={1e5} />}
             {guidesOn && windowResizeGuides.map(([[x1, y1], [x2, y2]], i) => (
