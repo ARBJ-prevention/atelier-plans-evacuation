@@ -392,7 +392,18 @@ function RouteView({ el }: { el: RouteElement }) {
       <path d={path} fill="none" stroke={el.color} strokeWidth={el.width} strokeLinejoin={el.corner} strokeLinecap={cap}
         strokeDasharray={dashArray(el.dash, el.width)} />
       {baseCap === 'round' && roundEnds.map((q, i) => <circle key={`lc${i}`} cx={q[0]} cy={q[1]} r={el.width / 2} fill={el.color} />)}
-      {repeats}
+      {repeats.length > 0 && (
+        // Chevrons découpés à la largeur du trait : rien ne dépasse de la bande verte.
+        <>
+          <mask id={`rm-${el.id}`} maskUnits="userSpaceOnUse"
+            x={Math.min(...p.map((q) => q[0])) - el.width * 4} y={Math.min(...p.map((q) => q[1])) - el.width * 4}
+            width={Math.max(...p.map((q) => q[0])) - Math.min(...p.map((q) => q[0])) + el.width * 8}
+            height={Math.max(...p.map((q) => q[1])) - Math.min(...p.map((q) => q[1])) + el.width * 8}>
+            <path d={path} fill="none" stroke="#fff" strokeWidth={el.width} strokeLinejoin={el.corner} strokeLinecap={cap} />
+          </mask>
+          <g mask={`url(#rm-${el.id})`}>{repeats}</g>
+        </>
+      )}
       {el.arrowEnd && arrowHead(p[p.length - 1], p[p.length - 2], el.width, el.arrowSize, el.arrowStyle, el.color, 'e')}
       {el.arrowStart && arrowHead(p[0], p[1], el.width, el.arrowSize, el.arrowStyle, el.color, 's')}
     </g>
