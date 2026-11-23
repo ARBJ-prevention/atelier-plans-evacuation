@@ -1,5 +1,9 @@
 # Journal des versions
 
+## 2.0.43 - novembre 2026
+- **Itinéraires raccordés** : un chemin tracé jusqu’à un itinéraire existant reprend tout son réglage (type, couleur, chevrons, virages…).
+- **Raccord propre** : le chemin s’arrête au bord de la bande rejointe, sans pointe, liseré blanc ni chevron qui débordent dessus.
+
 ## 2.0.42 - novembre 2026
 - **Premier plan / Arrière-plan** : l’élément passe vraiment devant (ou derrière) tout ce qui le chevauche, même sur un autre calque (ex. une porte coupe-feu sous une zone colorée).
 - **Chevrons dans les virages** : les chevrons répétés suivent le tracé arrondi et tournent avec la flèche.
