@@ -1,5 +1,8 @@
 # Journal des versions
 
+## 2.0.52 - novembre 2026
+- **Itinéraires assemblés** : un nouveau tracé se raccorde au premier itinéraire qu’il touche et s’arrête là, même si vous avez continué à le longer ; plus de bandes ni de chevrons superposés.
+
 ## 2.0.51 - novembre 2026
 - **Milieu du couloir visible** : en traçant, un repère vert en pointillés va d’un mur à l’autre et marque le milieu où le point se pose.
 - **Centrage seulement dans les couloirs** : dans vos zones de circulation coloriées (ou un passage de 2,5 m au plus) ; dans un local, le point reste où vous cliquez.
