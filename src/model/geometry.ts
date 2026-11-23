@@ -553,6 +553,21 @@ export function openingWallFit(
   return best;
 }
 
+/** Longueur du tronçon de mur visé qui est trop court pour accueillir l'ouverture (sinon undefined). */
+export function openingShortWall(
+  floor: Floor, variantId: string, opening: Pick<DoorElement | WindowElement, 'x' | 'y' | 'width'>, snapDistance: number,
+): number | undefined {
+  let found: number | undefined;
+  for (const { a: [ax, ay], b: [bx, by], length, depth } of visibleWallSegments(floor, variantId)) {
+    if (length >= opening.width) continue;
+    const ux = (bx - ax) / length, uy = (by - ay) / length;
+    const along = Math.max(0, Math.min(length, (opening.x - ax) * ux + (opening.y - ay) * uy));
+    const dist = Math.hypot(opening.x - ax - along * ux, opening.y - ay - along * uy);
+    if (dist <= depth / 2 + snapDistance) found = Math.max(found ?? 0, length);
+  }
+  return found;
+}
+
 /**
  * Mur qui porte une ouverture, avec une tolérance de quelques millimètres et d'un degré : une porte ou
  * une fenêtre très légèrement décalée de l'axe (mur retouché, arrondis) reste rattachée à son mur.

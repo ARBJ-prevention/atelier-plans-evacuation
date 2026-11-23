@@ -3,7 +3,7 @@ import { makeElement } from '../model/defaults';
 import { getCountry } from '../model/countries';
 import {
   boxOf, constrain45, distance, distToSegment, elementBounds, floorContentBounds, isVisibleInVariant,
-  openingWallFit, polylineLength, dimensionOffsetAt, formatLength, raiseOpeningAboveWalls, snapPointToWalls, wallJoints, rectContains, rectFromPoints, rectsIntersect, RESIZE_DIRECTIONS, resizeBoxElement, rotatePoint, roundDoorWidth, snapSymbolToWalls, snapToGrid, translateElement,
+  openingWallFit, openingShortWall, polylineLength, dimensionOffsetAt, formatLength, raiseOpeningAboveWalls, snapPointToWalls, wallJoints, rectContains, rectFromPoints, rectsIntersect, RESIZE_DIRECTIONS, resizeBoxElement, rotatePoint, roundDoorWidth, snapSymbolToWalls, snapToGrid, translateElement,
   unionRects, windowGlassWallFit, windowResizeWallFit, type Rect,
 } from '../model/geometry';
 import type { DoorElement, Element, Floor, Pt, SymbolElement, WindowElement } from '../model/types';
@@ -137,6 +137,7 @@ export function Canvas({ onCalibrate }: CanvasProps) {
 
   const wrapRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
+  const lastShortWallHint = useRef(0);
   const drag = useRef<Drag | null>(null);
   const spaceDown = useRef(false);
   const [size, setSize] = useState({ w: 800, h: 600 });
@@ -325,7 +326,18 @@ export function Canvas({ onCalibrate }: CanvasProps) {
     // les ouvertures s'accrochent aux murs même sans le magnétisme de la grille (Alt : pose libre)
     if (altKey) return undefined;
     const fit = openingWallFit(floor, variantId, opening, 10 / s.view.zoom);
-    if (!fit) return undefined;
+    if (!fit) {
+      const short = openingShortWall(floor, variantId, opening, 10 / s.view.zoom);
+      const now = Date.now();
+      if (short !== undefined && now - lastShortWallHint.current > 4000) {
+        lastShortWallHint.current = now;
+        const m = floor.unitsPerMeter > 0 ? floor.unitsPerMeter : 50;
+        const cm = (v: number) => Math.round((v / m) * 100);
+        const what = opening.type === 'window' ? 'La fenêtre' : 'La porte';
+        s.toast(`${what} (${cm(opening.width)} cm) ne peut pas s’accrocher : ce tronçon de mur ne mesure que ${cm(short)} cm. Réduisez sa largeur ou retracez le mur en un seul segment plus long.`, 'warning');
+      }
+      return undefined;
+    }
     const { depth, ...pose } = fit;
     return opening.type === 'window' ? { ...opening, ...pose, depth } : { ...opening, ...pose };
   };

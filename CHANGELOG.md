@@ -1,5 +1,8 @@
 # Journal des versions
 
+## 2.0.37 - novembre 2026
+- **Porte trop large pour le mur** : quand une porte ou une fenêtre ne peut pas s’accrocher parce que le tronçon de mur visé est plus court qu’elle, un message l’explique (largeur de l’ouverture, longueur du tronçon) et propose de réduire la largeur ou de retracer le mur en un seul segment.
+
 ## 2.0.36 - novembre 2026
 - **Cotes** : nouveau bouton « Cote » (onglet Construire) pour coter une distance sur le plan. Cliquez le début, la fin (accroche aux murs), puis la position de la ligne. La mesure s’affiche en mètres une fois l’échelle étalonnée ; texte imposé, flèches, traits ou points, taille et couleur réglables. Aussi à l’impression, au PDF et à l’export DXF.
 - **Mesurer** : mesure une distance ou un parcours sans rien ajouter au plan.
