@@ -177,6 +177,9 @@ export interface RouteElement extends BaseElement {
   outline: string;
   smooth: boolean;
   kind: 'principal' | 'secondaire';
+  /** Bout raccordé à un autre itinéraire : il se fond dans la bande (pas de liseré ni de chevron qui débordent). */
+  joinEnd?: boolean;
+  joinStart?: boolean;
 }
 
 export interface TextElement extends BaseElement {

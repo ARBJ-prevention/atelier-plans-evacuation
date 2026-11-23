@@ -293,6 +293,45 @@ export function Canvas({ onCalibrate }: CanvasProps) {
       el = makeElement('route', pr.routeKind === 'secondaire'
         ? { points: clean, variantId, kind: 'secondaire', dash: 'dashed', width: 6 }
         : { points: clean, variantId, outline: '#ffffff', arrowStyle: 'stealth' }, routeColor);
+      // Raccord sur un itinéraire existant (par l'arrivée, sinon par le départ) :
+      // le nouveau tracé reprend tout son réglage (type, couleur, chevrons, virages…).
+      const f = currentFloor(s);
+      if (f) {
+        const routes = f.elements.filter((e): e is Extract<Element, { type: 'route' }> => e.type === 'route' && isVisibleInVariant(e, active));
+        const near = (pt: Pt) => {
+          let best: (typeof routes)[number] | undefined, bd = Infinity, proj: Pt = pt;
+          for (const r of routes) for (let i = 0; i + 1 < r.points.length; i++) {
+            const a = r.points[i], b = r.points[i + 1];
+            const d = distToSegment(pt, a, b);
+            if (d < bd) {
+              bd = d; best = r;
+              const vx = b[0] - a[0], vy = b[1] - a[1], L2 = vx * vx + vy * vy || 1;
+              const t = Math.max(0, Math.min(1, ((pt[0] - a[0]) * vx + (pt[1] - a[1]) * vy) / L2));
+              proj = [a[0] + vx * t, a[1] + vy * t];
+            }
+          }
+          return best && bd <= Math.max(best.width * 2, f.unitsPerMeter * 0.4) ? { ref: best, proj } : undefined;
+        };
+        const atEnd = near(clean[clean.length - 1]);
+        const atStart = atEnd ? undefined : near(clean[0]);
+        const hit = atEnd ?? atStart;
+        if (hit) {
+          const { color, width, dash, arrowEnd, arrowStart, arrowStyle, arrowSize, arrowRepeat, repeatColor, corner, cornerRadius, outline, smooth, kind } = hit.ref;
+          Object.assign(el, { color, width, dash, arrowEnd, arrowStart, arrowStyle, arrowSize, arrowRepeat, repeatColor, corner, cornerRadius, outline, smooth, kind });
+          // Le raccord se fond dans la bande existante : le bout est posé sur son axe
+          // (le trait ne déborde pas de l'autre côté) et ne porte pas de pointe.
+          // Le bout s'arrête au bord de la bande (recul d'une demi-largeur depuis l'axe).
+          const edge = (tip: Pt, prev: Pt): Pt => {
+            const L = distance(tip, prev);
+            const k = L > width / 2 ? width / 2 / L : 0;
+            return [tip[0] + (prev[0] - tip[0]) * k, tip[1] + (prev[1] - tip[1]) * k];
+          };
+          const pts2 = [...clean];
+          if (atEnd) { pts2[pts2.length - 1] = edge(hit.proj, pts2[pts2.length - 2]); Object.assign(el, { arrowEnd: false, arrowStart: false, joinEnd: true }); }
+          else { pts2[0] = edge(hit.proj, pts2[1]); Object.assign(el, { arrowStart: false, joinStart: true }); }
+          (el as any).points = pts2;
+        }
+      }
       setLocalRoute('');
     }
     else if (t === 'room') el = makeElement('area', { points: clean, kind: 'room', label: 'Local' });

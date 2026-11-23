@@ -366,20 +366,32 @@ function RouteView({ el }: { el: RouteElement }) {
       return [pts[i - 1][0] + (pts[i][0] - pts[i - 1][0]) * t, pts[i - 1][1] + (pts[i][1] - pts[i - 1][1]) * t];
     };
     const half = el.width * 0.55 * 3.2 * 0.5; // demi-longueur du chevron
-    for (let s = el.arrowRepeat / 2; s < total; s += el.arrowRepeat) {
+    const sEnd = el.joinEnd ? total - half * 1.2 : total;
+    for (let s = el.arrowRepeat / 2; s < sEnd; s += el.arrowRepeat) {
+      if (el.joinStart && s < half * 2) continue;
       const tip = at(s + half * 0.5), back = at(s - half * 1.5);
       if (tip[0] === back[0] && tip[1] === back[1]) continue;
       repeats.push(arrowHead(tip, back, el.width * 0.55, 1, 'open', rc, `r${s}`));
     }
   }
-  const cap = dashCap(el.dash, el.dash === 'solid' ? 'round' : 'butt');
+  // Bout raccordé : coupe nette au bord de la bande rejointe (ni liseré ni arrondi
+  // qui débordent dessus) ; les autres bouts gardent leur arrondi, ajouté à part.
+  const joined = !!(el.joinEnd || el.joinStart);
+  const baseCap = dashCap(el.dash, el.dash === 'solid' ? 'round' : 'butt');
+  const cap = joined ? 'butt' : baseCap;
+  const ow = el.width + Math.max(3, el.width * 0.6);
+  const roundEnds = joined ? [!el.joinStart && line[0], !el.joinEnd && line[line.length - 1]].filter(Boolean) as Pt[] : [];
   return (
     <g>
       {el.outline && (
-        <path d={path} fill="none" stroke={el.outline} strokeWidth={el.width + Math.max(3, el.width * 0.6)} strokeLinejoin={el.corner} strokeLinecap="round" />
+        <>
+          <path d={path} fill="none" stroke={el.outline} strokeWidth={ow} strokeLinejoin={el.corner} strokeLinecap={joined ? 'butt' : 'round'} />
+          {roundEnds.map((q, i) => <circle key={`oc${i}`} cx={q[0]} cy={q[1]} r={ow / 2} fill={el.outline} />)}
+        </>
       )}
       <path d={path} fill="none" stroke={el.color} strokeWidth={el.width} strokeLinejoin={el.corner} strokeLinecap={cap}
         strokeDasharray={dashArray(el.dash, el.width)} />
+      {baseCap === 'round' && roundEnds.map((q, i) => <circle key={`lc${i}`} cx={q[0]} cy={q[1]} r={el.width / 2} fill={el.color} />)}
       {repeats}
       {el.arrowEnd && arrowHead(p[p.length - 1], p[p.length - 2], el.width, el.arrowSize, el.arrowStyle, el.color, 'e')}
       {el.arrowStart && arrowHead(p[0], p[1], el.width, el.arrowSize, el.arrowStyle, el.color, 's')}
