@@ -345,7 +345,30 @@ export function Canvas({ onCalibrate }: CanvasProps) {
           }
           return best && bd <= Math.max(best.width * 2, f.unitsPerMeter * 0.4) ? { ref: best, proj } : undefined;
         };
-        const atEnd = near(clean[clean.length - 1]);
+        // Premier itinéraire touché en suivant le tracé depuis son départ (s'il ne part pas
+        // déjà d'un itinéraire) : on s'y raccorde là, même si l'on a continué à le longer.
+        let base = clean;
+        let atEnd = near(clean[clean.length - 1]);
+        if (!near(clean[0])) {
+          const drawn = routes.map((r) => ({ r, pts: sampleRoute(r.points, r.cornerRadius > 0 && !r.smooth ? r.cornerRadius : 0, r.smooth) }));
+          const touch = (q: Pt) => {
+            for (const { r, pts } of drawn) for (let i = 0; i + 1 < pts.length; i++) if (distToSegment(q, pts[i], pts[i + 1]) <= r.width / 2) return r;
+            return undefined;
+          };
+          search: for (let i = 0; i + 1 < clean.length; i++) {
+            const a = clean[i], b = clean[i + 1];
+            const n = Math.max(2, Math.ceil(distance(a, b) / 2));
+            for (let k = 1; k <= n; k++) {
+              const q: Pt = [a[0] + (b[0] - a[0]) * k / n, a[1] + (b[1] - a[1]) * k / n];
+              const r = touch(q);
+              if (r) {
+                base = [...clean.slice(0, i + 1), q];
+                atEnd = { ref: r, proj: q };
+                break search;
+              }
+            }
+          }
+        }
         const atStart = atEnd ? undefined : near(clean[0]);
         const hit = atEnd ?? atStart;
         if (hit) {
@@ -388,7 +411,7 @@ export function Canvas({ onCalibrate }: CanvasProps) {
             }
             return pts;
           };
-          let pts2 = [...clean];
+          let pts2 = [...base];
           if (atEnd) {
             pts2[pts2.length - 1] = hit.proj;
             pts2 = cutTowardEnd(pts2);
