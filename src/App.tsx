@@ -13,7 +13,10 @@ import type { ReviewReturn } from './dialogs/PrintReview';
 import { PRINT_ISSUE_LABEL, PrintPage, STATUS_LABEL, type PrintIssue } from './render/PrintPage';
 import { api } from './services/api';
 import { currentBuilding, currentFloor, currentVariantId, useStore } from './store/store';
-import { alertDialog, DialogHost } from './ui/dialogs';
+import { alertDialog, ask, DialogHost } from './ui/dialogs';
+
+/** Fenêtre « quitter sans enregistrer ? » déjà affichée (clics répétés sur la croix). */
+let closeAsked = false;
 import { Icon } from './ui/icons';
 
 const AUTOSAVE_MS = 30_000;
@@ -90,7 +93,7 @@ export function App() {
   const runCommand = async (action: string, arg?: string) => {
     const s = useStore.getState();
     const has = !!s.project;
-    if (document.querySelector('.modal-backdrop') && action !== 'save-and-close' && action !== 'discard-and-close') return;
+    if (document.querySelector('.modal-backdrop') && action !== 'save-and-close' && action !== 'discard-and-close' && action !== 'confirm-close') return;
     switch (action) {
       case 'new': return A.newProjectAction();
       case 'new-from-plan': {
@@ -158,6 +161,37 @@ export function App() {
       case 'about': return setHelp('about');
       case 'check-updates': return A.checkForUpdates(true);
       case 'update-dir': return A.chooseUpdateDirAction();
+      case 'confirm-close': {
+        if (closeAsked) return;
+        closeAsked = true;
+        try {
+          const name = s.project?.name || 'Projet sans nom';
+          const r = await ask({
+            title: 'Quitter Atelier Plans d’Évacuation ?',
+            message: (
+              <div className="close-confirm">
+                <div className="close-confirm-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M5 3h11l3 3v15H5z" /><path d="M8 3v5h7V3" /><rect x="8" y="13" width="8" height="5" rx="1" />
+                  </svg>
+                </div>
+                <div>
+                  <p><strong>« {name} »</strong> contient des modifications non enregistrées.</p>
+                  <p className="close-confirm-sub">Enregistrez-les pour ne rien perdre, ou quittez sans les garder.</p>
+                </div>
+              </div>
+            ),
+            buttons: [
+              { label: 'Annuler', value: 'cancel', back: true },
+              { label: 'Ne pas enregistrer', value: 'discard', danger: true },
+              { label: 'Enregistrer et quitter', value: 'save', primary: true },
+            ],
+          });
+          if (r.button === 'save') return runCommand('save-and-close');
+          if (r.button === 'discard') return runCommand('discard-and-close');
+        } finally { closeAsked = false; }
+        return;
+      }
       case 'save-and-close': {
         if (await A.saveProject(false)) api().forceClose();
         return;

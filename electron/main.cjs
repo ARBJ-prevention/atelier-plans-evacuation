@@ -147,17 +147,8 @@ function createWindow() {
   win.on('close', async (e) => {
     if (forceClosing || !dirty || isSelfTest) return;
     e.preventDefault();
-    const { response } = await dialog.showMessageBox(win, {
-      type: 'question',
-      buttons: ['Enregistrer', 'Ne pas enregistrer', 'Annuler'],
-      defaultId: 0,
-      cancelId: 2,
-      title: APP_NAME,
-      message: 'Le projet contient des modifications non enregistrées.',
-      detail: 'Voulez-vous les enregistrer avant de quitter ?',
-    });
-    if (response === 0) win.webContents.send('menu', 'save-and-close');
-    else if (response === 1) win.webContents.send('menu', 'discard-and-close');
+    // Fenêtre de confirmation dessinée par l'appli (aux couleurs du logiciel).
+    win.webContents.send('menu', 'confirm-close');
   });
   win.on('closed', () => { win = null; });
 }
