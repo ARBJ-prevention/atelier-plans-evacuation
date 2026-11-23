@@ -1,5 +1,8 @@
 # Journal des versions
 
+## 2.0.45 - novembre 2026
+- **Chevrons répétés** : ils sont découpés à la largeur du trait de l’itinéraire et ne dépassent plus de la bande verte.
+
 ## 2.0.44 - novembre 2026
 - **Sélection multiple** (ex. pictogramme combiné) : une poignée au-dessus pour la faire pivoter (Maj : par 45°) et 4 coins pour l’agrandir ou la réduire d’un coup.
 - **Pictogrammes dans un couloir** : leur taille s’adapte automatiquement à la largeur entre les murs (Alt : taille normale).
