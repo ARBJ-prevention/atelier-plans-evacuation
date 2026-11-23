@@ -240,6 +240,41 @@ export function filletPath(p: Pt[], radius: number): string {
   return `${d} L ${last[0]} ${last[1]}`;
 }
 
+/** Échantillonne en polyligne fine le tracé tel que dessiné par filletPath / pathD. */
+function sampleRoute(p: Pt[], radius: number, smooth: boolean): Pt[] {
+  const bez = (out: Pt[], a: Pt, c1: Pt, c2: Pt, b: Pt) => {
+    for (let k = 1; k <= 16; k++) {
+      const t = k / 16, u = 1 - t;
+      out.push([u * u * u * a[0] + 3 * u * u * t * c1[0] + 3 * u * t * t * c2[0] + t * t * t * b[0],
+        u * u * u * a[1] + 3 * u * u * t * c1[1] + 3 * u * t * t * c2[1] + t * t * t * b[1]]);
+    }
+  };
+  if (smooth && p.length >= 3) {
+    const P = [p[0], ...p, p[p.length - 1]];
+    const out: Pt[] = [P[1]];
+    for (let i = 1; i < P.length - 2; i++) {
+      const [p0, p1, p2, p3] = [P[i - 1], P[i], P[i + 1], P[i + 2]];
+      bez(out, p1, [p1[0] + (p2[0] - p0[0]) / 6, p1[1] + (p2[1] - p0[1]) / 6], [p2[0] - (p3[0] - p1[0]) / 6, p2[1] - (p3[1] - p1[1]) / 6], p2);
+    }
+    return out;
+  }
+  if (radius <= 0 || p.length < 3) return p;
+  const out: Pt[] = [p[0]];
+  for (let i = 1; i < p.length - 1; i++) {
+    const [a, c, b] = [p[i - 1], p[i], p[i + 1]];
+    const la = Math.hypot(a[0] - c[0], a[1] - c[1]) || 1;
+    const lb = Math.hypot(b[0] - c[0], b[1] - c[1]) || 1;
+    const r = Math.min(Math.min(radius, i === 1 ? la : la / 2), Math.min(radius, i === p.length - 2 ? lb : lb / 2));
+    const p1: Pt = [c[0] + ((a[0] - c[0]) / la) * r, c[1] + ((a[1] - c[1]) / la) * r];
+    const p2: Pt = [c[0] + ((b[0] - c[0]) / lb) * r, c[1] + ((b[1] - c[1]) / lb) * r];
+    const k = 0.5523;
+    out.push(p1);
+    bez(out, p1, [p1[0] + (c[0] - p1[0]) * k, p1[1] + (c[1] - p1[1]) * k], [p2[0] + (c[0] - p2[0]) * k, p2[1] + (c[1] - p2[1]) * k], p2);
+  }
+  out.push(p[p.length - 1]);
+  return out;
+}
+
 function arrowHead(tip: Pt, from: Pt, w: number, scale: number, style: ArrowStyle, color: string, key: string): React.ReactNode {
   const ang = Math.atan2(tip[1] - from[1], tip[0] - from[0]);
   const len = w * 3.2 * scale, half = w * 2 * scale;
@@ -317,18 +352,24 @@ function RouteView({ el }: { el: RouteElement }) {
   const repeats: React.ReactNode[] = [];
   if (el.arrowRepeat > 0) {
     const rc = el.repeatColor === 'line' ? el.color : el.repeatColor || el.outline || '#ffffff';
-    let acc = el.arrowRepeat / 2;
-    for (let i = 1; i < p.length; i++) {
-      const a = p[i - 1], b = p[i];
-      const L = Math.hypot(b[0] - a[0], b[1] - a[1]);
-      while (acc < L) {
-        const t = acc / L;
-        const c: Pt = [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
-        const back: Pt = [c[0] - (b[0] - a[0]) / L, c[1] - (b[1] - a[1]) / L];
-        repeats.push(arrowHead(c, back, el.width * 0.55, 1, 'open', rc, `r${i}-${acc}`));
-        acc += el.arrowRepeat;
-      }
-      acc -= L;
+    // On suit le tracé réellement dessiné (virages arrondis compris) : chaque
+    // chevron s'oriente selon la corde qui l'entoure, donc tourne avec la flèche.
+    const pts = sampleRoute(p, el.cornerRadius > 0 && !el.smooth ? el.cornerRadius : 0, el.smooth);
+    const cum = [0];
+    for (let i = 1; i < pts.length; i++) cum.push(cum[i - 1] + Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]));
+    const total = cum[cum.length - 1];
+    const at = (s: number): Pt => {
+      s = Math.max(0, Math.min(total, s));
+      let i = 1;
+      while (i < cum.length - 1 && cum[i] < s) i++;
+      const seg = cum[i] - cum[i - 1] || 1, t = (s - cum[i - 1]) / seg;
+      return [pts[i - 1][0] + (pts[i][0] - pts[i - 1][0]) * t, pts[i - 1][1] + (pts[i][1] - pts[i - 1][1]) * t];
+    };
+    const half = el.width * 0.55 * 3.2 * 0.5; // demi-longueur du chevron
+    for (let s = el.arrowRepeat / 2; s < total; s += el.arrowRepeat) {
+      const tip = at(s + half * 0.5), back = at(s - half * 1.5);
+      if (tip[0] === back[0] && tip[1] === back[1]) continue;
+      repeats.push(arrowHead(tip, back, el.width * 0.55, 1, 'open', rc, `r${s}`));
     }
   }
   const cap = dashCap(el.dash, el.dash === 'solid' ? 'round' : 'butt');

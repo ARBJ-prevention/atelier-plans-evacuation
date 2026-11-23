@@ -494,10 +494,33 @@ export const useStore = create<EditorState>((set, get) => ({
     const ids = new Set(get().selection);
     if (!ids.size) return;
     if (where === 'front' || where === 'back') {
+      // L'affichage suit « calque puis position » : pour vraiment passer devant
+      // (ou derrière) ce qui la recouvre, la sélection rejoint le calque le plus
+      // haut (ou le plus bas) parmi les éléments visibles qui la chevauchent.
+      const f0 = currentFloor(get());
+      if (!f0) return;
+      const variant0 = currentVariantId(get());
+      const hidden = new Set(f0.layers.filter((l) => l.locked || !l.visible).map((l) => l.id));
+      const rank0 = (l: string) => { const i = LAYER_ORDER.indexOf(l as any); return i < 0 ? LAYER_ORDER.length : i; };
+      const selEls = f0.elements.filter((e) => ids.has(e.id));
+      if (!selEls.length) return;
+      const box0 = unionRects(selEls.map((e) => elementBounds(e)))!;
+      const front = where === 'front';
+      let targetLayer: string | null = null;
+      for (const e of f0.elements) {
+        if (ids.has(e.id) || !isVisibleInVariant(e, variant0) || hidden.has(e.layer)) continue;
+        const r = elementBounds(e);
+        if (!(r.x <= box0.x + box0.w && box0.x <= r.x + r.w && r.y <= box0.y + box0.h && box0.y <= r.y + r.h)) continue;
+        if (targetLayer === null || (front ? rank0(e.layer) > rank0(targetLayer) : rank0(e.layer) < rank0(targetLayer))) targetLayer = e.layer;
+      }
       get().mutateFloor((fd) => {
-        const sel = fd.elements.filter((e) => ids.has(e.id));
+        const sel = fd.elements.filter((e) => ids.has(e.id)).map((e) => {
+          if (!targetLayer) return e;
+          const better = front ? rank0(targetLayer) > rank0(e.layer) : rank0(targetLayer) < rank0(e.layer);
+          return better ? { ...e, layer: targetLayer } : e;
+        });
         const rest = fd.elements.filter((e) => !ids.has(e.id));
-        fd.elements = where === 'front' ? [...rest, ...sel] : [...sel, ...rest];
+        fd.elements = (front ? [...rest, ...sel] : [...sel, ...rest]) as any;
       });
       return;
     }
