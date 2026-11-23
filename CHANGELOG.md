@@ -1,5 +1,9 @@
 # Journal des versions
 
+## 2.0.51 - novembre 2026
+- **Milieu du couloir visible** : en traçant, un repère vert en pointillés va d’un mur à l’autre et marque le milieu où le point se pose.
+- **Centrage seulement dans les couloirs** : dans vos zones de circulation coloriées (ou un passage de 2,5 m au plus) ; dans un local, le point reste où vous cliquez.
+
 ## 2.0.50 - novembre 2026
 - **Itinéraires au milieu du couloir** : en traçant, chaque point se cale à égale distance des murs (Alt : libre) ; boutons « Centrer » et « Centrer tous les itinéraires » pour les tracés existants.
 - **Aperçu norme ISO** : les pictogrammes ne grandissent que jusqu’à la place disponible entre les murs (plus de débordement) ; une alerte signale ceux restés sous 7 mm et propose le format supérieur (1:100 dès que le plan y tient).
