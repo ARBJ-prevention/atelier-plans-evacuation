@@ -382,7 +382,23 @@ export function Canvas({ onCalibrate }: CanvasProps) {
           if (atEnd) {
             pts2[pts2.length - 1] = hit.proj;
             pts2 = cutTowardEnd(pts2);
-            { const ax = onTarget(pts2[pts2.length - 1]); if (distance(ax, pts2[pts2.length - 1]) > 0.5) pts2.push(ax); }
+            // Fusion en douceur, en miroir du virage de l'itinéraire rejoint : le tracé
+            // descend jusqu'à l'axe de la bande puis tourne dans le sens de sa marche.
+            const q = pts2[pts2.length - 1];
+            const C = onTarget(q);
+            let k = 0, bd = Infinity;
+            for (let i = 0; i + 1 < target.length; i++) { const d = distToSegment(C, target[i], target[i + 1]); if (d < bd) { bd = d; k = i; } }
+            const ta = target[k], tb = target[k + 1] ?? target[k];
+            const tl = distance(ta, tb) || 1;
+            const flow: Pt = [(tb[0] - ta[0]) / tl, (tb[1] - ta[1]) / tl];
+            const prev = pts2.length >= 2 ? pts2[pts2.length - 2] : q;
+            const al = distance(prev, C) || 1;
+            const app: Pt = [(C[0] - prev[0]) / al, (C[1] - prev[1]) / al];
+            if (Math.abs(app[0] * flow[0] + app[1] * flow[1]) < 0.7 && pts2.length >= 2) {
+              const R = Math.max(hit.ref.cornerRadius || 0, hit.ref.width * 2);
+              pts2[pts2.length - 1] = C;
+              pts2.push([C[0] + flow[0] * R * 1.2, C[1] + flow[1] * R * 1.2]);
+            } else if (distance(C, q) > 0.5) pts2.push(C);
             Object.assign(el, { arrowEnd: false, arrowStart: false, joinEnd: true });
           } else {
             pts2[0] = hit.proj;
