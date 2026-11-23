@@ -1,5 +1,9 @@
 # Journal des versions
 
+## 2.0.42 - novembre 2026
+- **Premier plan / Arrière-plan** : l’élément passe vraiment devant (ou derrière) tout ce qui le chevauche, même sur un autre calque (ex. une porte coupe-feu sous une zone colorée).
+- **Chevrons dans les virages** : les chevrons répétés suivent le tracé arrondi et tournent avec la flèche.
+
 ## 2.0.41 - novembre 2026
 - **Couleur des chevrons répétés** : dans Flèches, choisissez Blanc, Trait (même couleur que le tracé, idéal sur un trait en tirets) ou Autre.
 
