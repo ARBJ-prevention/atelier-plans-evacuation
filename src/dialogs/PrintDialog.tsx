@@ -12,6 +12,9 @@ import { Icon } from '../ui/icons';
 import { BuildingExport } from './BuildingExport';
 import { PrintPreviewPane, PrintReview, usePrintEscape, type EditPrintIssue, type ReviewReturn } from './PrintReview';
 
+/** Blocs que la norme ISO 23601 impose sur la page (voir normBase dans layout.ts). */
+const NORM_FORCED: readonly string[] = ['showTitleBlock', 'showFooter', 'showLegend'];
+
 export function PrintDialog({ onClose, onEdit, currentOnly = false, focusScale = false, back }: {
   onClose(): void; onEdit: EditPrintIssue; currentOnly?: boolean; focusScale?: boolean; back?: ReviewReturn | null;
 }) {
@@ -245,8 +248,12 @@ export function PrintDialog({ onClose, onEdit, currentOnly = false, focusScale =
           {([['showTitleBlock', 'En-tête'], ['showFooter', 'Cartouche (auteur, date, version)'], ['showLegend', 'Légende'], ['showInstructions', 'Consignes'],
             ['showEmergencyNumbers', 'Numéros d’urgence'], ['showAerial', 'Vue aérienne du site'], ['showSketch', 'Croquis de situation'], ['showScaleBar', 'Barre d’échelle'],
             ['showNorth', 'Flèche du nord'], ['showWatermark', 'Filigrane « Brouillon / À valider »'], ['showFrame', 'Cadre de page (thèmes encadrés)']] as const).map(([k, label]) => (
-            <label key={k} className="check"><input type="checkbox" checked={!!page[k]} onChange={(e) => set({ [k]: e.target.checked } as any)} /> {label}</label>
+            NORM_FORCED.includes(k) && normOn(page)
+              ? <label key={k} className="check" title="Imposé par la norme ISO 23601 : décochez « Appliquer la norme ISO 23601 » (rubrique Norme) pour pouvoir le retirer">
+                  <input type="checkbox" checked disabled /> {label} <span className="muted small">(imposé par la norme)</span></label>
+              : <label key={k} className="check"><input type="checkbox" checked={!!page[k]} onChange={(e) => set({ [k]: e.target.checked } as any)} /> {label}</label>
           ))}
+          {normOn(page) && <p className="muted small">La norme ISO 23601 est active : l’en-tête, le cartouche et la légende restent affichés. Décochez « Appliquer la norme ISO 23601 » pour les retirer.</p>}
           {page.showNorth && (
             <label className="field inline"><span>Angle du nord (°)</span>
               <input type="number" min={-360} max={360} value={page.northAngle} onChange={(e) => set({ northAngle: Number(e.target.value) || 0 })} />

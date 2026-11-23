@@ -1,4 +1,4 @@
-import { isVisibleInVariant } from '../model/geometry';
+import { distance, isVisibleInVariant } from '../model/geometry';
 import type { AreaElement, Element, Floor, Pt, ShapeElement } from '../model/types';
 import { polygonAreaAbs, simplify, traceRegion } from './recognize';
 
@@ -244,6 +244,56 @@ function hideUnderRooms(floor: Floor, variantId: string, ignoreId: string | unde
  * pour que les morceaux couvrent toute la zone. Les recoins de moins de 1 m² rejoignent le local voisin.
  * Chaque morceau reprend le nom de la pièce ou du texte qu'il contient.
  */
+/**
+ * Angles sous les murs : le partage de l'épaisseur d'un angle de murs entre deux locaux laisse une
+ * diagonale en escalier (plusieurs points). Une suite de petits côtés située dans les murs, entre deux
+ * longs côtés à peu près perpendiculaires, est remplacée par le coin où ces deux côtés se croisent,
+ * pourvu que ce coin soit lui aussi sous un mur (le changement reste invisible et le local est net).
+ */
+function squareWallCorners(mk: Mask, pts: Pt[]): Pt[] {
+  const { res, x0, y0, W, H, grid, m } = mk;
+  const inWall = (p: P, slack = 1) => {
+    const gx = Math.floor((p[0] - x0) / res), gy = Math.floor((p[1] - y0) / res);
+    for (let dy = -slack; dy <= slack; dy++) for (let dx = -slack; dx <= slack; dx++) {
+      const x = gx + dx, y = gy + dy;
+      if (x >= 0 && y >= 0 && x < W && y < H && grid[y * W + x]) return true;
+    }
+    return false;
+  };
+  const shortLen = Math.max(0.6 * m, 4 * res), longLen = Math.max(0.3 * m, 3 * res);
+  let poly = pts.map((p) => [p[0], p[1]] as P);
+  for (let pass = 0; pass < 4 && poly.length > 4; pass++) {
+    const n = poly.length;
+    const len = (i: number) => distance(poly[i], poly[(i + 1) % n]);
+    let changed = false;
+    for (let i = 0; i < n && !changed; i++) {
+      // côté long i (poly[i] → poly[i+1]), puis une suite de petits côtés, puis un côté long j
+      if (len(i) < longLen || len((i + 1) % n) >= shortLen) continue;
+      let j = (i + 1) % n, run = 0;
+      while (len(j) < shortLen && run < n - 3) { j = (j + 1) % n; run++; }
+      if (run < 2 || len(j) < longLen) continue; // au moins deux petits côtés : un vrai escalier
+      const a = poly[i], b = poly[(i + 1) % n], c = poly[j], d = poly[(j + 1) % n];
+      const ux = b[0] - a[0], uy = b[1] - a[1], vx = d[0] - c[0], vy = d[1] - c[1];
+      const lu = Math.hypot(ux, uy), lv = Math.hypot(vx, vy);
+      const den = ux * vy - uy * vx;
+      if (Math.abs(den) / (lu * lv) < 0.95) continue; // pas perpendiculaires
+      const t = ((c[0] - a[0]) * vy - (c[1] - a[1]) * vx) / den;
+      const corner: P = [a[0] + ux * t, a[1] + uy * t];
+      if (distance(corner, b) > shortLen * 1.5 || distance(corner, c) > shortLen * 1.5) continue;
+      const between: P[] = [];
+      for (let k = (i + 1) % n; k !== (j + 1) % n; k = (k + 1) % n) between.push(poly[k]);
+      if (!inWall(corner) || !between.every((p) => inWall(p))) continue;
+      const keep: P[] = [];
+      for (let k = (j + 1) % n; k !== (i + 1) % n; k = (k + 1) % n) keep.push(poly[k]);
+      poly = [...keep, corner];
+      changed = true;
+    }
+    if (!changed) break;
+  }
+  const rd = (v: number) => Math.round(v * 100) / 100;
+  return poly.map((p) => [rd(p[0]), rd(p[1])] as Pt);
+}
+
 export function splitIntoRooms(floor: Floor, variantId: string, outline: P[], ignoreId?: string, gapMeters = 1.6): RoomPiece[] | null {
   const mk = buildingMask(floor, variantId, ignoreId, gapMeters);
   if (!mk) return null;
@@ -369,8 +419,9 @@ export function splitIntoRooms(floor: Floor, variantId: string, outline: P[], ig
     for (const c of list) reg[c] = 1;
     // contour serré (au plus une demi-cellule d'écart) : chaque morceau est simplifié seul, une tolérance
     // plus large écarterait deux voisins de part et d'autre de leur frontière commune (jours, chevauchements)
-    const pts = toPolygon(mk, reg, 0.25, 0.5);
+    const raw = toPolygon(mk, reg, 0.25, 0.5);
     for (const c of list) reg[c] = 0;
+    const pts = raw && squareWallCorners(mk, raw);
     if (pts) pieces.push({ points: pts, label: names.get(id) ?? '' });
   }
   return pieces.length ? pieces : null;

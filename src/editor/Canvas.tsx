@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from
 import { makeElement } from '../model/defaults';
 import { getCountry } from '../model/countries';
 import {
-  boxOf, constrain45, distance, distToSegment, elementBounds, floorContentBounds, isVisibleInVariant,
+  boxOf, constrain45, constrainWallTo45, straightnessLabel, distance, distToSegment, elementBounds, floorContentBounds, isVisibleInVariant,
   openingWallFit, openingShortWall, polylineLength, dimensionOffsetAt, formatLength, raiseOpeningAboveWalls, snapPointToWalls, wallJoints, rectContains, rectFromPoints, rectsIntersect, RESIZE_DIRECTIONS, resizeBoxElement, rotatePoint, roundDoorWidth, snapSymbolToWalls, snapToGrid, translateElement,
   unionRects, windowGlassWallFit, windowResizeWallFit, type Rect,
 } from '../model/geometry';
@@ -234,6 +234,15 @@ export function Canvas({ onCalibrate }: CanvasProps) {
     setWallHint(hit ? hit.point : null);
     setWallFaceGuides(hit ? hit.faces : []);
     return hit ? hit.point : snap(p, e);
+  };
+
+  /** Maj : tracé à 45°, arrêté sur l'axe du mur visé (sinon le point accroché serait décalé et dépasserait). */
+  const wall45 = (from: Pt, p: Pt, sp: Pt, e: { altKey: boolean }, exclude: Set<string> = new Set(), ownThickness?: number): Pt => {
+    const st = useStore.getState();
+    if (e.altKey) return constrain45(from, sp);
+    const pt = constrainWallTo45(floor, variantId, from, p, 10 / st.view.zoom, exclude, ownThickness ?? st.presets.wallThickness ?? 0);
+    setWallHint(pt);
+    return pt;
   };
 
   // ——— Zoom à la molette (autour du curseur) ———
@@ -479,7 +488,7 @@ export function Canvas({ onCalibrate }: CanvasProps) {
         // (un 2e clic rapide sur un mur à un seul point doit poser la fin du mur, pas l'annuler)
         if (e.detail >= 2 && !(s.tool === 'wall' && draft.length === 1)) { finishPoly(draft); return; }
         const last = draft[draft.length - 1];
-        const pt = last && e.shiftKey ? constrain45(last, sp) : sp;
+        const pt = last && e.shiftKey ? (s.tool === 'wall' ? wall45(last, p, sp, e) : constrain45(last, sp)) : sp;
         // Fermeture d'une pièce en cliquant sur le premier point
         if ((s.tool === 'room' || s.tool === 'zone') && draft.length >= 3 && distance(pt, draft[0]) < 10 / s.view.zoom) {
           finishPoly(draft); return;
@@ -582,7 +591,7 @@ export function Canvas({ onCalibrate }: CanvasProps) {
     const p = toWorld(e.clientX, e.clientY);
     const sp = (s.tool === 'wall' || s.tool === 'dimension' || s.tool === 'measure') && !drag.current ? snapWall(p, e) : snap(p, e);
     if (s.tool !== 'wall' && !drag.current && wallHint) { setWallHint(null); setWallFaceGuides([]); }
-    setCursor((POLY_TOOLS.includes(s.tool) || (s.tool === 'dimension' && draft.length === 1)) && draft.length && e.shiftKey ? constrain45(draft[draft.length - 1], sp) : (s.tool === 'calibrate' ? p : sp));
+    setCursor((POLY_TOOLS.includes(s.tool) || (s.tool === 'dimension' && draft.length === 1)) && draft.length && e.shiftKey ? (s.tool === 'wall' ? wall45(draft[draft.length - 1], p, sp, e) : constrain45(draft[draft.length - 1], sp)) : (s.tool === 'calibrate' ? p : sp));
     const d = drag.current;
     if (!d) return;
     switch (d.kind) {
@@ -698,7 +707,7 @@ export function Canvas({ onCalibrate }: CanvasProps) {
         let pt = el?.type === 'wall' ? snapWall(p, e, new Set([d.id, ...(d.joints ?? []).map((j) => j.id)]), el.thickness) : sp;
         if (e.shiftKey && el?.points) {
           const ref = el.points[d.index - 1] ?? el.points[d.index + 1];
-          if (ref) pt = constrain45(ref, sp);
+          if (ref) pt = el.type === 'wall' ? wall45(ref, p, sp, e, new Set([d.id, ...(d.joints ?? []).map((j) => j.id)]), el.thickness) : constrain45(ref, sp);
         }
         const joints = d.joints ?? [];
         s.mutateFloor((f) => {
@@ -1010,12 +1019,15 @@ export function Canvas({ onCalibrate }: CanvasProps) {
     const label = floor.unitsPerMeter > 0
       ? `${(seg / floor.unitsPerMeter).toFixed(2)} m  (total ${(polylineLength(pts) / floor.unitsPerMeter).toFixed(2)} m)`
       : `${Math.round(seg)} u`;
+    const dir = tool === 'wall' && seg > 0.5 ? straightnessLabel(draft[draft.length - 1], cursor) : null;
     preview = (
       <g className="preview" pointerEvents="none">
         {tmp && <g opacity={0.7}><ElementView el={tmp} ctx={{ floor, variantId, customSymbols: project.customSymbols, interactive: true }} /></g>}
         <polyline points={pts.map((q) => q.join(',')).join(' ')} className="draft-line" />
         {draft.map((q, i) => <circle key={i} cx={q[0]} cy={q[1]} r={3 / z} className="draft-pt" />)}
         <text x={cursor[0] + 12 / z} y={cursor[1] - 12 / z} fontSize={12 / z} className="measure">{label}</text>
+        {dir && <text x={cursor[0] + 12 / z} y={cursor[1] + 4 / z} fontSize={12 / z} className="measure"
+          style={{ fill: dir.straight ? '#00843d' : '#c2410c', fontWeight: 600 }}>{dir.text}{dir.straight ? '' : ' (Maj : tracé droit)'}</text>}
       </g>
     );
   }

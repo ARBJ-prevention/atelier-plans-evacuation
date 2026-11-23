@@ -3,6 +3,7 @@ import { buildSampleProject } from '../src/app/sample';
 import { makeElement, newProject } from '../src/model/defaults';
 import { elementBounds, floorContentBounds, openingWallFit } from '../src/model/geometry';
 import { currentFloor, currentVariantId, useStore } from '../src/store/store';
+import { splitIntoRooms } from '../src/services/footprint';
 
 const floorOf = () => currentFloor(useStore.getState())!;
 
@@ -310,5 +311,23 @@ describe('Limiter au bâtiment', () => {
     expect(b.x).toBeGreaterThan(-6); expect(b.y).toBeGreaterThan(-6);
     expect(b.x + b.w).toBeLessThan(1506); expect(b.y + b.h).toBeLessThan(906);
     expect(b.w).toBeGreaterThan(1490); expect(b.h).toBeGreaterThan(890);
+  });
+});
+
+describe('Découper en locaux : angles de murs', () => {
+  it('ne laisse pas de diagonale en escalier dans les angles sous les murs', () => {
+    const w = (pts: number[][], t: number, closed = false) => makeElement('wall', { points: pts, thickness: t, closed, layer: 'building' });
+    const floor: any = { unitsPerMeter: 50, layers: [{ id: 'building', visible: true }], variants: [], elements: [
+      w([[0, 0], [1000, 0], [1000, 600], [0, 600]], 20, true),
+      w([[400, 0], [400, 600]], 12), w([[400, 300], [1000, 300]], 12), w([[700, 0], [700, 300]], 8),
+    ] };
+    const pieces = splitIntoRooms(floor, 'v', [[-50, -50], [1050, -50], [1050, 650], [-50, 650]])!;
+    expect(pieces).toHaveLength(4);
+    for (const p of pieces) {
+      const n = p.points.length;
+      const diagonals = p.points.filter((q, i) => { const r = p.points[(i + 1) % n]; return Math.abs(q[0] - r[0]) > 0.5 && Math.abs(q[1] - r[1]) > 0.5; });
+      expect(diagonals).toHaveLength(0);
+      expect(n).toBeLessThanOrEqual(8);
+    }
   });
 });

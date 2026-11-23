@@ -304,8 +304,60 @@ export function constrain45(from: Pt, to: Pt): Pt {
   return [from[0] + Math.cos(ang) * len, from[1] + Math.sin(ang) * len];
 }
 
+/**
+ * Rectitude d'un segment : angle à l'écran (0° = horizontal, 90° = vertical), direction droite la plus
+ * proche (multiple de 45°) et écart en degrés par rapport à elle.
+ */
+export function segmentStraightness(a: Pt, b: Pt): { angle: number; nearest: number; deviation: number } {
+  let angle = (Math.atan2(-(b[1] - a[1]), b[0] - a[0]) * 180) / Math.PI;
+  angle = ((angle % 180) + 180) % 180;
+  const nearest = (Math.round(angle / 45) * 45) % 180;
+  let deviation = Math.abs(angle - nearest);
+  if (deviation > 90) deviation = 180 - deviation;
+  return { angle, nearest, deviation };
+}
+
+/** Libellé court : « horizontal », « vertical », « 45° », avec l'écart s'il dépasse 0,05°. */
+export function straightnessLabel(a: Pt, b: Pt): { text: string; straight: boolean } {
+  const { angle, nearest, deviation } = segmentStraightness(a, b);
+  const name = nearest === 0 ? 'horizontal' : nearest === 90 ? 'vertical' : `${nearest}°`;
+  const fr = (v: number, d = 1) => v.toFixed(d).replace('.', ',');
+  if (deviation < 0.05) return { text: `${name} ✓`, straight: true };
+  return { text: `${fr(angle)}° · écart ${fr(deviation)}° / ${name}`, straight: false };
+}
+
+/** Redresse chaque segment sur le multiple de 45° le plus proche, longueurs conservées, premier point fixe. */
+export function straightenPolyline(points: Pt[]): Pt[] {
+  const out: Pt[] = [points[0]];
+  for (let i = 1; i < points.length; i++) {
+    const prev = out[i - 1];
+    out.push(constrain45(prev, [prev[0] + points[i][0] - points[i - 1][0], prev[1] + points[i][1] - points[i - 1][1]]));
+  }
+  return out;
+}
+
 export function snapToGrid(p: Pt, size: number): Pt {
   return [Math.round(p[0] / size) * size, Math.round(p[1] / size) * size];
+}
+
+/** Nombre de quarts de tour (0 à 3) d'une rotation en degrés. */
+export function quarterTurns(rotation = 0): number {
+  return ((Math.round(rotation / 90) % 4) + 4) % 4;
+}
+
+/**
+ * Passe les côtés collés (repère du plan) au repère du dessin du panneau : le dessin est d'abord
+ * retourné (miroirs), puis tourné. Un côté local est fusionné si sa direction finale l'est.
+ */
+export function fuseSidesLocal(near: FuseSides, rotation = 0, flipX = false, flipY = false): FuseSides {
+  const dir: Record<keyof FuseSides, [number, number]> = { r: [1, 0], b: [0, 1], l: [-1, 0], t: [0, -1] };
+  const q = quarterTurns(rotation);
+  const world = ([x, y]: [number, number]): keyof FuseSides => {
+    let vx = flipX ? -x : x, vy = flipY ? -y : y;
+    for (let i = 0; i < q; i++) [vx, vy] = [-vy, vx]; // +90° à l'écran (y vers le bas)
+    return vx > 0 ? 'r' : vx < 0 ? 'l' : vy > 0 ? 'b' : 't';
+  };
+  return { l: near[world(dir.l)], r: near[world(dir.r)], t: near[world(dir.t)], b: near[world(dir.b)] };
 }
 
 export interface FuseSides { l: boolean; r: boolean; t: boolean; b: boolean }
@@ -313,7 +365,7 @@ export interface FuseSides { l: boolean; r: boolean; t: boolean; b: boolean }
 /** Panneau pouvant être fusionné (signal carré non tourné, hors symboles de plan). */
 function fusable(el: SymbolElement): boolean {
   if (el.fuse === false || el.halo) return false;
-  if (((el.rotation || 0) % 360 + 360) % 360 !== 0) return false;
+  if (((el.rotation || 0) % 90 + 90) % 90 !== 0) return false; // quart de tour accepté (flèche vers le bas…)
   return !getBuiltinSymbol(el.symbolId)?.planSymbol && !el.symbolId.startsWith('you-are-here') && el.symbolId !== 'north';
 }
 
@@ -324,11 +376,15 @@ function fusable(el: SymbolElement): boolean {
 export function symbolFuseSides(el: SymbolElement, floor: Floor | null | undefined, variantId: string): FuseSides {
   const out: FuseSides = { l: false, r: false, t: false, b: false };
   if (!floor || !fusable(el)) return out;
-  const w = el.size * (el.stretchX ?? 1), h = el.size * (el.stretchY ?? 1);
+  const dims = (e: SymbolElement) => {
+    const sw = e.size * (e.stretchX ?? 1), sh = e.size * (e.stretchY ?? 1);
+    return quarterTurns(e.rotation) % 2 ? [sh, sw] : [sw, sh];
+  };
+  const [w, h] = dims(el);
   const a = { x0: el.x - w / 2, x1: el.x + w / 2, y0: el.y - h / 2, y1: el.y + h / 2 };
   for (const o of floor.elements) {
     if (o.type !== 'symbol' || o.id === el.id || o.layer !== el.layer || !isVisibleInVariant(o, variantId) || !fusable(o)) continue;
-    const ow = o.size * (o.stretchX ?? 1), oh = o.size * (o.stretchY ?? 1);
+    const [ow, oh] = dims(o);
     const b = { x0: o.x - ow / 2, x1: o.x + ow / 2, y0: o.y - oh / 2, y1: o.y + oh / 2 };
     const tol = 0.08 * Math.min(el.size, o.size);
     const overlapY = Math.min(a.y1, b.y1) - Math.max(a.y0, b.y0);
@@ -354,6 +410,36 @@ function* visibleWalls(floor: Floor, variantId: string, exclude: Set<string>) {
   for (const el of floor.elements) {
     if (el.type === 'wall' && el.points.length >= 2 && !exclude.has(el.id) && isVisibleInVariant(el, variantId)) yield el;
   }
+}
+
+/**
+ * Tracé droit (Maj) d'un mur : direction arrondie à 45° depuis `from`, puis arrêt sur l'axe du mur
+ * visé le long de cette direction, pour que le nouveau mur s'imbrique sans dépasser.
+ */
+export function constrainWallTo45(
+  floor: Floor, variantId: string, from: Pt, to: Pt, tolerance: number, exclude: Set<string> = new Set(), ownThickness = 0,
+): Pt {
+  const c = constrain45(from, to);
+  const len = distance(from, c);
+  if (!len) return c;
+  const dx = (c[0] - from[0]) / len, dy = (c[1] - from[1]) / len;
+  let best: Pt = c, bestGap = Infinity;
+  for (const w of visibleWalls(floor, variantId, exclude)) {
+    const reach = tolerance + ((w.thickness || 0) + ownThickness) / 2;
+    const n = w.points.length, segs = w.closed ? n : n - 1;
+    for (let i = 0; i < segs; i++) {
+      const a = w.points[i], b = w.points[(i + 1) % n];
+      const ex = b[0] - a[0], ey = b[1] - a[1];
+      const den = dx * ey - dy * ex;
+      if (Math.abs(den) < 1e-9 * Math.hypot(ex, ey)) continue; // parallèle
+      const t = ((a[0] - from[0]) * ey - (a[1] - from[1]) * ex) / den; // distance le long du tracé
+      const u = ((a[0] - from[0]) * dy - (a[1] - from[1]) * dx) / den; // position sur le segment visé
+      if (t <= 0.5 || u < -1e-6 || u > 1 + 1e-6) continue;
+      const gap = Math.abs(t - len);
+      if (gap <= reach && gap < bestGap) { bestGap = gap; best = [from[0] + dx * t, from[1] + dy * t]; }
+    }
+  }
+  return best;
 }
 
 /** Lignes des deux faces d'un segment de mur (décalées de ± épaisseur/2), prolongées loin de part et d'autre. */

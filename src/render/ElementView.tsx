@@ -1,5 +1,5 @@
 import React from 'react';
-import { boxOf, dimensionGeometry, doorDimensions, formatLength, isVisibleInVariant, legendSize, openingHostFit, polygonArea, symbolFuseSides, textSize, usedSymbolIds, windowFrameWidth, type FuseSides } from '../model/geometry';
+import { boxOf, dimensionGeometry, doorDimensions, formatLength, isVisibleInVariant, legendSize, openingHostFit, polygonArea, symbolFuseSides, fuseSidesLocal, textSize, usedSymbolIds, windowFrameWidth, type FuseSides } from '../model/geometry';
 import { hereCallout, type HereCallout } from '../model/hereCallout';
 import type {
   ArrowStyle, CustomSymbol, DashStyle, DimensionElement, Element, FillPattern, Floor, Pt, RouteElement, ShapeElement, SymbolElement,
@@ -396,8 +396,8 @@ function SymbolView({ el: el0, ctx }: { el: SymbolElement; ctx: RenderCtx }) {
   const ly = pos === 'below' ? offY + ls * 0.8 : pos === 'above' ? -offY : ls * 0.35;
   const stretch = sx !== 1 || sy !== 1 ? `scale(${sx} ${sy})` : '';
   const near = symbolFuseSides(el, ctx.floor, ctx.variantId);
-  // Les côtés s'inversent avec le miroir horizontal / vertical.
-  const fuse = { l: el.flipX ? near.r : near.l, r: el.flipX ? near.l : near.r, t: el.flipY ? near.b : near.t, b: el.flipY ? near.t : near.b };
+  // Les côtés suivent le miroir et le quart de tour du panneau.
+  const fuse = fuseSidesLocal(near, el.rotation, el.flipX, el.flipY);
   const anchor = pos === 'right' ? 'start' : pos === 'left' ? 'end' : 'middle';
   return (
     <g transform={`translate(${el.x} ${el.y})`}>

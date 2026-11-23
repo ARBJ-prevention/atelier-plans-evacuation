@@ -1,5 +1,11 @@
 # Journal des versions
 
+## 2.0.38 - novembre 2026
+- **Murs droits** : avec Maj, une cloison s’arrête exactement sur l’axe du mur visé (elle ne dépasse plus). Pendant le tracé, l’angle s’affiche (vert « vertical ✓ / horizontal ✓ », orange avec l’écart s’il dévie). Le panneau d’un mur indique la direction de chaque segment et propose « Redresser le mur ».
+- **Découper en locaux** : plus de diagonales en escalier (points en trop) dans les angles de murs ; le coin est net.
+- **En-tête et cartouche** : quand la norme ISO 23601 est active, ces blocs (et la légende) sont imposés ; les cases sont grisées avec une explication au lieu de ne rien faire.
+- **Pictogrammes collés** : la fusion (sans liseré blanc) fonctionne aussi avec un panneau tourné, par exemple une flèche vers le bas à côté d’une sortie de secours, y compris après miroir.
+
 ## 2.0.37 - novembre 2026
 - **Porte trop large pour le mur** : quand une porte ou une fenêtre ne peut pas s’accrocher parce que le tronçon de mur visé est plus court qu’elle, un message l’explique (largeur de l’ouverture, longueur du tronçon) et propose de réduire la largeur ou de retracer le mur en un seul segment.
 

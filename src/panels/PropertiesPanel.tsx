@@ -4,7 +4,7 @@ import * as A from '../app/actions';
 import { scopeLabel, scopeOf, selectionScope, setScopeAction } from '../app/scope';
 import { COUNTRIES, getCountry } from '../model/countries';
 import { defaultShadow, EMERGENCY_NUMBERS, FONTS, LAYER_NAMES } from '../model/defaults';
-import { boxOf, distance, formatLength, polygonArea, polylineLength } from '../model/geometry';
+import { boxOf, distance, formatLength, polygonArea, polylineLength, straightenPolyline, straightnessLabel } from '../model/geometry';
 import type { DashStyle, Element, FillPattern, Floor, LayerId, PageSetup, PageTheme } from '../model/types';
 import { symbolName } from '../render/ElementView';
 import { FRAME_ZONES, frameOn, THEMES, themePatch } from '../render/layout';
@@ -529,6 +529,28 @@ function ElementProps({ el, floor }: { el: Element; floor: Floor }) {
                 <Row label="Épaisseur"><Num value={e.thickness} min={1} max={200} onChange={(v) => useStore.getState().setWallThickness([el.id], v)} suffix={u > 0 ? `${((e.thickness / u) * 100).toFixed(0)} cm` : 'u'} /></Row>
                 <Row label="Fermé"><Toggle checked={e.closed} onChange={(v) => upd({ closed: v })} /></Row>
                 <p className="muted small">{e.points.length} points · longueur {len(polylineLength(e.points))}</p>
+                {(() => {
+                  const n = e.points.length, segs = e.closed ? n : n - 1;
+                  if (segs < 1 || segs > 6) return null;
+                  const rows = Array.from({ length: segs }, (_, i) => straightnessLabel(e.points[i], e.points[(i + 1) % n]));
+                  const crooked = rows.some((r) => !r.straight);
+                  return (
+                    <>
+                      {rows.map((r, i) => (
+                        <p key={i} className="small" style={{ margin: '2px 0', color: r.straight ? '#00843d' : '#c2410c', fontWeight: 600 }}>
+                          {segs > 1 ? `Segment ${i + 1} : ` : 'Direction : '}{r.text}
+                        </p>
+                      ))}
+                      {crooked && (
+                        <button className="btn small full" title="Aligne chaque segment sur l’horizontale, la verticale ou 45° le plus proche (le premier point ne bouge pas)"
+                          onClick={() => useStore.getState().mutateFloor((f) => {
+                            const w = f.elements.find((x) => x.id === el.id) as any;
+                            if (w) w.points = straightenPolyline(w.points);
+                          })}>Redresser le mur</button>
+                      )}
+                    </>
+                  );
+                })()}
               </Section>
             )}
             {el.type === 'shape' && (

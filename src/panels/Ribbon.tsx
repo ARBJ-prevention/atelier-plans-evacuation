@@ -6,7 +6,7 @@ import { makeElement } from '../model/defaults';
 import { ElementView } from '../render/ElementView';
 import type { PageSetup, PageTheme } from '../model/types';
 import { PRINT_ISSUE_LEVEL, printIssues, STATUS_LABEL } from '../render/PrintPage';
-import { headerColorValue, horizonNight, THEMES, themePatch, themeColor } from '../render/layout';
+import { headerColorValue, horizonNight, normOn, THEMES, themePatch, themeColor } from '../render/layout';
 import { api } from '../services/api';
 import { currentBuilding, currentFloor, currentVariantId, MAX_SYMBOL_WALL_GAP, useStore, type Tool, type ToolPresets } from '../store/store';
 import { Icon } from '../ui/icons';
@@ -571,7 +571,13 @@ function PageTab({ page, onPreview }: { page: PageSetup; onPreview(): void }) {
       <Group title="Éléments de la page">
         <DropButton big icon="legendIcon" label="Blocs affichés" title="Choisir les blocs présents sur la page" wide>
           <MenuHead>Afficher sur la page</MenuHead>
-          {toggles.map(([k, l]) => <MenuItem key={k} check keepOpen label={l} active={!!page[k]} onClick={() => set({ [k]: !page[k] } as any)} />)}
+          {toggles.map(([k, l]) => {
+            const forced = normOn(page) && (k === 'showTitleBlock' || k === 'showFooter' || k === 'showLegend');
+            return <MenuItem key={k} check keepOpen label={forced ? `${l} (norme)` : l} active={forced || !!page[k]}
+              onClick={() => forced
+                ? useStore.getState().toast(`« ${l} » est imposé par la norme ISO 23601. Désactivez la norme dans « Tous les réglages » pour le retirer.`, 'info')
+                : set({ [k]: !page[k] } as any)} />;
+          })}
         </DropButton>
       </Group>
       <Group title="Réglages">
