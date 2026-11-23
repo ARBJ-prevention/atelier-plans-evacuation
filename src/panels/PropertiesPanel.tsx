@@ -284,6 +284,22 @@ function MultiProps({ els }: { els: Element[] }) {
             </>
           );
         })()}
+        {els.some((e) => e.type === 'area' && !!e.label.trim()) && (() => {
+          const on = els.every((e) => e.type !== 'area' || !e.label.trim() || !!e.labelBg);
+          return (
+            <button className="btn small" style={{ width: '100%', marginBottom: 6 }}
+              title="Nom et numéro des locaux sur une étiquette bleu foncé, texte blanc"
+              onClick={() => S().mutateFloor((f) => {
+                f.elements.forEach((e) => {
+                  if (!ids.has(e.id) || e.type !== 'area' || !e.label.trim()) return;
+                  if (on) Object.assign(e, { labelBg: '', labelColor: '#111111' });
+                  else Object.assign(e, { labelBg: '#1f3a5f', labelColor: '#ffffff', labelBold: true });
+                });
+              })}>
+              <Icon name="text" size={15} /> {on ? 'Retirer les étiquettes des noms' : 'Noms en étiquette bleu foncé'}
+            </button>
+          );
+        })()}
         {els.some((e) => e.type === 'area' && !!e.label.trim()) && (
           <button className="btn small" style={{ width: '100%', marginBottom: 6 }}
             title="Efface le nom affiché dans les zones et pièces sélectionnées (les textes indépendants ne sont pas touchés)"
@@ -776,6 +792,7 @@ function TextTab({ el, upd, textRef, floor }: { el: Element; upd(p: Record<strin
         <Row label="Taille"><Num value={e.labelSize} min={4} max={200} onChange={(v) => upd({ labelSize: v })} /></Row>
         <Row label="Couleur"><Color value={e.labelColor} onChange={(v) => upd({ labelColor: v })} /></Row>
         <Row label="Gras"><Toggle checked={e.labelBold} onChange={(v) => upd({ labelBold: v })} /></Row>
+        <Row label="Étiquette" hint="Fait ressortir le nom et le numéro du local"><Seg value={e.labelBg ? (e.labelBg === '#1f3a5f' ? 'navy' : 'custom') : 'none'} options={[['none', 'Aucune'], ['navy', 'Bleu foncé']]} onChange={(v) => upd(v === 'navy' ? { labelBg: '#1f3a5f', labelColor: '#ffffff', labelBold: true } : v === 'none' ? { labelBg: '', labelColor: e.labelBg ? '#111111' : e.labelColor } : {})} /></Row>
         <Row label="Afficher la surface" hint="Nécessite l’étalonnage de l’échelle"><Toggle checked={e.showArea} onChange={(v) => upd({ showArea: v })} /></Row>
         <Row label="Décalage (X, Y)"><span className="row gap"><Num value={e.labelDx} width={60} onChange={(v) => upd({ labelDx: v })} /><Num value={e.labelDy} width={60} onChange={(v) => upd({ labelDy: v })} /></span></Row>
       </Section>

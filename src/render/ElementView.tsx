@@ -1,5 +1,5 @@
 import React from 'react';
-import { boxOf, dimensionGeometry, doorDimensions, formatLength, isVisibleInVariant, legendSize, openingHostFit, polygonArea, symbolFuseSides, fuseSidesLocal, textSize, usedSymbolIds, windowFrameWidth, type FuseSides } from '../model/geometry';
+import { boxOf, DEFAULT_SYMBOL_WALL_GAP, snapSymbolToWalls, dimensionGeometry, doorDimensions, formatLength, isVisibleInVariant, legendSize, openingHostFit, polygonArea, symbolFuseSides, fuseSidesLocal, textSize, usedSymbolIds, windowFrameWidth, type FuseSides } from '../model/geometry';
 import { hereCallout, type HereCallout } from '../model/hereCallout';
 import type {
   ArrowStyle, CustomSymbol, DashStyle, DimensionElement, Element, FillPattern, Floor, Pt, RouteElement, ShapeElement, SymbolElement, WallElement,
@@ -241,7 +241,7 @@ export function filletPath(p: Pt[], radius: number): string {
 }
 
 /** Échantillonne en polyligne fine le tracé tel que dessiné par filletPath / pathD. */
-function sampleRoute(p: Pt[], radius: number, smooth: boolean): Pt[] {
+export function sampleRoute(p: Pt[], radius: number, smooth: boolean): Pt[] {
   const bez = (out: Pt[], a: Pt, c1: Pt, c2: Pt, b: Pt) => {
     for (let k = 1; k <= 16; k++) {
       const t = k / 16, u = 1 - t;
@@ -366,9 +366,9 @@ function RouteView({ el }: { el: RouteElement }) {
       return [pts[i - 1][0] + (pts[i][0] - pts[i - 1][0]) * t, pts[i - 1][1] + (pts[i][1] - pts[i - 1][1]) * t];
     };
     const half = el.width * 0.55 * 3.2 * 0.5; // demi-longueur du chevron
-    const sEnd = el.joinEnd ? total - half * 1.2 : total;
+    const sEnd = el.joinEnd ? total - el.width / 2 - half * 1.2 : total;
     for (let s = el.arrowRepeat / 2; s < sEnd; s += el.arrowRepeat) {
-      if (el.joinStart && s < half * 2) continue;
+      if (el.joinStart && s < el.width / 2 + half * 2) continue;
       const tip = at(s + half * 0.5), back = at(s - half * 1.5);
       if (tip[0] === back[0] && tip[1] === back[1]) continue;
       repeats.push(arrowHead(tip, back, el.width * 0.55, 1, 'open', rc, `r${s}`));
@@ -380,12 +380,17 @@ function RouteView({ el }: { el: RouteElement }) {
   const baseCap = dashCap(el.dash, el.dash === 'solid' ? 'round' : 'butt');
   const cap = joined ? 'butt' : baseCap;
   const ow = el.width + Math.max(3, el.width * 0.6);
+  // Le liseré s'arrête au bord de la bande rejointe (le trait, lui, va jusqu'à son axe).
+  const oLine = [...line];
+  if (el.joinEnd && oLine.length >= 2) oLine[oLine.length - 1] = shorten(oLine[oLine.length - 1], oLine[oLine.length - 2], el.width / 2);
+  if (el.joinStart && oLine.length >= 2) oLine[0] = shorten(oLine[0], oLine[1], el.width / 2);
+  const oPath = joined ? (el.cornerRadius > 0 && !el.smooth ? filletPath(oLine, el.cornerRadius) : pathD(oLine, el.smooth)) : path;
   const roundEnds = joined ? [!el.joinStart && line[0], !el.joinEnd && line[line.length - 1]].filter(Boolean) as Pt[] : [];
   return (
     <g>
       {el.outline && (
         <>
-          <path d={path} fill="none" stroke={el.outline} strokeWidth={ow} strokeLinejoin={el.corner} strokeLinecap={joined ? 'butt' : 'round'} />
+          <path d={oPath} fill="none" stroke={el.outline} strokeWidth={ow} strokeLinejoin={el.corner} strokeLinecap={joined ? 'butt' : 'round'} />
           {roundEnds.map((q, i) => <circle key={`oc${i}`} cx={q[0]} cy={q[1]} r={ow / 2} fill={el.outline} />)}
         </>
       )}
@@ -510,13 +515,62 @@ function WindowStyleView({ w, d, style, panes, color, flip }: { w: number; d: nu
   }
 }
 
+/** Centre d'un groupe de pictogrammes accolés (ou groupés) contenant `el`, ou null s'il est seul. */
+function comboMembers(el: SymbolElement, floor: Floor, variantId: string): SymbolElement[] {
+  const syms = floor.elements.filter((e): e is SymbolElement => e.type === 'symbol' && isVisibleInVariant(e, variantId) && !e.symbolId.startsWith('you-are-here'));
+  const box = (s: SymbolElement) => {
+    const hw = s.size * (s.stretchX ?? 1) / 2, hh = s.size * (s.stretchY ?? 1) / 2;
+    const q = ((Math.round(s.rotation) % 180) + 180) % 180 === 90;
+    return q ? { x0: s.x - hh, x1: s.x + hh, y0: s.y - hw, y1: s.y + hw } : { x0: s.x - hw, x1: s.x + hw, y0: s.y - hh, y1: s.y + hh };
+  };
+  const touch = (a: SymbolElement, b: SymbolElement) => {
+    if (a.groupId && a.groupId === b.groupId) return true;
+    const A = box(a), B = box(b), tol = Math.min(a.size, b.size) * 0.06;
+    return A.x0 <= B.x1 + tol && B.x0 <= A.x1 + tol && A.y0 <= B.y1 + tol && B.y0 <= A.y1 + tol;
+  };
+  const members = [el];
+  for (let i = 0; i < members.length && members.length < 8; i++) {
+    for (const s of syms) if (!members.some((m) => m.id === s.id) && touch(members[i], s)) members.push(s);
+  }
+  return members;
+}
+
+function comboCenterOf(members: SymbolElement[]): Pt {
+  const box = (s: SymbolElement) => {
+    const hw = s.size * (s.stretchX ?? 1) / 2, hh = s.size * (s.stretchY ?? 1) / 2;
+    const q = ((Math.round(s.rotation) % 180) + 180) % 180 === 90;
+    return q ? { x0: s.x - hh, x1: s.x + hh, y0: s.y - hw, y1: s.y + hw } : { x0: s.x - hw, x1: s.x + hw, y0: s.y - hh, y1: s.y + hh };
+  };
+  const bs = members.map(box);
+  return [(Math.min(...bs.map((b) => b.x0)) + Math.max(...bs.map((b) => b.x1))) / 2, (Math.min(...bs.map((b) => b.y0)) + Math.max(...bs.map((b) => b.y1))) / 2];
+}
+
 function SymbolView({ el: el0, ctx }: { el: SymbolElement; ctx: RenderCtx }) {
   // Norme : pictogrammes d'au moins 7 mm sur le papier.
   const obstacle = !!ctx.norm && NORM_OBSTACLE_CATS.has(getBuiltinSymbol(el0.symbolId)?.category ?? '');
   const isHere = el0.symbolId.startsWith('you-are-here');
   const normSize = !ctx.norm || obstacle ? el0.size
     : ctx.symbolSize && !isHere ? ctx.symbolSize : Math.max(el0.size, NORM_SYMBOL_MM / ctx.norm.mmPerUnit);
-  const el = normSize !== el0.size ? { ...el0, size: normSize } : el0;
+  let el = normSize !== el0.size ? { ...el0, size: normSize } : el0;
+  if (el !== el0) {
+    // Taille imposée par la norme : le pictogramme (ou le groupe accolé) reste collé
+    // au mur contre lequel il était posé au lieu de déborder sur le dessin.
+    const members = comboMembers(el0, ctx.floor, ctx.variantId);
+    const k = normSize / el0.size;
+    const c = members.length > 1 ? comboCenterOf(members) : null;
+    const grow = (s: SymbolElement): SymbolElement => c
+      ? { ...s, size: s.size * k, x: c[0] + (s.x - c[0]) * k, y: c[1] + (s.y - c[1]) * k }
+      : { ...s, size: s.size * k };
+    let shift: Pt = [0, 0];
+    for (const m of members) {
+      const g = grow(m);
+      const sn = snapSymbolToWalls(ctx.floor, ctx.variantId, g, { at: [m.x, m.y], gap: DEFAULT_SYMBOL_WALL_GAP });
+      const d: Pt = [sn.x - g.x, sn.y - g.y];
+      if (Math.hypot(d[0], d[1]) > Math.hypot(shift[0], shift[1])) shift = d;
+    }
+    const g0 = grow(el0);
+    el = { ...el, x: g0.x + shift[0], y: g0.y + shift[1] };
+  }
   if (obstacle) {
     // Norme : mobilier et équipements fixes dessinés en gris clair.
     return <g style={{ filter: 'grayscale(1)' }} opacity={0.45}><SymbolView el={el0} ctx={{ ...ctx, norm: undefined }} /></g>;
@@ -757,11 +811,25 @@ function Inner({ el: el0, ctx }: { el: Element; ctx: RenderCtx }): React.ReactEl
     const upm = ctx.floor.unitsPerMeter;
     const band = Math.max(el.width * 3, upm > 0 ? 1.1 * upm : el.width * 5);
     const r = el;
+    // Si la voie est déjà couverte par des zones colorées dessinées à la main,
+    // on n'ajoute pas la bande verte automatique par-dessus.
+    const inside = (q: Pt, poly: Pt[]) => {
+      let c = false;
+      for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+        const [xi, yi] = poly[i], [xj, yj] = poly[j];
+        if ((yi > q[1]) !== (yj > q[1]) && q[0] < ((xj - xi) * (q[1] - yi)) / (yj - yi) + xi) c = !c;
+      }
+      return c;
+    };
+    const zones = ctx.floor.elements.filter((e): e is Extract<Element, { type: 'area' }> => e.type === 'area'
+      && isVisibleInVariant(e, ctx.variantId) && !!e.fill && !/^#?f{3}(f{3})?$/i.test(e.fill) && e.fill !== 'none');
+    const mids = r.points.slice(1).map((p, i): Pt => [(p[0] + r.points[i][0]) / 2, (p[1] + r.points[i][1]) / 2]);
+    const covered = zones.length > 0 && mids.filter((m) => zones.some((z) => inside(m, z.points))).length >= mids.length / 2;
     return (
       <g>
-        <polyline points={r.points.map((p) => p.join(',')).join(' ')} fill="none" stroke="#2fae66" strokeOpacity={0.3}
-          strokeWidth={band} strokeLinejoin="round" strokeLinecap="butt" />
-        <RouteView el={{ ...r, color: NORM_STAIRS, outline: '', arrowEnd: true,
+        {!covered && <polyline points={r.points.map((p) => p.join(',')).join(' ')} fill="none" stroke="#2fae66" strokeOpacity={0.3}
+          strokeWidth={band} strokeLinejoin="round" strokeLinecap="butt" />}
+        <RouteView el={{ ...r, color: NORM_STAIRS, outline: '', arrowEnd: !r.joinEnd,
           arrowRepeat: r.arrowRepeat > 0 ? r.arrowRepeat : upm > 0 ? 3 * upm : r.width * 14 }} />
       </g>
     );
@@ -812,11 +880,17 @@ function Inner({ el: el0, ctx }: { el: Element; ctx: RenderCtx }): React.ReactEl
           {el.pattern !== 'solid' && el.pattern !== 'none' && <polygon points={pts(el.points)} fill={`url(#${pid})`} stroke="none" />}
           <polygon points={pts(el.points)} fill="none" stroke={el.strokeWidth > 0 ? el.stroke : 'none'} strokeWidth={el.strokeWidth}
             strokeDasharray={dashArray(el.dash, el.strokeWidth)} strokeLinecap={dashCap(el.dash)} />
+          {el.labelBg && lines.length > 0 && (() => {
+            // étiquette : rectangle arrondi derrière le nom et le numéro
+            const fs0 = el.labelSize, w = Math.max(...lines.map((l) => l.length)) * fs0 * (el.labelBold ? 0.62 : 0.58) + fs0 * 0.9;
+            const h = lines.length * fs0 * 1.2 + fs0 * 0.45;
+            return <rect x={cx - w / 2} y={cy - h / 2} width={w} height={h} rx={fs0 * 0.28} fill={el.labelBg} />;
+          })()}
           {lines.map((line, i, arr) => (
             <text key={i} x={cx} y={cy + (i - (arr.length - 1) / 2) * el.labelSize * 1.2 + el.labelSize * 0.35}
               textAnchor="middle" fontFamily={FONT} fontSize={i === arr.length - 1 && el.showArea && upm > 0 && i > 0 ? el.labelSize * 0.75 : el.labelSize}
               fontWeight={el.labelBold ? 700 : 500} fill={el.labelColor} letterSpacing={el.labelSize * 0.01}
-              stroke={el.fill && el.pattern === 'solid' && el.fillOpacity > 0.6 ? el.fill : '#ffffff'} strokeWidth={el.labelSize * 0.3} paintOrder="stroke" strokeLinejoin="round">{line}</text>
+              stroke={el.labelBg ? 'none' : el.fill && el.pattern === 'solid' && el.fillOpacity > 0.6 ? el.fill : '#ffffff'} strokeWidth={el.labelSize * 0.3} paintOrder="stroke" strokeLinejoin="round">{line}</text>
           ))}
         </g>
       );

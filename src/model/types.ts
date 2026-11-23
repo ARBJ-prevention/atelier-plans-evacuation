@@ -77,6 +77,8 @@ export interface AreaElement extends BaseElement {
   labelSize: number;
   labelColor: string;
   labelBold: boolean;
+  /** Étiquette derrière le nom (ex. bleu foncé, texte blanc) : couleur de fond, '' = aucune. */
+  labelBg?: string;
   /** Affiche la surface (m²) sous le nom si l'échelle est étalonnée. */
   showArea: boolean;
   /** Décalage du nom par rapport au centre de la pièce. */

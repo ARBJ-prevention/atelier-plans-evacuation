@@ -7,7 +7,7 @@ import {
   unionRects, windowGlassWallFit, windowResizeWallFit, type Rect,
 } from '../model/geometry';
 import type { DoorElement, Element, Floor, Pt, SymbolElement, WindowElement } from '../model/types';
-import { ElementView, legendCount, polygonCentroid } from '../render/ElementView';
+import { ElementView, legendCount, polygonCentroid, sampleRoute } from '../render/ElementView';
 import { hereCallout } from '../model/hereCallout';
 import { FloorDrawing } from '../render/FloorDrawing';
 import { computeCirculation, type Circulation } from '../services/circulation';
@@ -346,7 +346,19 @@ export function Canvas({ onCalibrate }: CanvasProps) {
           // Le bout s'arrête au bord de la bande (recul d'une demi-largeur depuis l'axe).
           // Coupe au premier contact avec la bande rejointe : si le tracé la longe
           // (raccord en biais ou parallèle), toute la partie superposée disparaît.
-          const target = hit.ref.points;
+          // bande rejointe telle qu'elle est dessinée (virages arrondis compris)
+          const target = sampleRoute(hit.ref.points, hit.ref.cornerRadius > 0 && !hit.ref.smooth ? hit.ref.cornerRadius : 0, hit.ref.smooth);
+          const onTarget = (q: Pt): Pt => {
+            let m = Infinity, best: Pt = q;
+            for (let i = 0; i + 1 < target.length; i++) {
+              const a = target[i], b = target[i + 1], vx = b[0] - a[0], vy = b[1] - a[1], L2 = vx * vx + vy * vy || 1;
+              const u = Math.max(0, Math.min(1, ((q[0] - a[0]) * vx + (q[1] - a[1]) * vy) / L2));
+              const c: Pt = [a[0] + vx * u, a[1] + vy * u];
+              const d = distance(q, c);
+              if (d < m) { m = d; best = c; }
+            }
+            return best;
+          };
           const toTarget = (q: Pt) => {
             let m = Infinity;
             for (let i = 0; i + 1 < target.length; i++) m = Math.min(m, distToSegment(q, target[i], target[i + 1]));
@@ -370,10 +382,12 @@ export function Canvas({ onCalibrate }: CanvasProps) {
           if (atEnd) {
             pts2[pts2.length - 1] = hit.proj;
             pts2 = cutTowardEnd(pts2);
+            { const ax = onTarget(pts2[pts2.length - 1]); if (distance(ax, pts2[pts2.length - 1]) > 0.5) pts2.push(ax); }
             Object.assign(el, { arrowEnd: false, arrowStart: false, joinEnd: true });
           } else {
             pts2[0] = hit.proj;
             pts2 = cutTowardEnd(pts2.reverse()).reverse();
+            { const ax = onTarget(pts2[0]); if (distance(ax, pts2[0]) > 0.5) pts2.unshift(ax); }
             Object.assign(el, { arrowStart: false, joinStart: true });
           }
           if (pts2.length >= 2 && distance(pts2[0], pts2[pts2.length - 1]) > 1) (el as any).points = pts2;
