@@ -1,6 +1,6 @@
 {
   "name": "atelier-evac",
-  "version": "2.0.45",
+  "version": "2.0.46",
   "private": true,
   "devDependencies": {
     "@types/react": "^19.3.0",

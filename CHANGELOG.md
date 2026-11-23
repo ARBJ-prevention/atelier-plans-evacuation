@@ -1,5 +1,9 @@
 # Journal des versions
 
+## 2.0.46 - novembre 2026
+- **Aimant des itinéraires** : en traçant, un point posé près d’un itinéraire existant se cale sur son axe (un rond montre l’accroche ; Alt : sans aimant).
+- **Raccord en biais ou parallèle** : le nouveau tracé s’arrête au premier contact avec la bande rejointe, sans flèches ni chevrons superposés.
+
 ## 2.0.45 - novembre 2026
 - **Chevrons répétés** : ils sont découpés à la largeur du trait de l’itinéraire et ne dépassent plus de la bande verte.
 
