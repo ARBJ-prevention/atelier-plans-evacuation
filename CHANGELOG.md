@@ -1,5 +1,9 @@
 # Journal des versions
 
+## 2.0.50 - novembre 2026
+- **Itinéraires au milieu du couloir** : en traçant, chaque point se cale à égale distance des murs (Alt : libre) ; boutons « Centrer » et « Centrer tous les itinéraires » pour les tracés existants.
+- **Aperçu norme ISO** : les pictogrammes ne grandissent que jusqu’à la place disponible entre les murs (plus de débordement) ; une alerte signale ceux restés sous 7 mm et propose le format supérieur (1:100 dès que le plan y tient).
+
 ## 2.0.49 - novembre 2026
 - **Raccord en miroir** : un chemin qui arrive de côté sur un itinéraire tourne dans son sens de marche avec le même arrondi, comme le virage d’en face.
 
