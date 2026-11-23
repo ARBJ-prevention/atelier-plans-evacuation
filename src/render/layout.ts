@@ -66,7 +66,8 @@ export function normalizePage(floor: Floor, page: PageSetup = floor.page, buildi
   const papers = PAPER_ORDER.slice(base.smallRoom ? PAPER_ORDER.indexOf(base.paper as typeof PAPER_ORDER[number]) : start);
   // 1:100 sur A3 / A2, puis 1:250 du plus petit au plus grand format.
   const tries: [string, number][] = [
-    ...papers.filter((p) => p === 'A4' || p === 'A3' || p === 'A2').map((p) => [p, 100] as [string, number]),
+    // (et au 1:100 sur le format choisi à la main, même plus grand : pictogrammes de 7 mm qui tiennent dans les couloirs)
+    ...papers.filter((p) => p === 'A4' || p === 'A3' || p === 'A2' || p === page.paper).map((p) => [p, 100] as [string, number]),
     ...papers.map((p) => [p, 250] as [string, number]),
   ];
   // Orientation de la feuille choisie d'abord ; l'autre est essayée si elle permet une meilleure échelle / un plus petit format.

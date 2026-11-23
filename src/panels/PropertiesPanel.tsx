@@ -4,7 +4,7 @@ import * as A from '../app/actions';
 import { scopeLabel, scopeOf, selectionScope, setScopeAction } from '../app/scope';
 import { COUNTRIES, getCountry } from '../model/countries';
 import { defaultShadow, EMERGENCY_NUMBERS, FONTS, LAYER_NAMES } from '../model/defaults';
-import { boxOf, distance, formatLength, polygonArea, polylineLength, straightenPolyline, straightnessLabel } from '../model/geometry';
+import { boxOf, corridorCenterAt, distance, formatLength, polygonArea, polylineLength, straightenPolyline, straightnessLabel } from '../model/geometry';
 import type { DashStyle, Element, FillPattern, Floor, LayerId, PageSetup, PageTheme } from '../model/types';
 import { symbolName } from '../render/ElementView';
 import { FRAME_ZONES, frameOn, THEMES, themePatch } from '../render/layout';
@@ -377,6 +377,21 @@ function CommonActions() {
   );
 }
 
+/** Recentre dans leur couloir les points des itinéraires (ids = null : tous ceux de l'étage). */
+function centerRoutes(floor: Floor, variantId: string, ids: string[] | null) {
+  const upm = floor.unitsPerMeter > 0 ? floor.unitsPerMeter : 100;
+  useStore.getState().mutateFloor((f) => {
+    for (const r of f.elements) {
+      if (r.type !== 'route' || (ids && !ids.includes(r.id))) continue;
+      r.points = r.points.map((p, i) => {
+        if ((i === r.points.length - 1 && r.joinEnd) || (i === 0 && r.joinStart)) return p;
+        if (r.joinEnd && i === r.points.length - 2) return p; // point du virage de raccord
+        return corridorCenterAt(floor, variantId, p, upm * 4) ?? p;
+      });
+    }
+  });
+}
+
 function ElementProps({ el, floor }: { el: Element; floor: Floor }) {
   const variantId = useStore((s) => currentVariantId(s));
   const customSymbols = useStore((s) => s.project!.customSymbols);
@@ -469,6 +484,12 @@ function ElementProps({ el, floor }: { el: Element; floor: Floor }) {
                     </button>
                   </Row>
                   <Row label="Sens"><button className="btn small" onClick={() => upd({ points: [...e.points].reverse() })}>Inverser le sens</button></Row>
+                  <Row label="Couloir" hint="Ramène les points au milieu du couloir (à égale distance des murs) ; les bouts raccordés à un autre itinéraire ne bougent pas">
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                      <button className="btn small" onClick={() => centerRoutes(floor, variantId, [el.id])}>Centrer</button>
+                      <button className="btn small" onClick={() => centerRoutes(floor, variantId, null)}>Centrer tous les itinéraires</button>
+                    </div>
+                  </Row>
                   <p className="muted small">{e.points.length} points · {len(polylineLength(e.points))}. Glissez les carrés, glissez les ronds pour ajouter un point, double-clic pour supprimer.</p>
                 </Section>
                 <Section title="Flèches" icon="shapeArrow">

@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from
 import { makeElement } from '../model/defaults';
 import { getCountry } from '../model/countries';
 import {
-  boxOf, constrain45, corridorWidthAt, rotateElementAround, scaleElementAround, constrainWallTo45, straightnessLabel, distance, distToSegment, elementBounds, floorContentBounds, isVisibleInVariant,
+  boxOf, constrain45, corridorCenterAt, corridorWidthAt, rotateElementAround, scaleElementAround, constrainWallTo45, straightnessLabel, distance, distToSegment, elementBounds, floorContentBounds, isVisibleInVariant,
   openingWallFit, openingShortWall, polylineLength, dimensionOffsetAt, formatLength, raiseOpeningAboveWalls, snapPointToWalls, wallJoints, rectContains, rectFromPoints, rectsIntersect, RESIZE_DIRECTIONS, resizeBoxElement, rotatePoint, roundDoorWidth, snapSymbolToWalls, snapToGrid, translateElement,
   unionRects, windowGlassWallFit, windowResizeWallFit, type Rect,
 } from '../model/geometry';
@@ -246,6 +246,12 @@ export function Canvas({ onCalibrate }: CanvasProps) {
         const t = Math.max(0, Math.min(1, ((p[0] - a[0]) * vx + (p[1] - a[1]) * vy) / L2));
         bd = d; best = [a[0] + vx * t, a[1] + vy * t];
       }
+    }
+    if (!best) {
+      // sinon : point ramené au milieu du couloir (à égale distance des deux murs)
+      const upm = floor.unitsPerMeter > 0 ? floor.unitsPerMeter : 100;
+      const g = snap(p, e);
+      best = corridorCenterAt(floor, variantId, g, upm * 4);
     }
     setRouteHint(best);
     return best ?? snap(p, e);

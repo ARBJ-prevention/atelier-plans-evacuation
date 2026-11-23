@@ -108,7 +108,12 @@ export function PrintDialog({ onClose, onEdit, currentOnly = false, focusScale =
 
           <PrintReview alerts={alerts} onEdit={(alert, issue) => {
             if (busy) return;
-            if (issue === 'plan-clipped') {
+            if (issue === 'iso-symbols-small') {
+              // format supérieur : plus de place pour des pictogrammes de 7 mm (1:100 dès que le plan y tient)
+              const order = ['A4', 'A3', 'A2', 'A1', 'A0'] as const;
+              const cur = Math.max(order.indexOf(eff.paper as typeof order[number]), order.indexOf(page.paper as typeof order[number]));
+              if (cur < order.length - 1) set({ paper: order[cur + 1] });
+            } else if (issue === 'plan-clipped') {
               setPreviewVariant(alert.variantId);
               document.getElementById('print-scale-fit')?.focus();
             } else onEdit(alert.floorId, alert.variantId, issue, { mode: 'preview' });

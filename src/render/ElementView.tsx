@@ -1,5 +1,5 @@
 import React from 'react';
-import { boxOf, DEFAULT_SYMBOL_WALL_GAP, snapSymbolToWalls, dimensionGeometry, doorDimensions, formatLength, isVisibleInVariant, legendSize, openingHostFit, polygonArea, symbolFuseSides, fuseSidesLocal, textSize, usedSymbolIds, windowFrameWidth, type FuseSides } from '../model/geometry';
+import { boxOf, corridorWidthAt, DEFAULT_SYMBOL_WALL_GAP, snapSymbolToWalls, dimensionGeometry, doorDimensions, formatLength, isVisibleInVariant, legendSize, openingHostFit, polygonArea, symbolFuseSides, fuseSidesLocal, textSize, usedSymbolIds, windowFrameWidth, type FuseSides } from '../model/geometry';
 import { hereCallout, type HereCallout } from '../model/hereCallout';
 import type {
   ArrowStyle, CustomSymbol, DashStyle, DimensionElement, Element, FillPattern, Floor, Pt, RouteElement, ShapeElement, SymbolElement, WallElement,
@@ -545,12 +545,30 @@ function comboCenterOf(members: SymbolElement[]): Pt {
   return [(Math.min(...bs.map((b) => b.x0)) + Math.max(...bs.map((b) => b.x1))) / 2, (Math.min(...bs.map((b) => b.y0)) + Math.max(...bs.map((b) => b.y1))) / 2];
 }
 
+/**
+ * Taille d'un pictogramme imprimé selon la norme (7 mm minimum), plafonnée à la place
+ * disponible entre les murs pour ne jamais déborder. « small » : la norme n'est pas tenue faute de place.
+ */
+export function normSymbolSize(el0: SymbolElement, floor: Floor, variantId: string, mmPerUnit: number, symbolSize?: number): { size: number; small: boolean } {
+  const isHere = el0.symbolId.startsWith('you-are-here');
+  if (NORM_OBSTACLE_CATS.has(getBuiltinSymbol(el0.symbolId)?.category ?? '')) return { size: el0.size, small: false };
+  const wanted = symbolSize && !isHere ? symbolSize : Math.max(el0.size, NORM_SYMBOL_MM / mmPerUnit);
+  if (wanted <= el0.size || getBuiltinSymbol(el0.symbolId)?.planSymbol) return { size: wanted, small: wanted * mmPerUnit < NORM_SYMBOL_MM - 0.05 };
+  const upm = floor.unitsPerMeter > 0 ? floor.unitsPerMeter : 100;
+  let limit = Infinity;
+  for (const m of comboMembers(el0, floor, variantId)) {
+    const clear = corridorWidthAt(floor, variantId, [m.x, m.y], upm * 4);
+    if (clear) limit = Math.min(limit, ((clear - 2 * DEFAULT_SYMBOL_WALL_GAP) / (m.halo ? 1.26 : 1)) * (el0.size / m.size));
+  }
+  const size = Math.max(el0.size, Math.min(wanted, limit));
+  return { size, small: size * mmPerUnit < NORM_SYMBOL_MM - 0.05 };
+}
+
 function SymbolView({ el: el0, ctx }: { el: SymbolElement; ctx: RenderCtx }) {
   // Norme : pictogrammes d'au moins 7 mm sur le papier.
   const obstacle = !!ctx.norm && NORM_OBSTACLE_CATS.has(getBuiltinSymbol(el0.symbolId)?.category ?? '');
   const isHere = el0.symbolId.startsWith('you-are-here');
-  const normSize = !ctx.norm || obstacle ? el0.size
-    : ctx.symbolSize && !isHere ? ctx.symbolSize : Math.max(el0.size, NORM_SYMBOL_MM / ctx.norm.mmPerUnit);
+  const normSize = !ctx.norm || obstacle ? el0.size : normSymbolSize(el0, ctx.floor, ctx.variantId, ctx.norm.mmPerUnit, ctx.symbolSize).size;
   let el = normSize !== el0.size ? { ...el0, size: normSize } : el0;
   if (el !== el0) {
     // Taille imposée par la norme : le pictogramme (ou le groupe accolé) reste collé

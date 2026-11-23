@@ -2,7 +2,7 @@ import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { floorContentBounds, isVisibleInVariant, usedSymbolIds } from '../model/geometry';
 import type { AreaElement, Building, CustomSymbol, Floor, PageSetup, RouteElement, SymbolElement, ValidationStatus, WallElement } from '../model/types';
-import { FONT, symbolName, SymbolGraphic } from './ElementView';
+import { FONT, harmonizedSymbolSize, normSymbolSize, symbolName, SymbolGraphic } from './ElementView';
 import { FloorDrawing } from './FloorDrawing';
 import { orientFloor, type OrientedFloor } from './orient';
 import { computeLayout, normalizePage, normOn, ISO_SCALES, frameOn, frameStroke, headerColors, horizonNight, isLightHex, INSTRUCTION_FONT, instructionColumns, instructionLines, instructionsHeight, legendColumnLimit, mixHex, niceScaleBarMeters, themeColor, wrapText, type PageLayout } from './layout';
@@ -620,7 +620,7 @@ function instructionLayout(text: string, rect: { y: number; w: number; h: number
 
 export type PrintIssue = 'marker-missing' | 'marker-multiple' | 'plan-clipped' | 'instructions-clipped'
   | 'route-missing' | 'exit-missing' | 'numbers-missing' | 'not-validated'
-  | 'iso-uncalibrated' | 'iso-scale' | 'iso-overview' | 'iso-rooms' | 'iso-plan-number' | 'iso-review';
+  | 'iso-uncalibrated' | 'iso-scale' | 'iso-overview' | 'iso-rooms' | 'iso-plan-number' | 'iso-review' | 'iso-symbols-small';
 
 export const PRINT_ISSUE_LABEL: Record<PrintIssue, string> = {
   'marker-missing': 'Repère « Vous êtes ici » absent de la page',
@@ -637,6 +637,7 @@ export const PRINT_ISSUE_LABEL: Record<PrintIssue, string> = {
   'iso-rooms': 'Locaux sans numéro conforme (chiffre de l’étage + deux chiffres) : utilisez « Numéroter les locaux »',
   'iso-plan-number': 'Numéro du plan absent du cartouche (date, numéro et version sont inscrits en bas du plan)',
   'iso-review': 'Plan à revérifier : il doit être contrôlé 3 fois par an, avant chaque exercice d’évacuation',
+  'iso-symbols-small': 'Pictogrammes réduits sous 7 mm pour rester dans les couloirs : cliquez pour passer au format supérieur (le plan passe au 1:100 dès qu’il y tient)',
 };
 
 /** Pictogrammes qui signalent une sortie de secours (ISO 7010 E001, E002, E026, E030 et panneau texte). */
@@ -646,7 +647,7 @@ const EXIT_SYMBOLS = new Set(['iso-E001', 'iso-E002', 'iso-E026', 'iso-E030', 'e
 export const PRINT_ISSUE_LEVEL: Record<PrintIssue, 'check' | 'info'> = {
   'marker-missing': 'check', 'marker-multiple': 'check', 'plan-clipped': 'check', 'instructions-clipped': 'check',
   'route-missing': 'check', 'exit-missing': 'check', 'numbers-missing': 'check', 'not-validated': 'info',
-  'iso-uncalibrated': 'check', 'iso-scale': 'check', 'iso-overview': 'check', 'iso-rooms': 'check', 'iso-plan-number': 'check', 'iso-review': 'info',
+  'iso-uncalibrated': 'check', 'iso-scale': 'check', 'iso-overview': 'check', 'iso-rooms': 'check', 'iso-plan-number': 'check', 'iso-review': 'info', 'iso-symbols-small': 'check',
 };
 
 /** Numéro de local conforme pour l'étage : premier chiffre = étage, deux suivants = numéro (ex. 012, 105, -103). */
@@ -690,6 +691,10 @@ export function printIssues(rawFloor: Floor, variantId: string, rawPage = rawFlo
     const rooms = shown.filter((e): e is AreaElement => e.type === 'area' && e.kind === 'room');
     if (rooms.some((r) => !isoRoomNumberOk(r.number, floor.level))) issues.push('iso-rooms');
     if (!floor.titleBlock.planNumber?.trim()) issues.push('iso-plan-number');
+    if (floor.unitsPerMeter > 0) {
+      const mm = L.k * L.s, hs = harmonizedSymbolSize(floor, variantId, mm);
+      if (shown.some((e) => e.type === 'symbol' && normSymbolSize(e, floor, variantId, mm, hs).small)) issues.push('iso-symbols-small');
+    }
     const d = Date.parse(floor.titleBlock.date);
     if (Number.isFinite(d) && Date.now() - d > 122 * 86400000) issues.push('iso-review');
   }

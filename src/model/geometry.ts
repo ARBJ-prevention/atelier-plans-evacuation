@@ -599,6 +599,39 @@ export function snapSymbolToWalls(
  * Largeur libre entre deux murs parallèles qui encadrent le point (couloir) :
  * distance entre les faces intérieures, ou null si le point n'est pas encadré.
  */
+/**
+ * Milieu du couloir : ramène le point à égale distance des deux murs parallèles
+ * qui l'encadrent (le plus étroit des passages trouvés), ou null s'il n'est pas encadré.
+ */
+export function corridorCenterAt(floor: Floor, variantId: string, at: Pt, maxWidth: number): Pt | null {
+  const sides = new Map<number, { neg: number; pos: number; n: Pt }>();
+  for (const { a, b, length, depth } of visibleWallSegments(floor, variantId)) {
+    let ux = (b[0] - a[0]) / length, uy = (b[1] - a[1]) / length;
+    const along = (at[0] - a[0]) * ux + (at[1] - a[1]) * uy;
+    if (along < 0 || along > length) continue;
+    const raw = Math.round((Math.atan2(uy, ux) * 180 / Math.PI) / 5) * 5;
+    const norm = ((raw % 360) + 360) % 360;
+    if (norm >= 180) { ux = -ux; uy = -uy; }
+    const ang = norm % 180;
+    // across > 0 : le mur est du côté n = (uy, -ux) par rapport au point
+    const across = (at[1] - a[1]) * ux - (at[0] - a[0]) * uy;
+    const face = Math.abs(across) - depth / 2;
+    if (face <= 0 || face > maxWidth) continue;
+    const cur = sides.get(ang) ?? { neg: Infinity, pos: Infinity, n: [uy, -ux] as Pt };
+    if (across > 0) cur.pos = Math.min(cur.pos, face); else cur.neg = Math.min(cur.neg, face);
+    sides.set(ang, cur);
+  }
+  let best: { w: number; shift: Pt } | null = null;
+  for (const { neg, pos, n } of sides.values()) {
+    const w = neg + pos;
+    if (!Number.isFinite(w) || w > maxWidth || (best && w >= best.w)) continue;
+    // pos : mur côté n, neg : mur côté opposé ; on se décale vers le plus éloigné
+    const d = (pos - neg) / 2;
+    best = { w, shift: [n[0] * d, n[1] * d] };
+  }
+  return best ? [at[0] + best.shift[0], at[1] + best.shift[1]] : null;
+}
+
 export function corridorWidthAt(floor: Floor, variantId: string, at: Pt, maxWidth: number): number | null {
   // faces les plus proches de chaque côté, par orientation de mur (arrondie à 5°)
   const sides = new Map<number, { neg: number; pos: number }>();
