@@ -168,6 +168,8 @@ export interface RouteElement extends BaseElement {
   arrowSize: number;
   /** Flèches répétées le long du tracé (espacement en u, 0 = aucune). */
   arrowRepeat: number;
+  /** Couleur des chevrons répétés : '' = liseré ou blanc, 'line' = couleur du trait, sinon couleur hex. */
+  repeatColor?: string;
   corner: 'round' | 'miter' | 'bevel';
   /** Rayon des virages (u) : segments droits raccordés par des arcs, 0 = angles nets. */
   cornerRadius: number;

@@ -470,6 +470,16 @@ function ElementProps({ el, floor }: { el: Element; floor: Floor }) {
                   </Row>
                   <Row label="Taille"><Slider value={e.arrowSize} min={0.5} max={3} step={0.1} pct={false} onChange={(v) => upd({ arrowSize: v })} /></Row>
                   <Row label="Chevrons répétés" hint="Petites flèches le long du tracé"><Num value={e.arrowRepeat} min={0} max={2000} step={10} onChange={(v) => upd({ arrowRepeat: v })} suffix={e.arrowRepeat ? 'u' : 'aucun'} /></Row>
+                  {e.arrowRepeat > 0 && (
+                    <Row label="Couleur des chevrons">
+                      <span className="row gap">
+                        <Seg value={e.repeatColor === 'line' ? 'line' : e.repeatColor ? 'custom' : 'auto'}
+                          options={[['auto', 'Blanc'], ['line', 'Trait'], ['custom', 'Autre']]}
+                          onChange={(v) => upd({ repeatColor: v === 'auto' ? '' : v === 'line' ? 'line' : '#ffd400' })} />
+                        {e.repeatColor && e.repeatColor !== 'line' && <Color value={e.repeatColor} onChange={(v) => upd({ repeatColor: v })} />}
+                      </span>
+                    </Row>
+                  )}
                 </Section>
               </>
             )}

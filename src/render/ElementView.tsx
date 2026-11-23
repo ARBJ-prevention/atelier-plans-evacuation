@@ -316,6 +316,7 @@ function RouteView({ el }: { el: RouteElement }) {
   // Flèches répétées le long du tracé
   const repeats: React.ReactNode[] = [];
   if (el.arrowRepeat > 0) {
+    const rc = el.repeatColor === 'line' ? el.color : el.repeatColor || el.outline || '#ffffff';
     let acc = el.arrowRepeat / 2;
     for (let i = 1; i < p.length; i++) {
       const a = p[i - 1], b = p[i];
@@ -324,7 +325,7 @@ function RouteView({ el }: { el: RouteElement }) {
         const t = acc / L;
         const c: Pt = [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
         const back: Pt = [c[0] - (b[0] - a[0]) / L, c[1] - (b[1] - a[1]) / L];
-        repeats.push(arrowHead(c, back, el.width * 0.55, 1, 'open', el.outline || '#ffffff', `r${i}-${acc}`));
+        repeats.push(arrowHead(c, back, el.width * 0.55, 1, 'open', rc, `r${i}-${acc}`));
         acc += el.arrowRepeat;
       }
       acc -= L;
