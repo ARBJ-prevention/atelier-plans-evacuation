@@ -277,6 +277,24 @@ export function rotateElementAround<T extends Element>(el: T, pivot: Pt, deg: nu
   return { ...el, x: nx, y: ny, rotation: normAngle(el.rotation + deg) };
 }
 
+/** Agrandit / réduit un élément de `k` autour d'un point fixe (retourne une copie). */
+export function scaleElementAround<T extends Element>(el: T, anchor: Pt, k: number): T {
+  const sc = (p: Pt): Pt => [anchor[0] + (p[0] - anchor[0]) * k, anchor[1] + (p[1] - anchor[1]) * k];
+  const e = el as any;
+  if ('points' in el) {
+    const out: any = { ...el, points: el.points.map(sc) };
+    if (el.type === 'wall') out.thickness = e.thickness * k;
+    if (el.type === 'route') out.width = e.width * k;
+    return out;
+  }
+  const [x, y] = sc([e.x, e.y]);
+  const out: any = { ...el, x, y };
+  for (const key of ['size', 'w', 'h', 'width', 'depth', 'fontSize', 'labelSize', 'letterSpacing']) {
+    if (typeof e[key] === 'number') out[key] = e[key] * k;
+  }
+  return out;
+}
+
 export function normAngle(a: number): number {
   let r = a % 360;
   if (r < 0) r += 360;
@@ -575,6 +593,39 @@ export function snapSymbolToWalls(
     y += along * primary.uy;
   }
   return x === symbol.x && y === symbol.y ? symbol : { ...symbol, x, y };
+}
+
+/**
+ * Largeur libre entre deux murs parallèles qui encadrent le point (couloir) :
+ * distance entre les faces intérieures, ou null si le point n'est pas encadré.
+ */
+export function corridorWidthAt(floor: Floor, variantId: string, at: Pt, maxWidth: number): number | null {
+  // faces les plus proches de chaque côté, par orientation de mur (arrondie à 5°)
+  const sides = new Map<number, { neg: number; pos: number }>();
+  for (const { a, b, length, depth } of visibleWallSegments(floor, variantId)) {
+    const ux = (b[0] - a[0]) / length, uy = (b[1] - a[1]) / length;
+    const along = (at[0] - a[0]) * ux + (at[1] - a[1]) * uy;
+    if (along < 0 || along > length) continue;
+    const across = (at[1] - a[1]) * ux - (at[0] - a[0]) * uy;
+    const face = Math.abs(across) - depth / 2;
+    if (face <= 0 || face > maxWidth) continue;
+    // orientation commune aux deux sens du mur (0–180°, arrondie à 5°) ; le côté
+    // du point s'inverse quand on retourne le sens du mur
+    const raw = Math.round((Math.atan2(uy, ux) * 180 / Math.PI) / 5) * 5;
+    const norm = ((raw % 360) + 360) % 360;
+    const flip = norm >= 180;
+    const ang = norm % 180;
+    const side = (across > 0) !== flip ? 'pos' : 'neg';
+    const cur = sides.get(ang) ?? { neg: Infinity, pos: Infinity };
+    cur[side] = Math.min(cur[side], face);
+    sides.set(ang, cur);
+  }
+  let best: number | null = null;
+  for (const { neg, pos } of sides.values()) {
+    const w = neg + pos;
+    if (Number.isFinite(w) && w <= maxWidth && (best === null || w < best)) best = w;
+  }
+  return best;
 }
 
 function* visibleWallSegments(floor: Floor, variantId: string) {

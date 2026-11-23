@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from
 import { makeElement } from '../model/defaults';
 import { getCountry } from '../model/countries';
 import {
-  boxOf, constrain45, constrainWallTo45, straightnessLabel, distance, distToSegment, elementBounds, floorContentBounds, isVisibleInVariant,
+  boxOf, constrain45, corridorWidthAt, rotateElementAround, scaleElementAround, constrainWallTo45, straightnessLabel, distance, distToSegment, elementBounds, floorContentBounds, isVisibleInVariant,
   openingWallFit, openingShortWall, polylineLength, dimensionOffsetAt, formatLength, raiseOpeningAboveWalls, snapPointToWalls, wallJoints, rectContains, rectFromPoints, rectsIntersect, RESIZE_DIRECTIONS, resizeBoxElement, rotatePoint, roundDoorWidth, snapSymbolToWalls, snapToGrid, translateElement,
   unionRects, windowGlassWallFit, windowResizeWallFit, type Rect,
 } from '../model/geometry';
@@ -26,6 +26,8 @@ type Drag =
   | { kind: 'resize'; orig: Element; start: Pt; direction: Pt; wallDepth?: number; began: boolean }
   | { kind: 'pscale'; id: string; orig: Element; box: Rect; direction: Pt; start: Pt; began: boolean }
   | { kind: 'rotate'; id: string; center: Pt }
+  | { kind: 'grot'; orig: Element[]; pivot: Pt; a0: number }
+  | { kind: 'gscale'; orig: Element[]; anchor: Pt; d0: number }
   | { kind: 'label'; id: string; start: Pt; ox: number; oy: number; began: boolean; here?: boolean }
   | { kind: 'bgmove'; start: Pt; ox: number; oy: number; began: boolean }
   | { kind: 'rect'; start: Pt };
@@ -425,6 +427,23 @@ export function Canvas({ onCalibrate }: CanvasProps) {
           }
         }
         const handle = target.closest('[data-handle]')?.getAttribute('data-handle');
+        if (handle === 'grot' || handle?.startsWith('gs:')) {
+          // poignées de la sélection multiple : rotation ou mise à l'échelle de l'ensemble
+          const ids = new Set(s.selection);
+          const orig = floor.elements.filter((x) => ids.has(x.id) && !x.locked);
+          const box = orig.length ? unionRects(orig.map((x) => elementBounds(x))) : null;
+          if (!box) return;
+          const c: Pt = [box.x + box.w / 2, box.y + box.h / 2];
+          s.beginLive();
+          if (handle === 'grot') {
+            drag.current = { kind: 'grot', orig, pivot: c, a0: Math.atan2(p[1] - c[1], p[0] - c[0]) };
+          } else {
+            const [sx, sy] = RESIZE_DIRECTIONS[Number(handle.split(':')[1])];
+            const anchor: Pt = [c[0] - sx * box.w / 2, c[1] - sy * box.h / 2];
+            drag.current = { kind: 'gscale', orig, anchor, d0: Math.max(1e-6, distance(p, anchor)) };
+          }
+          return;
+        }
         if (handle && s.selection.length === 1) {
           const el = elById(s.selection[0]);
           if (!el || el.locked) return;
@@ -615,6 +634,15 @@ export function Canvas({ onCalibrate }: CanvasProps) {
       size: isYah ? 56 : 48,
       ...(isYah ? { variantId: currentVariantId(s) } : {}),
     }) as SymbolElement;
+    // Pictogramme posé dans un couloir : sa taille s'adapte à la largeur entre les murs.
+    if (!isYah && !def?.planSymbol && s.grid.symbolSnapEnabled && !e.altKey) {
+      const upm = floor.unitsPerMeter > 0 ? floor.unitsPerMeter : 100;
+      const clear = corridorWidthAt(floor, variantId, at, upm * 4);
+      if (clear) {
+        const fit = (clear - 2 * s.grid.symbolWallGap) / (symbol.halo ? 1.26 : 1);
+        if (fit >= 16) symbol.size = Math.min(fit, symbol.size * 3);
+      }
+    }
     const el = s.grid.symbolSnapEnabled && !e.altKey
       ? snapSymbolToWalls(floor, variantId, symbol, { at, gap: s.grid.symbolWallGap })
       : symbol;
@@ -835,6 +863,21 @@ export function Canvas({ onCalibrate }: CanvasProps) {
         s.mutateFloor((f) => { const x = f.elements.find((q) => q.id === d.id); if (x) x.rotation = ang; }, { history: false, keepValidation: true });
         return;
       }
+      case 'grot': case 'gscale': {
+        let make: (x: Element) => Element;
+        if (d.kind === 'grot') {
+          let deg = (Math.atan2(p[1] - d.pivot[1], p[0] - d.pivot[0]) - d.a0) * 180 / Math.PI;
+          const step = e.shiftKey ? 45 : 5;
+          deg = Math.round(deg / step) * step;
+          make = (x) => rotateElementAround(x, d.pivot, deg);
+        } else {
+          const k = Math.max(0.1, Math.min(20, distance(p, d.anchor) / d.d0));
+          make = (x) => scaleElementAround(x, d.anchor, k);
+        }
+        const byId = new Map(d.orig.map((x) => [x.id, make(x)]));
+        s.mutateFloor((f) => { f.elements = f.elements.map((x) => byId.get(x.id) ?? x); }, { history: false, keepValidation: true });
+        return;
+      }
       case 'label': {
         // nom de la zone déplacé librement (décalage par rapport au centre de la zone)
         const dx = p[0] - d.start[0], dy = p[1] - d.start[1];
@@ -1024,6 +1067,23 @@ export function Canvas({ onCalibrate }: CanvasProps) {
         handles.push(<circle key="rot" data-handle="rot" className="handle-rot" cx={knob[0]} cy={knob[1]} r={hs * 0.65} />);
       }
     }
+  }
+
+  // Sélection multiple (ex. pictogramme combiné) : 4 coins pour agrandir / réduire
+  // l'ensemble, et une poignée au-dessus pour le faire pivoter.
+  const free = selEls.filter((x) => !x.locked);
+  if (tool === 'select' && selEls.length > 1 && free.length) {
+    const gb = unionRects(free.map((x) => elementBounds(x)))!;
+    const pad = 4 / z;
+    const x0 = gb.x - pad, y0 = gb.y - pad, x1 = gb.x + gb.w + pad, y1 = gb.y + gb.h + pad;
+    handles.push(<rect key="gbox" className="sel-box" x={x0} y={y0} width={x1 - x0} height={y1 - y0} />);
+    RESIZE_DIRECTIONS.forEach(([sx, sy], i) => {
+      if (!(sx && sy)) return;
+      handles.push(resizeHandle(`gs:${i}`, [(x0 + x1) / 2 + sx * (x1 - x0) / 2, (y0 + y1) / 2 + sy * (y1 - y0) / 2], [sx, sy], z));
+    });
+    const cx = (x0 + x1) / 2, knobY = y0 - 26 / z;
+    handles.push(<line key="grl" className="sel-line" x1={cx} y1={y0} x2={cx} y2={knobY} />);
+    handles.push(<circle key="grot" data-handle="grot" className="handle-rot" cx={cx} cy={knobY} r={hs * 0.65}><title>Glisser pour faire pivoter (Maj : par 45°)</title></circle>);
   }
 
   const selBoxes = selEls.map((el) => {
