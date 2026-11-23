@@ -1,5 +1,8 @@
 # Journal des versions
 
+## 2.0.39 - novembre 2026
+- **Plus de fichier .bak à côté du projet** : la copie de sécurité de la version précédente est désormais rangée dans le dossier de l’appli (dossier « backups » des données de l’appli, dans %APPDATA%). Le dossier du plan ne contient plus que le fichier .planevac.
+
 ## 2.0.38 - novembre 2026
 - **Murs droits** : avec Maj, une cloison s’arrête exactement sur l’axe du mur visé (elle ne dépasse plus). Pendant le tracé, l’angle s’affiche (vert « vertical ✓ / horizontal ✓ », orange avec l’écart s’il dévie). Le panneau d’un mur indique la direction de chaque segment et propose « Redresser le mur ».
 - **Découper en locaux** : plus de diagonales en escalier (points en trop) dans les angles de murs ; le coin est net.

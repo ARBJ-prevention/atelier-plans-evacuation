@@ -58,13 +58,20 @@ function addRecent(p) {
   if (process.platform === 'win32') app.addRecentDocument(p);
 }
 
+/** Copie de sécurité de la version précédente, rangée dans le dossier de l'appli (pas à côté du projet). */
+function backupPath(file) {
+  const d = path.join(userDir(), 'backups'); fs.mkdirSync(d, { recursive: true });
+  const hash = require('node:crypto').createHash('sha1').update(path.resolve(file).toLowerCase()).digest('hex').slice(0, 10);
+  return path.join(d, `${path.basename(file)}.${hash}.bak`);
+}
+
 /** Écriture atomique : fichier temporaire + renommage, avec copie .bak de la version précédente. */
 function atomicWrite(file, data) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
   const tmp = `${file}.tmp-${process.pid}`;
   fs.writeFileSync(tmp, data);
   const fd = fs.openSync(tmp, 'r+'); fs.fsyncSync(fd); fs.closeSync(fd);
-  if (fs.existsSync(file)) { try { fs.copyFileSync(file, `${file}.bak`); } catch { /* ignore */ } }
+  if (fs.existsSync(file)) { try { fs.copyFileSync(file, backupPath(file)); } catch { /* ignore */ } }
   fs.renameSync(tmp, file);
 }
 

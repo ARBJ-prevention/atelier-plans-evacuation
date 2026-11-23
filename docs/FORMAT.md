@@ -2,7 +2,7 @@
 
 Un projet est un **fichier texte JSON unique, encodé en UTF-8**. Il contient tous les objets sous forme modifiable ainsi que les images (plan de fond, logos, pictogrammes importés) encodées en *data URL* base64. Il peut être lu par n'importe quel outil JSON. La définition TypeScript de référence est dans [`src/model/types.ts`](../src/model/types.ts).
 
-Enregistrement : écriture dans un fichier temporaire, synchronisation disque, copie de l'ancienne version en `.planevac.bak`, puis renommage atomique et relecture de contrôle.
+Enregistrement : écriture dans un fichier temporaire, synchronisation disque, copie de l'ancienne version dans le dossier `backups` des données de l'appli (%APPDATA%), puis renommage atomique et relecture de contrôle.
 
 ## Compatibilité
 - Atelier 2.0.11 ouvre les projets existants. L’enregistrement reste au format 2 tant qu’un élément commun n’est exclu d’aucune affiche. Dès qu’une exception est utilisée, le projet passe au format 3 pour qu’une ancienne version du logiciel ne puisse pas réafficher par erreur l’itinéraire commun en plus de sa copie.

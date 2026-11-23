@@ -189,7 +189,7 @@ Sorties :
 
 ## 13. Sauvegarde automatique et récupération
 
-Un fichier de secours est écrit toutes les 30 secondes si le projet a changé ; après une fermeture inattendue, le logiciel propose de le restaurer. Chaque enregistrement conserve la version précédente en `.bak`.
+Un fichier de secours est écrit toutes les 30 secondes si le projet a changé ; après une fermeture inattendue, le logiciel propose de le restaurer. Chaque enregistrement conserve la version précédente dans `%APPDATA%\Atelier Plans d'Évacuation\backups` (fichier `.bak`), pour ne pas encombrer le dossier du projet.
 
 ## 14. Raccourcis
 
