@@ -1,5 +1,8 @@
 # Journal des versions
 
+## 2.0.49 - novembre 2026
+- **Raccord en miroir** : un chemin qui arrive de côté sur un itinéraire tourne dans son sens de marche avec le même arrondi, comme le virage d’en face.
+
 ## 2.0.48 - novembre 2026
 - **Raccord visible** : un chemin qui rejoint un itinéraire entre jusqu’au milieu de sa bande (liseré et chevrons arrêtés au bord).
 - **Aperçu norme ISO** : plus de bande verte automatique sur les voies déjà couvertes par vos zones ; pictogrammes agrandis collés au mur au lieu de déborder ; pictogrammes combinés gardés jointifs ; pas de pointe de flèche sur les raccords.
