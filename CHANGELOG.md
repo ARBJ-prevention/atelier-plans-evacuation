@@ -1,5 +1,9 @@
 # Journal des versions
 
+## 2.0.44 - novembre 2026
+- **Sélection multiple** (ex. pictogramme combiné) : une poignée au-dessus pour la faire pivoter (Maj : par 45°) et 4 coins pour l’agrandir ou la réduire d’un coup.
+- **Pictogrammes dans un couloir** : leur taille s’adapte automatiquement à la largeur entre les murs (Alt : taille normale).
+
 ## 2.0.43 - novembre 2026
 - **Itinéraires raccordés** : un chemin tracé jusqu’à un itinéraire existant reprend tout son réglage (type, couleur, chevrons, virages…).
 - **Raccord propre** : le chemin s’arrête au bord de la bande rejointe, sans pointe, liseré blanc ni chevron qui débordent dessus.
