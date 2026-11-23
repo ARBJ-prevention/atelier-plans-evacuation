@@ -1,5 +1,10 @@
 # Journal des versions
 
+## 2.0.48 - novembre 2026
+- **Raccord visible** : un chemin qui rejoint un itinéraire entre jusqu’au milieu de sa bande (liseré et chevrons arrêtés au bord).
+- **Aperçu norme ISO** : plus de bande verte automatique sur les voies déjà couvertes par vos zones ; pictogrammes agrandis collés au mur au lieu de déborder ; pictogrammes combinés gardés jointifs ; pas de pointe de flèche sur les raccords.
+- **Noms des locaux en étiquette** : fond bleu foncé, texte blanc (onglet Texte d’une zone, ou bouton pour toute une sélection).
+
 ## 2.0.47 - novembre 2026
 - **Quitter sans enregistrer** : la fenêtre de confirmation adopte le style de l’appli (bandeau vert, nom du projet, bouton « Enregistrer et quitter »).
 
